@@ -8,13 +8,27 @@ local Blitbuffer = require("ffi/blitbuffer")
 local _ = require("gettext")
 local UIManager = require("ui/uimanager")
 local NetworkMgr = require("ui/network/manager")
+local SpinWidget = require("ui/widget/spinwidget")
+local logger = require("logger")
 
 local ReaderHeaderFooter = WidgetContainer:extend({
 	name = "reader_header_footer",
 	is_doc_only = true,
 
+	enabled_setting_key = "reader_header_footer_enabled",
+	enabled = true,
+
+	font_size_default = 16,
+	font_size_min = 10,
+	font_size_max = 28,
+	font_size_setting_key = "reader_header_footer_font_size",
+
 	font_size = 16,
 	padding = 10,
+
+	refresh_region_font_size = 16,
+
+	menu_registered = false,
 
 	clock_refresh_fn = nil,
 
@@ -42,6 +56,191 @@ local function safe_call(fn, fallback)
 		return result
 	end
 	return fallback
+end
+
+function ReaderHeaderFooter:registerMenu()
+	if self.menu_registered then
+		logger.info("reader_header_footer: menu already registered")
+		return
+	end
+
+	if self.ui and self.ui.menu and self.ui.menu.registerToMainMenu then
+		logger.info("reader_header_footer: registering menu")
+		self.ui.menu:registerToMainMenu(self)
+		self.menu_registered = true
+	else
+		logger.warn("reader_header_footer: reader menu not available yet")
+	end
+end
+
+function ReaderHeaderFooter:normalizeFontSize(value)
+	value = tonumber(value) or self.font_size_default
+	value = math.floor(value)
+
+	if value < self.font_size_min then
+		value = self.font_size_min
+	elseif value > self.font_size_max then
+		value = self.font_size_max
+	end
+
+	return value
+end
+
+function ReaderHeaderFooter:loadSettings()
+	local saved_enabled = G_reader_settings:readSetting(self.enabled_setting_key)
+
+	if saved_enabled == nil then
+		self.enabled = true
+	else
+		self.enabled = saved_enabled
+	end
+
+	local saved_font_size = G_reader_settings:readSetting(self.font_size_setting_key)
+	self.font_size = self:normalizeFontSize(saved_font_size or self.font_size_default)
+	self.refresh_region_font_size = self.font_size
+end
+
+function ReaderHeaderFooter:setFontSize(font_size)
+	local old_font_size = self.font_size
+	local new_font_size = self:normalizeFontSize(font_size)
+
+	if old_font_size == new_font_size then
+		return
+	end
+
+	self.font_size = new_font_size
+	self.refresh_region_font_size = math.max(old_font_size, new_font_size)
+
+	G_reader_settings:saveSetting(self.font_size_setting_key, new_font_size)
+
+	self.font_face = Font:getFace("NotoSans-Regular.ttf", self.font_size)
+end
+
+function ReaderHeaderFooter:resetFontSize()
+	self:setFontSize(self.font_size_default)
+	G_reader_settings:delSetting(self.font_size_setting_key)
+end
+
+function ReaderHeaderFooter:isEnabled()
+	return self.enabled ~= false
+end
+
+function ReaderHeaderFooter:setEnabled(enabled)
+	local old_enabled = self:isEnabled()
+	self.enabled = enabled == true
+
+	G_reader_settings:saveSetting(self.enabled_setting_key, self.enabled)
+
+	if self.enabled then
+		self:rememberCurrentIndicatorState()
+		self:startClockWatcher()
+		self:startBatteryWatcher()
+	else
+		self:stopClockWatcher()
+		self:stopBatteryWatcher()
+		self:stopDeferredRefreshCheck()
+	end
+
+	-- Se estava ativado e foi desativado, isso limpa as áreas onde
+	-- os indicadores estavam desenhados. Se foi ativado, desenha de novo.
+	if old_enabled ~= self.enabled then
+		UIManager:scheduleIn(0.1, function()
+			self:requestAllIndicatorRefresh()
+		end)
+	end
+end
+
+function ReaderHeaderFooter:toggleEnabled()
+	self:setEnabled(not self:isEnabled())
+end
+
+function ReaderHeaderFooter:addToMainMenu(menu_items)
+	menu_items.reader_header_footer = {
+		text = _("Header/footer indicators"),
+		sorting_hint = "setting",
+		sub_item_table = {
+			{
+				text_func = function()
+					if self:isEnabled() then
+						return _("Disable plugin")
+					else
+						return _("Enable plugin")
+					end
+				end,
+
+				checked_func = function()
+					return self:isEnabled()
+				end,
+
+				callback = function(touchmenu_instance)
+					self:toggleEnabled()
+
+					if touchmenu_instance and touchmenu_instance.updateItems then
+						touchmenu_instance:updateItems()
+					end
+				end,
+			},
+
+			{
+				text_func = function()
+					return string.format(_("Font size: %d"), self.font_size)
+				end,
+
+				enabled_func = function()
+					return self:isEnabled()
+				end,
+
+				callback = function(touchmenu_instance)
+					if not self:isEnabled() then
+						return
+					end
+
+					local widget = SpinWidget:new({
+						title_text = _("Header/footer font size"),
+						value = self.font_size,
+						value_min = self.font_size_min,
+						value_max = self.font_size_max,
+						default_value = self.font_size_default,
+						keep_shown_on_apply = false,
+
+						callback = function(spin)
+							self:setFontSize(spin.value)
+
+							if touchmenu_instance and touchmenu_instance.updateItems then
+								touchmenu_instance:updateItems()
+							end
+
+							UIManager:scheduleIn(0.1, function()
+								self:requestAllIndicatorRefresh()
+							end)
+						end,
+					})
+
+					UIManager:show(widget)
+				end,
+			},
+
+			{
+				text = _("Reset font size"),
+				
+				enabled_func = function()
+					return self:isEnabled()
+				end,
+
+				callback = function(touchmenu_instance)
+					self:resetFontSize()
+
+					if touchmenu_instance and touchmenu_instance.updateItems then
+						touchmenu_instance:updateItems()
+					end
+
+					UIManager:scheduleIn(0.1, function()
+						self:requestAllIndicatorRefresh()
+					end)
+				end,
+			},
+		},
+	}
 end
 
 function ReaderHeaderFooter:deferIndicatorRefresh(which)
@@ -211,7 +410,9 @@ function ReaderHeaderFooter:getIndicatorRefreshRegions()
 	local screen_h = Screen:getHeight()
 
 	local pad = Screen:scaleBySize(self.padding)
-	local line_h = Screen:scaleBySize(self.font_size + 8)
+
+	local region_font_size = self.refresh_region_font_size or self.font_size
+	local line_h = Screen:scaleBySize(region_font_size + 8)
 
 	local left_bound, right_bound = self:getContentHorizontalBounds()
 
@@ -315,6 +516,9 @@ function ReaderHeaderFooter:stopClockWatcher()
 end
 
 function ReaderHeaderFooter:onNetworkConnected()
+	if not self:isEnabled() then
+		return
+	end
 	local wifi_on = self:getWifiState()
 
 	if wifi_on ~= self.last_wifi_on then
@@ -324,6 +528,9 @@ function ReaderHeaderFooter:onNetworkConnected()
 end
 
 function ReaderHeaderFooter:onNetworkDisconnected()
+	if not self:isEnabled() then
+		return
+	end
 	local wifi_on = self:getWifiState()
 
 	if wifi_on ~= self.last_wifi_on then
@@ -333,6 +540,9 @@ function ReaderHeaderFooter:onNetworkDisconnected()
 end
 
 function ReaderHeaderFooter:onCharging()
+	if not self:isEnabled() then
+		return
+	end
 	local power = self:getPowerSnapshot()
 
 	self.last_battery_level = power.level
@@ -342,6 +552,9 @@ function ReaderHeaderFooter:onCharging()
 end
 
 function ReaderHeaderFooter:onNotCharging()
+	if not self:isEnabled() then
+		return
+	end
 	local power = self:getPowerSnapshot()
 
 	self.last_battery_level = power.level
@@ -451,6 +664,8 @@ function ReaderHeaderFooter:fitTextToWidth(text, max_width)
 end
 
 function ReaderHeaderFooter:init()
+	self:loadSettings()
+
 	self.font_face = Font:getFace("NotoSans-Regular.ttf", self.font_size)
 
 	-- Em plugins de leitura, self.ui costuma estar disponível.
@@ -458,9 +673,14 @@ function ReaderHeaderFooter:init()
 	if self.ui and self.ui.view and self.ui.view.registerViewModule then
 		self.ui.view:registerViewModule(self.name, self)
 	end
+
+	-- Registra o menu de configurações no menu do leitor.
+	self:registerMenu()
 end
 
 function ReaderHeaderFooter:onReaderReady()
+	self:registerMenu()
+
 	if self.ui and self.ui.document then
 		self.pages = safe_call(function()
 			return self.ui.document:getPageCount()
@@ -473,18 +693,26 @@ function ReaderHeaderFooter:onReaderReady()
 
 	self:rememberCurrentIndicatorState()
 
-	self:startClockWatcher()
-	self:startBatteryWatcher()
+	if self:isEnabled() then
+		self:startClockWatcher()
+		self:startBatteryWatcher()
+	end
 end
 
 function ReaderHeaderFooter:onPageUpdate(pageno)
 	self.pageno = pageno
+	if not self:isEnabled() then
+		return
+	end
 	self:requestAllIndicatorRefresh()
 end
 
 function ReaderHeaderFooter:onPosUpdate(_, pageno)
 	if pageno then
 		self.pageno = pageno
+		if not self:isEnabled() then
+			return
+		end
 		self:requestAllIndicatorRefresh()
 	end
 end
@@ -710,6 +938,10 @@ function ReaderHeaderFooter:drawText(bb, x, y, text)
 end
 
 function ReaderHeaderFooter:paintTo(bb, x, y)
+	if not self:isEnabled() then
+		return
+	end
+
 	if not self.ui or not self.ui.document then
 		return
 	end
@@ -790,6 +1022,13 @@ function ReaderHeaderFooter:onCloseDocument()
 end
 
 function ReaderHeaderFooter:onResume()
+	if not self:isEnabled() then
+		self:stopClockWatcher()
+		self:stopBatteryWatcher()
+		self:stopDeferredRefreshCheck()
+		return
+	end
+
 	local old_wifi = self.last_wifi_on
 	local old_battery = self.last_battery_level
 	local old_charging = self.last_charging
