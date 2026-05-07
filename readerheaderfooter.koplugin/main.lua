@@ -1349,7 +1349,7 @@ function ReaderHeaderFooter:paintTo(bb, x, y)
 	self:drawText(bb, left_bound, lb_y, lb_text)
 
 	-- Bottom right: read percentage.
-	local rb_text = string.format("%.1f%%", self:getPercentageRead())
+	local rb_text = string.format("%d%%", math.floor(self:getPercentageRead()))
 	local rb_size = self:getTextSize(rb_text)
 	local rb_x = right_bound - rb_size.w
 	local rb_y = lb_y
