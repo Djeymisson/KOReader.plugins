@@ -396,68 +396,6 @@ function ReaderHeaderFooter:addToMainMenu(menu_items)
 
 			{
 				text_func = function()
-					return string.format(_("Font size: %d"), self.font_size)
-				end,
-
-				-- Keep visible but disabled when the plugin is off.
-				enabled_func = function()
-					return self:isEnabled()
-				end,
-
-				callback = function(touchmenu_instance)
-					if not self:isEnabled() then
-						return
-					end
-
-					local widget = SpinWidget:new({
-						title_text = _("Header/footer font size"),
-						value = self.font_size,
-						value_min = FONT.min_size,
-						value_max = FONT.max_size,
-						default_value = FONT.default_size,
-						keep_shown_on_apply = false,
-
-						callback = function(spin)
-							self:setFontSize(spin.value)
-
-							if touchmenu_instance and touchmenu_instance.updateItems then
-								touchmenu_instance:updateItems()
-							end
-
-							-- Let the spin dialog close first; otherwise the regional
-							-- refresh could be deferred by the menu protection logic.
-							UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
-								self:requestAllIndicatorRefresh()
-							end)
-						end,
-					})
-
-					UIManager:show(widget)
-				end,
-			},
-
-			{
-				text = _("Reset font size"),
-
-				enabled_func = function()
-					return self:isEnabled()
-				end,
-
-				callback = function(touchmenu_instance)
-					self:resetFontSize()
-
-					if touchmenu_instance and touchmenu_instance.updateItems then
-						touchmenu_instance:updateItems()
-					end
-
-					UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
-						self:requestAllIndicatorRefresh()
-					end)
-				end,
-			},
-
-			{
-				text_func = function()
 					if self.footer_left_mode == "book" then
 						return _("Bottom-left info: pages left in book")
 					end
@@ -488,55 +426,60 @@ function ReaderHeaderFooter:addToMainMenu(menu_items)
 			},
 
 			{
-				text = _("Follow document margins"),
+				text = _("Font"),
 
-				checked_func = function()
-					return self:usesDocumentMargins()
-				end,
-
+				-- Keep submenu visible, but disabled when the plugin is off.
 				enabled_func = function()
 					return self:isEnabled()
 				end,
 
-				callback = function(touchmenu_instance)
-					self:setFollowDocumentMargins(not self:usesDocumentMargins())
+				sub_item_table = {
+					{
+						text_func = function()
+							return string.format(_("Font size: %d"), self.font_size)
+						end,
 
-					if touchmenu_instance and touchmenu_instance.updateItems then
-						touchmenu_instance:updateItems()
-					end
+						callback = function(touchmenu_instance)
+							if not self:isEnabled() then
+								return
+							end
 
-					UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
-						self:requestAllIndicatorRefresh()
-					end)
-				end,
-			},
+							local widget = SpinWidget:new({
+								title_text = _("Header/footer font size"),
+								value = self.font_size,
+								value_min = FONT.min_size,
+								value_max = FONT.max_size,
+								default_value = FONT.default_size,
+								keep_shown_on_apply = false,
 
-			{
-				text_func = function()
-					return string.format(_("Custom side margins: %d"), self.custom_horizontal_margin)
-				end,
+								callback = function(spin)
+									self:setFontSize(spin.value)
 
-				-- Applies the same custom margin to both sides. Like the
-				-- individual controls, it is only meaningful in manual mode.
-				enabled_func = function()
-					return self:isEnabled() and not self:usesDocumentMargins()
-				end,
+									if touchmenu_instance and touchmenu_instance.updateItems then
+										touchmenu_instance:updateItems()
+									end
 
-				callback = function(touchmenu_instance)
-					if not self:isEnabled() or self:usesDocumentMargins() then
-						return
-					end
+									-- Let the spin dialog close first; otherwise the regional
+									-- refresh could be deferred by the menu protection logic.
+									UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
+										self:requestAllIndicatorRefresh()
+									end)
+								end,
+							})
 
-					local widget = SpinWidget:new({
-						title_text = _("Custom side indicator margins"),
-						value = self.custom_horizontal_margin,
-						value_min = INDICATOR_MARGINS.min,
-						value_max = INDICATOR_MARGINS.max,
-						default_value = INDICATOR_MARGINS.default_left,
-						keep_shown_on_apply = false,
+							UIManager:show(widget)
+						end,
+					},
 
-						callback = function(spin)
-							self:setCustomHorizontalMargin(spin.value)
+					{
+						text = _("Reset font size"),
+
+						callback = function(touchmenu_instance)
+							if not self:isEnabled() then
+								return
+							end
+
+							self:resetFontSize()
 
 							if touchmenu_instance and touchmenu_instance.updateItems then
 								touchmenu_instance:updateItems()
@@ -546,37 +489,32 @@ function ReaderHeaderFooter:addToMainMenu(menu_items)
 								self:requestAllIndicatorRefresh()
 							end)
 						end,
-					})
-
-					UIManager:show(widget)
-				end,
+					},
+				},
 			},
 
 			{
-				text_func = function()
-					return string.format(_("Custom left margin: %d"), self.custom_left_margin)
-				end,
+				text = _("Margins"),
 
-				-- Custom margins only apply when the document-margin checkbox is off.
+				-- Keep submenu visible, but disabled when the plugin is off.
 				enabled_func = function()
-					return self:isEnabled() and not self:usesDocumentMargins()
+					return self:isEnabled()
 				end,
 
-				callback = function(touchmenu_instance)
-					if not self:isEnabled() or self:usesDocumentMargins() then
-						return
-					end
+				sub_item_table = {
+					{
+						text = _("Follow document margins"),
 
-					local widget = SpinWidget:new({
-						title_text = _("Custom left indicator margin"),
-						value = self.custom_left_margin,
-						value_min = INDICATOR_MARGINS.min,
-						value_max = INDICATOR_MARGINS.max,
-						default_value = INDICATOR_MARGINS.default_left,
-						keep_shown_on_apply = false,
+						checked_func = function()
+							return self:usesDocumentMargins()
+						end,
 
-						callback = function(spin)
-							self:setCustomIndicatorMargin("left", spin.value)
+						callback = function(touchmenu_instance)
+							if not self:isEnabled() then
+								return
+							end
+
+							self:setFollowDocumentMargins(not self:usesDocumentMargins())
 
 							if touchmenu_instance and touchmenu_instance.updateItems then
 								touchmenu_instance:updateItems()
@@ -586,49 +524,128 @@ function ReaderHeaderFooter:addToMainMenu(menu_items)
 								self:requestAllIndicatorRefresh()
 							end)
 						end,
-					})
+					},
 
-					UIManager:show(widget)
-				end,
-			},
+					{
+						text_func = function()
+							return string.format(_("Custom side margins: %d"), self.custom_horizontal_margin)
+						end,
 
-			{
-				text_func = function()
-					return string.format(_("Custom right margin: %d"), self.custom_right_margin)
-				end,
+						-- Applies the same custom margin to both sides. Like the
+						-- individual controls, it is only meaningful in manual mode.
+						enabled_func = function()
+							return self:isEnabled() and not self:usesDocumentMargins()
+						end,
 
-				enabled_func = function()
-					return self:isEnabled() and not self:usesDocumentMargins()
-				end,
-
-				callback = function(touchmenu_instance)
-					if not self:isEnabled() or self:usesDocumentMargins() then
-						return
-					end
-
-					local widget = SpinWidget:new({
-						title_text = _("Custom right indicator margin"),
-						value = self.custom_right_margin,
-						value_min = INDICATOR_MARGINS.min,
-						value_max = INDICATOR_MARGINS.max,
-						default_value = INDICATOR_MARGINS.default_right,
-						keep_shown_on_apply = false,
-
-						callback = function(spin)
-							self:setCustomIndicatorMargin("right", spin.value)
-
-							if touchmenu_instance and touchmenu_instance.updateItems then
-								touchmenu_instance:updateItems()
+						callback = function(touchmenu_instance)
+							if not self:isEnabled() or self:usesDocumentMargins() then
+								return
 							end
 
-							UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
-								self:requestAllIndicatorRefresh()
-							end)
-						end,
-					})
+							local widget = SpinWidget:new({
+								title_text = _("Custom side indicator margins"),
+								value = self.custom_horizontal_margin,
+								value_min = INDICATOR_MARGINS.min,
+								value_max = INDICATOR_MARGINS.max,
+								default_value = INDICATOR_MARGINS.default_left,
+								keep_shown_on_apply = false,
 
-					UIManager:show(widget)
-				end,
+								callback = function(spin)
+									self:setCustomHorizontalMargin(spin.value)
+
+									if touchmenu_instance and touchmenu_instance.updateItems then
+										touchmenu_instance:updateItems()
+									end
+
+									UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
+										self:requestAllIndicatorRefresh()
+									end)
+								end,
+							})
+
+							UIManager:show(widget)
+						end,
+					},
+
+					{
+						text_func = function()
+							return string.format(_("Custom left margin: %d"), self.custom_left_margin)
+						end,
+
+						-- Custom margins only apply when the document-margin checkbox is off.
+						enabled_func = function()
+							return self:isEnabled() and not self:usesDocumentMargins()
+						end,
+
+						callback = function(touchmenu_instance)
+							if not self:isEnabled() or self:usesDocumentMargins() then
+								return
+							end
+
+							local widget = SpinWidget:new({
+								title_text = _("Custom left indicator margin"),
+								value = self.custom_left_margin,
+								value_min = INDICATOR_MARGINS.min,
+								value_max = INDICATOR_MARGINS.max,
+								default_value = INDICATOR_MARGINS.default_left,
+								keep_shown_on_apply = false,
+
+								callback = function(spin)
+									self:setCustomIndicatorMargin("left", spin.value)
+
+									if touchmenu_instance and touchmenu_instance.updateItems then
+										touchmenu_instance:updateItems()
+									end
+
+									UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
+										self:requestAllIndicatorRefresh()
+									end)
+								end,
+							})
+
+							UIManager:show(widget)
+						end,
+					},
+
+					{
+						text_func = function()
+							return string.format(_("Custom right margin: %d"), self.custom_right_margin)
+						end,
+
+						enabled_func = function()
+							return self:isEnabled() and not self:usesDocumentMargins()
+						end,
+
+						callback = function(touchmenu_instance)
+							if not self:isEnabled() or self:usesDocumentMargins() then
+								return
+							end
+
+							local widget = SpinWidget:new({
+								title_text = _("Custom right indicator margin"),
+								value = self.custom_right_margin,
+								value_min = INDICATOR_MARGINS.min,
+								value_max = INDICATOR_MARGINS.max,
+								default_value = INDICATOR_MARGINS.default_right,
+								keep_shown_on_apply = false,
+
+								callback = function(spin)
+									self:setCustomIndicatorMargin("right", spin.value)
+
+									if touchmenu_instance and touchmenu_instance.updateItems then
+										touchmenu_instance:updateItems()
+									end
+
+									UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
+										self:requestAllIndicatorRefresh()
+									end)
+								end,
+							})
+
+							UIManager:show(widget)
+						end,
+					},
+				},
 			},
 		},
 	}
