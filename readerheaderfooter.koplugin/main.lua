@@ -4,7 +4,7 @@ Reader Header/Footer plugin for KOReader.
 Shows small reader indicators in the document margins:
 - Top right: Wi-Fi, clock, battery.
 - Top left: alternating chapter title / author + title.
-- Bottom left: pages left in chapter.
+- Bottom left: pages left in chapter or book, configurable from plugin menu.
 - Bottom right: document read percentage.
 
 The plugin avoids full-screen refreshes by invalidating only the top/bottom
@@ -39,6 +39,8 @@ local SETTINGS = {
 	custom_left_margin = "reader_header_footer_custom_left_margin",
 	custom_right_margin = "reader_header_footer_custom_right_margin",
 	custom_horizontal_margin = "reader_header_footer_custom_horizontal_margin",
+	footer_left_mode_setting_key = "reader_header_footer_left_footer_mode",
+	footer_left_mode = "chapter",
 }
 
 local FONT = {
@@ -92,6 +94,8 @@ local ReaderHeaderFooter = WidgetContainer:extend({
 	-- Runtime state.
 	menu_registered = false,
 	font_face = nil,
+
+	footer_left_mode = "chapter",
 
 	pageno = nil,
 	pages = nil,
@@ -184,6 +188,14 @@ function ReaderHeaderFooter:loadSettings()
 	self.custom_horizontal_margin = self:normalizeIndicatorMargin(
 		saved_horizontal_margin or self.custom_left_margin or INDICATOR_MARGINS.default_left
 	)
+
+	local saved_footer_left_mode = G_reader_settings:readSetting(SETTINGS.footer_left_mode_setting_key)
+
+	if saved_footer_left_mode == "book" then
+		self.footer_left_mode = "book"
+	else
+		self.footer_left_mode = "chapter"
+	end
 end
 
 function ReaderHeaderFooter:saveEnabled()
@@ -318,6 +330,27 @@ function ReaderHeaderFooter:toggleEnabled()
 	self:setEnabled(not self:isEnabled())
 end
 
+function ReaderHeaderFooter:setFooterLeftMode(mode)
+	if mode ~= "book" then
+		mode = "chapter"
+	end
+
+	if self.footer_left_mode == mode then
+		return
+	end
+
+	self.footer_left_mode = mode
+	G_reader_settings:saveSetting(SETTINGS.footer_left_mode_setting_key, self.footer_left_mode)
+end
+
+function ReaderHeaderFooter:toggleFooterLeftMode()
+	if self.footer_left_mode == "chapter" then
+		self:setFooterLeftMode("book")
+	else
+		self:setFooterLeftMode("chapter")
+	end
+end
+
 -- ============================================================================
 -- Menu
 -- ============================================================================
@@ -419,6 +452,37 @@ function ReaderHeaderFooter:addToMainMenu(menu_items)
 
 					UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
 						self:requestAllIndicatorRefresh()
+					end)
+				end,
+			},
+
+			{
+				text_func = function()
+					if self.footer_left_mode == "book" then
+						return _("Bottom-left info: pages left in book")
+					end
+
+					return _("Bottom-left info: pages left in chapter")
+				end,
+
+				-- Keep visible but disabled when the plugin is off.
+				enabled_func = function()
+					return self:isEnabled()
+				end,
+
+				callback = function(touchmenu_instance)
+					if not self:isEnabled() then
+						return
+					end
+
+					self:toggleFooterLeftMode()
+
+					if touchmenu_instance and touchmenu_instance.updateItems then
+						touchmenu_instance:updateItems()
+					end
+
+					UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
+						self:requestBottomIndicatorRefresh()
 					end)
 				end,
 			},
@@ -979,13 +1043,20 @@ function ReaderHeaderFooter:onViewRecalculate(visible_area, page_area)
 end
 
 function ReaderHeaderFooter:onSetDimensions()
-	-- Kept intentionally: KOReader may call this after orientation/layout changes.
-	-- Current drawing code recalculates dimensions lazily in paintTo().
+	-- Kept for layout recalculations/rotation; no explicit work is required here.
 end
 
 -- ============================================================================
 -- Document metadata/progress helpers
 -- ============================================================================
+
+function ReaderHeaderFooter:getLeftBottomStatus()
+	if self.footer_left_mode == "book" then
+		return string.format("%d pages left in book", self:getPagesLeftInBook())
+	end
+
+	return string.format("%d pages left in chapter", self:getPagesLeftInChapter())
+end
 
 function ReaderHeaderFooter:getCurrentPage()
 	if self.pageno then
@@ -1067,6 +1138,23 @@ function ReaderHeaderFooter:isChapterStart(pageno)
 	end
 
 	return true
+end
+
+function ReaderHeaderFooter:getPagesLeftInBook()
+	local pageno = self:getCurrentPage()
+	local pages = self:getPageCount()
+
+	if pages and pages > 0 and pageno then
+		return math.max(0, pages - pageno)
+	end
+
+	if self.ui and self.ui.document then
+		return safe_call(function()
+			return self.ui.document:getTotalPagesLeft(pageno)
+		end, 0)
+	end
+
+	return 0
 end
 
 function ReaderHeaderFooter:getPagesLeftInChapter()
@@ -1338,8 +1426,8 @@ function ReaderHeaderFooter:paintTo(bb, x, y)
 		self:drawText(bb, left_bound, pad, lt_text)
 	end
 
-	-- Bottom left: pages left in chapter.
-	local lb_text = string.format("%d pages left in chapter", self:getPagesLeftInChapter())
+	-- Bottom left: pages left in chapter or book, configurable from plugin menu.
+	local lb_text = self:getLeftBottomStatus()
 	lb_text = self:fitTextToWidth(lb_text, math.floor(usable_w * 0.6))
 
 	local lb_size = self:getTextSize(lb_text)
