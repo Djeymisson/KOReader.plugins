@@ -33,29 +33,41 @@ local _ = require("gettext")
 local PLUGIN_NAME = "reader_header_footer"
 
 local SETTINGS = {
-    enabled = "reader_header_footer_enabled",
-    font_size = "reader_header_footer_font_size",
+	enabled = "reader_header_footer_enabled",
+	font_size = "reader_header_footer_font_size",
+	follow_document_margins = "reader_header_footer_follow_document_margins",
+	custom_left_margin = "reader_header_footer_custom_left_margin",
+	custom_right_margin = "reader_header_footer_custom_right_margin",
+	custom_horizontal_margin = "reader_header_footer_custom_horizontal_margin",
 }
 
 local FONT = {
-    name = "NotoSans-Regular.ttf",
-    default_size = 16,
-    min_size = 10,
-    max_size = 28,
+	name = "NotoSans-Regular.ttf",
+	default_size = 16,
+	min_size = 10,
+	max_size = 28,
 }
 
 local LAYOUT = {
-    padding = 10,
-    text_clear_extra = 6,
-    line_extra_for_region = 8,
-    line_extra_for_paint = 4,
-    left_right_gap = 16,
+	padding = 10,
+	text_clear_extra = 6,
+	line_extra_for_region = 8,
+	line_extra_for_paint = 4,
+	left_right_gap = 16,
+}
+
+local INDICATOR_MARGINS = {
+	default_follow_document = true,
+	default_left = 20,
+	default_right = 20,
+	min = 0,
+	max = 300,
 }
 
 local REFRESH = {
-    battery_check_interval = 300, -- 5 minutes.
-    deferred_menu_check_interval = 0.5,
-    after_dialog_close_delay = 0.1,
+	battery_check_interval = 300, -- 5 minutes.
+	deferred_menu_check_interval = 0.5,
+	after_dialog_close_delay = 0.1,
 }
 
 -- ============================================================================
@@ -63,39 +75,48 @@ local REFRESH = {
 -- ============================================================================
 
 local ReaderHeaderFooter = WidgetContainer:extend({
-    name = PLUGIN_NAME,
-    is_doc_only = true,
+	name = PLUGIN_NAME,
+	is_doc_only = true,
 
-    -- Persistent settings loaded at init().
-    enabled = true,
-    font_size = FONT.default_size,
+	-- Persistent settings loaded at init().
+	enabled = true,
+	font_size = FONT.default_size,
+	follow_document_margins = INDICATOR_MARGINS.default_follow_document,
+	custom_left_margin = INDICATOR_MARGINS.default_left,
+	custom_right_margin = INDICATOR_MARGINS.default_right,
+	custom_horizontal_margin = INDICATOR_MARGINS.default_left,
 
-    -- Used to clear the old larger region after font size changes.
-    refresh_region_font_size = FONT.default_size,
+	-- Used to clear the old larger region after font size changes.
+	refresh_region_font_size = FONT.default_size,
 
-    -- Runtime state.
-    menu_registered = false,
-    font_face = nil,
+	-- Runtime state.
+	menu_registered = false,
+	font_face = nil,
 
-    pageno = nil,
-    pages = nil,
+	pageno = nil,
+	pages = nil,
 
-    visible_area = nil,
-    page_area = nil,
+	visible_area = nil,
+	page_area = nil,
 
-    clock_refresh_fn = nil,
-    battery_check_fn = nil,
+	clock_refresh_fn = nil,
+	battery_check_fn = nil,
 
-    last_wifi_on = nil,
-    last_battery_level = nil,
-    last_charging = nil,
+	last_wifi_on = nil,
+	last_battery_level = nil,
+	last_charging = nil,
 
-    top_refresh_pending = false,
-    bottom_refresh_pending = false,
+	top_refresh_pending = false,
+	bottom_refresh_pending = false,
 
-    deferred_top_refresh = false,
-    deferred_bottom_refresh = false,
-    deferred_refresh_fn = nil,
+	deferred_top_refresh = false,
+	deferred_bottom_refresh = false,
+	deferred_refresh_fn = nil,
+
+	-- When margins change, the old indicator regions must also be invalidated,
+	-- otherwise stale text may remain at the previous coordinates.
+	extra_top_refresh_region = nil,
+	extra_bottom_refresh_region = nil,
 })
 
 -- ============================================================================
@@ -103,32 +124,32 @@ local ReaderHeaderFooter = WidgetContainer:extend({
 -- ============================================================================
 
 local function safe_call(fn, fallback)
-    local ok, result = pcall(fn)
-    if ok and result ~= nil then
-        return result
-    end
-    return fallback
+	local ok, result = pcall(fn)
+	if ok and result ~= nil then
+		return result
+	end
+	return fallback
 end
 
 local function clamp(value, min_value, max_value)
-    value = tonumber(value) or min_value
-    value = math.floor(value)
+	value = tonumber(value) or min_value
+	value = math.floor(value)
 
-    if value < min_value then
-        return min_value
-    elseif value > max_value then
-        return max_value
-    end
+	if value < min_value then
+		return min_value
+	elseif value > max_value then
+		return max_value
+	end
 
-    return value
+	return value
 end
 
 function ReaderHeaderFooter:isEnabled()
-    return self.enabled ~= false
+	return self.enabled ~= false
 end
 
 function ReaderHeaderFooter:hasReaderContext()
-    return self.ui and self.ui.document and self.ui.view and self.ui.view.dialog
+	return self.ui and self.ui.document and self.ui.view and self.ui.view.dialog
 end
 
 -- ============================================================================
@@ -136,76 +157,165 @@ end
 -- ============================================================================
 
 function ReaderHeaderFooter:normalizeFontSize(value)
-    return clamp(value or FONT.default_size, FONT.min_size, FONT.max_size)
+	return clamp(value or FONT.default_size, FONT.min_size, FONT.max_size)
 end
 
 function ReaderHeaderFooter:loadSettings()
-    local saved_enabled = G_reader_settings:readSetting(SETTINGS.enabled)
-    self.enabled = saved_enabled ~= false
+	local saved_enabled = G_reader_settings:readSetting(SETTINGS.enabled)
+	self.enabled = saved_enabled ~= false
 
-    local saved_font_size = G_reader_settings:readSetting(SETTINGS.font_size)
-    self.font_size = self:normalizeFontSize(saved_font_size or FONT.default_size)
-    self.refresh_region_font_size = self.font_size
+	local saved_font_size = G_reader_settings:readSetting(SETTINGS.font_size)
+	self.font_size = self:normalizeFontSize(saved_font_size or FONT.default_size)
+	self.refresh_region_font_size = self.font_size
+
+	local saved_follow_document_margins = G_reader_settings:readSetting(SETTINGS.follow_document_margins)
+	self.follow_document_margins = saved_follow_document_margins ~= false
+
+	local saved_left_margin = G_reader_settings:readSetting(SETTINGS.custom_left_margin)
+	local saved_right_margin = G_reader_settings:readSetting(SETTINGS.custom_right_margin)
+	local saved_horizontal_margin = G_reader_settings:readSetting(SETTINGS.custom_horizontal_margin)
+
+	self.custom_left_margin = self:normalizeIndicatorMargin(saved_left_margin or INDICATOR_MARGINS.default_left)
+	self.custom_right_margin = self:normalizeIndicatorMargin(saved_right_margin or INDICATOR_MARGINS.default_right)
+
+	-- This value feeds the “both margins” menu item. It is intentionally
+	-- independent from left/right so the menu can remember the last common
+	-- margin used, even after fine-tuning only one side later.
+	self.custom_horizontal_margin = self:normalizeIndicatorMargin(
+		saved_horizontal_margin or self.custom_left_margin or INDICATOR_MARGINS.default_left
+	)
 end
 
 function ReaderHeaderFooter:saveEnabled()
-    G_reader_settings:saveSetting(SETTINGS.enabled, self.enabled)
+	G_reader_settings:saveSetting(SETTINGS.enabled, self.enabled)
 end
 
 function ReaderHeaderFooter:saveFontSize()
-    G_reader_settings:saveSetting(SETTINGS.font_size, self.font_size)
+	G_reader_settings:saveSetting(SETTINGS.font_size, self.font_size)
 end
 
 function ReaderHeaderFooter:refreshFontFace()
-    self.font_face = Font:getFace(FONT.name, self.font_size)
+	self.font_face = Font:getFace(FONT.name, self.font_size)
 end
 
 function ReaderHeaderFooter:setFontSize(font_size)
-    local old_font_size = self.font_size
-    local new_font_size = self:normalizeFontSize(font_size)
+	local old_font_size = self.font_size
+	local new_font_size = self:normalizeFontSize(font_size)
 
-    if old_font_size == new_font_size then
-        return
-    end
+	if old_font_size == new_font_size then
+		return
+	end
 
-    self.font_size = new_font_size
-    self.refresh_region_font_size = math.max(old_font_size, new_font_size)
+	self.font_size = new_font_size
+	self.refresh_region_font_size = math.max(old_font_size, new_font_size)
 
-    self:saveFontSize()
-    self:refreshFontFace()
+	self:saveFontSize()
+	self:refreshFontFace()
 end
 
 function ReaderHeaderFooter:resetFontSize()
-    self:setFontSize(FONT.default_size)
-    G_reader_settings:delSetting(SETTINGS.font_size)
+	self:setFontSize(FONT.default_size)
+	G_reader_settings:delSetting(SETTINGS.font_size)
+end
+
+function ReaderHeaderFooter:normalizeIndicatorMargin(value)
+	return clamp(value or INDICATOR_MARGINS.default_left, INDICATOR_MARGINS.min, INDICATOR_MARGINS.max)
+end
+
+function ReaderHeaderFooter:usesDocumentMargins()
+	return self.follow_document_margins ~= false
+end
+
+function ReaderHeaderFooter:rememberIndicatorRegionsForCleanup()
+	if not self:hasReaderContext() then
+		return
+	end
+
+	self.extra_top_refresh_region, self.extra_bottom_refresh_region = self:getIndicatorRefreshRegions()
+end
+
+function ReaderHeaderFooter:setFollowDocumentMargins(enabled)
+	local new_value = enabled == true
+
+	if self.follow_document_margins == new_value then
+		return
+	end
+
+	self:rememberIndicatorRegionsForCleanup()
+	self.follow_document_margins = new_value
+	G_reader_settings:saveSetting(SETTINGS.follow_document_margins, self.follow_document_margins)
+end
+
+function ReaderHeaderFooter:setCustomIndicatorMargin(side, value)
+	local new_value = self:normalizeIndicatorMargin(value)
+
+	self:rememberIndicatorRegionsForCleanup()
+
+	if side == "left" then
+		if self.custom_left_margin == new_value then
+			return
+		end
+		self.custom_left_margin = new_value
+		G_reader_settings:saveSetting(SETTINGS.custom_left_margin, self.custom_left_margin)
+	elseif side == "right" then
+		if self.custom_right_margin == new_value then
+			return
+		end
+		self.custom_right_margin = new_value
+		G_reader_settings:saveSetting(SETTINGS.custom_right_margin, self.custom_right_margin)
+	end
+end
+
+function ReaderHeaderFooter:setCustomHorizontalMargin(value)
+	local new_value = self:normalizeIndicatorMargin(value)
+
+	if
+		self.custom_left_margin == new_value
+		and self.custom_right_margin == new_value
+		and self.custom_horizontal_margin == new_value
+	then
+		return
+	end
+
+	-- Capture the old top/bottom regions before moving both sides, so a
+	-- regional refresh also clears stale text at the previous coordinates.
+	self:rememberIndicatorRegionsForCleanup()
+
+	self.custom_horizontal_margin = new_value
+	self.custom_left_margin = new_value
+	self.custom_right_margin = new_value
+
+	G_reader_settings:saveSetting(SETTINGS.custom_horizontal_margin, self.custom_horizontal_margin)
+	G_reader_settings:saveSetting(SETTINGS.custom_left_margin, self.custom_left_margin)
+	G_reader_settings:saveSetting(SETTINGS.custom_right_margin, self.custom_right_margin)
 end
 
 function ReaderHeaderFooter:setEnabled(enabled)
-    local old_enabled = self:isEnabled()
-    self.enabled = enabled == true
-    self:saveEnabled()
+	local old_enabled = self:isEnabled()
+	self.enabled = enabled == true
+	self:saveEnabled()
 
-    if self:isEnabled() then
-        self:rememberCurrentIndicatorState()
-        self:startClockWatcher()
-        self:startBatteryWatcher()
-    else
-        self:stopClockWatcher()
-        self:stopBatteryWatcher()
-        self:stopDeferredRefreshCheck()
-    end
+	if self:isEnabled() then
+		self:rememberCurrentIndicatorState()
+		self:startClockWatcher()
+		self:startBatteryWatcher()
+	else
+		self:stopClockWatcher()
+		self:stopBatteryWatcher()
+		self:stopDeferredRefreshCheck()
+	end
 
-    -- Redraw the indicator regions after the menu/dialog closes. When disabling,
-    -- this clears the old overlay; when enabling, it draws it again.
-    if old_enabled ~= self:isEnabled() then
-        UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
-            self:requestAllIndicatorRefresh()
-        end)
-    end
+	-- Redraw the indicator regions after the menu/dialog closes. When disabling,
+	-- this clears the old overlay; when enabling, it draws it again.
+	if old_enabled ~= self:isEnabled() then
+		UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
+			self:requestAllIndicatorRefresh()
+		end)
+	end
 end
 
 function ReaderHeaderFooter:toggleEnabled()
-    self:setEnabled(not self:isEnabled())
+	self:setEnabled(not self:isEnabled())
 end
 
 -- ============================================================================
@@ -213,107 +323,251 @@ end
 -- ============================================================================
 
 function ReaderHeaderFooter:registerMenu()
-    if self.menu_registered then
-        logger.dbg(PLUGIN_NAME .. ": menu already registered")
-        return
-    end
+	if self.menu_registered then
+		logger.dbg(PLUGIN_NAME .. ": menu already registered")
+		return
+	end
 
-    if self.ui and self.ui.menu and self.ui.menu.registerToMainMenu then
-        logger.dbg(PLUGIN_NAME .. ": registering reader menu")
-        self.ui.menu:registerToMainMenu(self)
-        self.menu_registered = true
-    else
-        -- This may happen during init(); onReaderReady() will try again.
-        logger.dbg(PLUGIN_NAME .. ": reader menu not available yet")
-    end
+	if self.ui and self.ui.menu and self.ui.menu.registerToMainMenu then
+		logger.dbg(PLUGIN_NAME .. ": registering reader menu")
+		self.ui.menu:registerToMainMenu(self)
+		self.menu_registered = true
+	else
+		-- This may happen during init(); onReaderReady() will try again.
+		logger.dbg(PLUGIN_NAME .. ": reader menu not available yet")
+	end
 end
 
 function ReaderHeaderFooter:addToMainMenu(menu_items)
-    menu_items.reader_header_footer = {
-        text = _("Header/footer indicators"),
-        sorting_hint = "setting",
-        sub_item_table = {
-            {
-                text_func = function()
-                    return self:isEnabled() and _("Disable plugin") or _("Enable plugin")
-                end,
+	menu_items.reader_header_footer = {
+		text = _("Header/footer indicators"),
+		sorting_hint = "setting",
+		sub_item_table = {
+			{
+				text_func = function()
+					return self:isEnabled() and _("Disable plugin") or _("Enable plugin")
+				end,
 
-                checked_func = function()
-                    return self:isEnabled()
-                end,
+				checked_func = function()
+					return self:isEnabled()
+				end,
 
-                callback = function(touchmenu_instance)
-                    self:toggleEnabled()
+				callback = function(touchmenu_instance)
+					self:toggleEnabled()
 
-                    if touchmenu_instance and touchmenu_instance.updateItems then
-                        touchmenu_instance:updateItems()
-                    end
-                end,
-            },
+					if touchmenu_instance and touchmenu_instance.updateItems then
+						touchmenu_instance:updateItems()
+					end
+				end,
+			},
 
-            {
-                text_func = function()
-                    return string.format(_("Font size: %d"), self.font_size)
-                end,
+			{
+				text_func = function()
+					return string.format(_("Font size: %d"), self.font_size)
+				end,
 
-                -- Keep visible but disabled when the plugin is off.
-                enabled_func = function()
-                    return self:isEnabled()
-                end,
+				-- Keep visible but disabled when the plugin is off.
+				enabled_func = function()
+					return self:isEnabled()
+				end,
 
-                callback = function(touchmenu_instance)
-                    if not self:isEnabled() then
-                        return
-                    end
+				callback = function(touchmenu_instance)
+					if not self:isEnabled() then
+						return
+					end
 
-                    local widget = SpinWidget:new({
-                        title_text = _("Header/footer font size"),
-                        value = self.font_size,
-                        value_min = FONT.min_size,
-                        value_max = FONT.max_size,
-                        default_value = FONT.default_size,
-                        keep_shown_on_apply = false,
+					local widget = SpinWidget:new({
+						title_text = _("Header/footer font size"),
+						value = self.font_size,
+						value_min = FONT.min_size,
+						value_max = FONT.max_size,
+						default_value = FONT.default_size,
+						keep_shown_on_apply = false,
 
-                        callback = function(spin)
-                            self:setFontSize(spin.value)
+						callback = function(spin)
+							self:setFontSize(spin.value)
 
-                            if touchmenu_instance and touchmenu_instance.updateItems then
-                                touchmenu_instance:updateItems()
-                            end
+							if touchmenu_instance and touchmenu_instance.updateItems then
+								touchmenu_instance:updateItems()
+							end
 
-                            -- Let the spin dialog close first; otherwise the regional
-                            -- refresh could be deferred by the menu protection logic.
-                            UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
-                                self:requestAllIndicatorRefresh()
-                            end)
-                        end,
-                    })
+							-- Let the spin dialog close first; otherwise the regional
+							-- refresh could be deferred by the menu protection logic.
+							UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
+								self:requestAllIndicatorRefresh()
+							end)
+						end,
+					})
 
-                    UIManager:show(widget)
-                end,
-            },
+					UIManager:show(widget)
+				end,
+			},
 
-            {
-                text = _("Reset font size"),
+			{
+				text = _("Reset font size"),
 
-                enabled_func = function()
-                    return self:isEnabled()
-                end,
+				enabled_func = function()
+					return self:isEnabled()
+				end,
 
-                callback = function(touchmenu_instance)
-                    self:resetFontSize()
+				callback = function(touchmenu_instance)
+					self:resetFontSize()
 
-                    if touchmenu_instance and touchmenu_instance.updateItems then
-                        touchmenu_instance:updateItems()
-                    end
+					if touchmenu_instance and touchmenu_instance.updateItems then
+						touchmenu_instance:updateItems()
+					end
 
-                    UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
-                        self:requestAllIndicatorRefresh()
-                    end)
-                end,
-            },
-        },
-    }
+					UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
+						self:requestAllIndicatorRefresh()
+					end)
+				end,
+			},
+
+			{
+				text = _("Follow document margins"),
+
+				checked_func = function()
+					return self:usesDocumentMargins()
+				end,
+
+				enabled_func = function()
+					return self:isEnabled()
+				end,
+
+				callback = function(touchmenu_instance)
+					self:setFollowDocumentMargins(not self:usesDocumentMargins())
+
+					if touchmenu_instance and touchmenu_instance.updateItems then
+						touchmenu_instance:updateItems()
+					end
+
+					UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
+						self:requestAllIndicatorRefresh()
+					end)
+				end,
+			},
+
+			{
+				text_func = function()
+					return string.format(_("Custom side margins: %d"), self.custom_horizontal_margin)
+				end,
+
+				-- Applies the same custom margin to both sides. Like the
+				-- individual controls, it is only meaningful in manual mode.
+				enabled_func = function()
+					return self:isEnabled() and not self:usesDocumentMargins()
+				end,
+
+				callback = function(touchmenu_instance)
+					if not self:isEnabled() or self:usesDocumentMargins() then
+						return
+					end
+
+					local widget = SpinWidget:new({
+						title_text = _("Custom side indicator margins"),
+						value = self.custom_horizontal_margin,
+						value_min = INDICATOR_MARGINS.min,
+						value_max = INDICATOR_MARGINS.max,
+						default_value = INDICATOR_MARGINS.default_left,
+						keep_shown_on_apply = false,
+
+						callback = function(spin)
+							self:setCustomHorizontalMargin(spin.value)
+
+							if touchmenu_instance and touchmenu_instance.updateItems then
+								touchmenu_instance:updateItems()
+							end
+
+							UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
+								self:requestAllIndicatorRefresh()
+							end)
+						end,
+					})
+
+					UIManager:show(widget)
+				end,
+			},
+
+			{
+				text_func = function()
+					return string.format(_("Custom left margin: %d"), self.custom_left_margin)
+				end,
+
+				-- Custom margins only apply when the document-margin checkbox is off.
+				enabled_func = function()
+					return self:isEnabled() and not self:usesDocumentMargins()
+				end,
+
+				callback = function(touchmenu_instance)
+					if not self:isEnabled() or self:usesDocumentMargins() then
+						return
+					end
+
+					local widget = SpinWidget:new({
+						title_text = _("Custom left indicator margin"),
+						value = self.custom_left_margin,
+						value_min = INDICATOR_MARGINS.min,
+						value_max = INDICATOR_MARGINS.max,
+						default_value = INDICATOR_MARGINS.default_left,
+						keep_shown_on_apply = false,
+
+						callback = function(spin)
+							self:setCustomIndicatorMargin("left", spin.value)
+
+							if touchmenu_instance and touchmenu_instance.updateItems then
+								touchmenu_instance:updateItems()
+							end
+
+							UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
+								self:requestAllIndicatorRefresh()
+							end)
+						end,
+					})
+
+					UIManager:show(widget)
+				end,
+			},
+
+			{
+				text_func = function()
+					return string.format(_("Custom right margin: %d"), self.custom_right_margin)
+				end,
+
+				enabled_func = function()
+					return self:isEnabled() and not self:usesDocumentMargins()
+				end,
+
+				callback = function(touchmenu_instance)
+					if not self:isEnabled() or self:usesDocumentMargins() then
+						return
+					end
+
+					local widget = SpinWidget:new({
+						title_text = _("Custom right indicator margin"),
+						value = self.custom_right_margin,
+						value_min = INDICATOR_MARGINS.min,
+						value_max = INDICATOR_MARGINS.max,
+						default_value = INDICATOR_MARGINS.default_right,
+						keep_shown_on_apply = false,
+
+						callback = function(spin)
+							self:setCustomIndicatorMargin("right", spin.value)
+
+							if touchmenu_instance and touchmenu_instance.updateItems then
+								touchmenu_instance:updateItems()
+							end
+
+							UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
+								self:requestAllIndicatorRefresh()
+							end)
+						end,
+					})
+
+					UIManager:show(widget)
+				end,
+			},
+		},
+	}
 end
 
 -- ============================================================================
@@ -321,143 +575,157 @@ end
 -- ============================================================================
 
 function ReaderHeaderFooter:getReaderWindowWidget()
-    if self.ui and self.ui.view and self.ui.view.dialog then
-        return self.ui.view.dialog
-    end
-    return nil
+	if self.ui and self.ui.view and self.ui.view.dialog then
+		return self.ui.view.dialog
+	end
+	return nil
 end
 
 function ReaderHeaderFooter:isReaderWindowOnTop()
-    local reader_widget = self:getReaderWindowWidget()
-    if not reader_widget then
-        return false
-    end
+	local reader_widget = self:getReaderWindowWidget()
+	if not reader_widget then
+		return false
+	end
 
-    return UIManager:getTopmostVisibleWidget() == reader_widget
+	return UIManager:getTopmostVisibleWidget() == reader_widget
 end
 
 function ReaderHeaderFooter:deferIndicatorRefresh(which)
-    if which == "top" then
-        self.deferred_top_refresh = true
-    elseif which == "bottom" then
-        self.deferred_bottom_refresh = true
-    elseif which == "all" then
-        self.deferred_top_refresh = true
-        self.deferred_bottom_refresh = true
-    end
+	if which == "top" then
+		self.deferred_top_refresh = true
+	elseif which == "bottom" then
+		self.deferred_bottom_refresh = true
+	elseif which == "all" then
+		self.deferred_top_refresh = true
+		self.deferred_bottom_refresh = true
+	end
 
-    self:scheduleDeferredRefreshCheck()
+	self:scheduleDeferredRefreshCheck()
 end
 
 function ReaderHeaderFooter:scheduleDeferredRefreshCheck()
-    if self.deferred_refresh_fn then
-        return
-    end
+	if self.deferred_refresh_fn then
+		return
+	end
 
-    self.deferred_refresh_fn = function()
-        self.deferred_refresh_fn = nil
+	self.deferred_refresh_fn = function()
+		self.deferred_refresh_fn = nil
 
-        if not self.ui or not self.ui.document then
-            self.deferred_top_refresh = false
-            self.deferred_bottom_refresh = false
-            return
-        end
+		if not self.ui or not self.ui.document then
+			self.deferred_top_refresh = false
+			self.deferred_bottom_refresh = false
+			return
+		end
 
-        -- Do not repaint the reader while a KOReader menu/dialog is on top.
-        if not self:isReaderWindowOnTop() then
-            self:scheduleDeferredRefreshCheck()
-            return
-        end
+		-- Do not repaint the reader while a KOReader menu/dialog is on top.
+		if not self:isReaderWindowOnTop() then
+			self:scheduleDeferredRefreshCheck()
+			return
+		end
 
-        local refresh_top = self.deferred_top_refresh
-        local refresh_bottom = self.deferred_bottom_refresh
+		local refresh_top = self.deferred_top_refresh
+		local refresh_bottom = self.deferred_bottom_refresh
 
-        self.deferred_top_refresh = false
-        self.deferred_bottom_refresh = false
+		self.deferred_top_refresh = false
+		self.deferred_bottom_refresh = false
 
-        if refresh_top then
-            self:requestTopIndicatorRefresh()
-        end
+		if refresh_top then
+			self:requestTopIndicatorRefresh()
+		end
 
-        if refresh_bottom then
-            self:requestBottomIndicatorRefresh()
-        end
-    end
+		if refresh_bottom then
+			self:requestBottomIndicatorRefresh()
+		end
+	end
 
-    -- This check does not repaint anything; it only waits for menus to close.
-    UIManager:scheduleIn(REFRESH.deferred_menu_check_interval, self.deferred_refresh_fn)
+	-- This check does not repaint anything; it only waits for menus to close.
+	UIManager:scheduleIn(REFRESH.deferred_menu_check_interval, self.deferred_refresh_fn)
 end
 
 function ReaderHeaderFooter:stopDeferredRefreshCheck()
-    if self.deferred_refresh_fn then
-        UIManager:unschedule(self.deferred_refresh_fn)
-        self.deferred_refresh_fn = nil
-    end
+	if self.deferred_refresh_fn then
+		UIManager:unschedule(self.deferred_refresh_fn)
+		self.deferred_refresh_fn = nil
+	end
 
-    self.deferred_top_refresh = false
-    self.deferred_bottom_refresh = false
+	self.deferred_top_refresh = false
+	self.deferred_bottom_refresh = false
 end
 
 function ReaderHeaderFooter:requestRegionRefresh(region)
-    if not self:hasReaderContext() then
-        return
-    end
+	if not self:hasReaderContext() then
+		return
+	end
 
-    -- "ui" is preferable for small UI overlays; it avoids heavier page refreshes.
-    UIManager:setDirty(self.ui.view.dialog, "ui", region)
+	-- "ui" is preferable for small UI overlays; it avoids heavier page refreshes.
+	UIManager:setDirty(self.ui.view.dialog, "ui", region)
 end
 
 function ReaderHeaderFooter:requestTopIndicatorRefresh()
-    if self.top_refresh_pending then
-        return
-    end
+	if self.top_refresh_pending then
+		return
+	end
 
-    self.top_refresh_pending = true
+	self.top_refresh_pending = true
 
-    UIManager:nextTick(function()
-        self.top_refresh_pending = false
+	UIManager:nextTick(function()
+		self.top_refresh_pending = false
 
-        if not self:hasReaderContext() then
-            return
-        end
+		if not self:hasReaderContext() then
+			return
+		end
 
-        if not self:isReaderWindowOnTop() then
-            self:deferIndicatorRefresh("top")
-            return
-        end
+		if not self:isReaderWindowOnTop() then
+			self:deferIndicatorRefresh("top")
+			return
+		end
 
-        local top_region = self:getIndicatorRefreshRegions()
-        self:requestRegionRefresh(top_region)
-    end)
+		local extra_region = self.extra_top_refresh_region
+		self.extra_top_refresh_region = nil
+
+		if extra_region then
+			self:requestRegionRefresh(extra_region)
+		end
+
+		local top_region = self:getIndicatorRefreshRegions()
+		self:requestRegionRefresh(top_region)
+	end)
 end
 
 function ReaderHeaderFooter:requestBottomIndicatorRefresh()
-    if self.bottom_refresh_pending then
-        return
-    end
+	if self.bottom_refresh_pending then
+		return
+	end
 
-    self.bottom_refresh_pending = true
+	self.bottom_refresh_pending = true
 
-    UIManager:nextTick(function()
-        self.bottom_refresh_pending = false
+	UIManager:nextTick(function()
+		self.bottom_refresh_pending = false
 
-        if not self:hasReaderContext() then
-            return
-        end
+		if not self:hasReaderContext() then
+			return
+		end
 
-        if not self:isReaderWindowOnTop() then
-            self:deferIndicatorRefresh("bottom")
-            return
-        end
+		if not self:isReaderWindowOnTop() then
+			self:deferIndicatorRefresh("bottom")
+			return
+		end
 
-        local _, bottom_region = self:getIndicatorRefreshRegions()
-        self:requestRegionRefresh(bottom_region)
-    end)
+		local extra_region = self.extra_bottom_refresh_region
+		self.extra_bottom_refresh_region = nil
+
+		if extra_region then
+			self:requestRegionRefresh(extra_region)
+		end
+
+		local _, bottom_region = self:getIndicatorRefreshRegions()
+		self:requestRegionRefresh(bottom_region)
+	end)
 end
 
 function ReaderHeaderFooter:requestAllIndicatorRefresh()
-    self:requestTopIndicatorRefresh()
-    self:requestBottomIndicatorRefresh()
+	self:requestTopIndicatorRefresh()
+	self:requestBottomIndicatorRefresh()
 end
 
 -- ============================================================================
@@ -465,152 +733,152 @@ end
 -- ============================================================================
 
 function ReaderHeaderFooter:getWifiState()
-    return safe_call(function()
-        return NetworkMgr:isWifiOn()
-    end, false)
+	return safe_call(function()
+		return NetworkMgr:isWifiOn()
+	end, false)
 end
 
 function ReaderHeaderFooter:getPowerSnapshot()
-    if not Device:hasBattery() then
-        return { level = nil, charging = false }
-    end
+	if not Device:hasBattery() then
+		return { level = nil, charging = false }
+	end
 
-    local powerd = Device:getPowerDevice()
-    if not powerd then
-        return { level = nil, charging = false }
-    end
+	local powerd = Device:getPowerDevice()
+	if not powerd then
+		return { level = nil, charging = false }
+	end
 
-    return {
-        level = safe_call(function()
-            return powerd:getCapacity()
-        end, nil),
+	return {
+		level = safe_call(function()
+			return powerd:getCapacity()
+		end, nil),
 
-        charging = safe_call(function()
-            return powerd:isCharging()
-        end, false),
-    }
+		charging = safe_call(function()
+			return powerd:isCharging()
+		end, false),
+	}
 end
 
 function ReaderHeaderFooter:rememberCurrentIndicatorState()
-    local power = self:getPowerSnapshot()
+	local power = self:getPowerSnapshot()
 
-    self.last_wifi_on = self:getWifiState()
-    self.last_battery_level = power.level
-    self.last_charging = power.charging
+	self.last_wifi_on = self:getWifiState()
+	self.last_battery_level = power.level
+	self.last_charging = power.charging
 end
 
 function ReaderHeaderFooter:startClockWatcher()
-    if self.clock_refresh_fn then
-        return
-    end
+	if self.clock_refresh_fn then
+		return
+	end
 
-    self.clock_refresh_fn = function()
-        self.clock_refresh_fn = nil
+	self.clock_refresh_fn = function()
+		self.clock_refresh_fn = nil
 
-        if not self.ui or not self.ui.document or not self:isEnabled() then
-            return
-        end
+		if not self.ui or not self.ui.document or not self:isEnabled() then
+			return
+		end
 
-        self:requestTopIndicatorRefresh()
-        self:startClockWatcher()
-    end
+		self:requestTopIndicatorRefresh()
+		self:startClockWatcher()
+	end
 
-    -- Align refresh to the next minute, because the clock displays HH:MM only.
-    local seconds_now = tonumber(os.date("%S")) or 0
-    local delay = 60 - seconds_now
-    if delay <= 0 then
-        delay = 60
-    end
+	-- Align refresh to the next minute, because the clock displays HH:MM only.
+	local seconds_now = tonumber(os.date("%S")) or 0
+	local delay = 60 - seconds_now
+	if delay <= 0 then
+		delay = 60
+	end
 
-    UIManager:scheduleIn(delay, self.clock_refresh_fn)
+	UIManager:scheduleIn(delay, self.clock_refresh_fn)
 end
 
 function ReaderHeaderFooter:stopClockWatcher()
-    if self.clock_refresh_fn then
-        UIManager:unschedule(self.clock_refresh_fn)
-        self.clock_refresh_fn = nil
-    end
+	if self.clock_refresh_fn then
+		UIManager:unschedule(self.clock_refresh_fn)
+		self.clock_refresh_fn = nil
+	end
 end
 
 function ReaderHeaderFooter:startBatteryWatcher()
-    if self.battery_check_fn then
-        return
-    end
+	if self.battery_check_fn then
+		return
+	end
 
-    self.battery_check_fn = function()
-        self.battery_check_fn = nil
+	self.battery_check_fn = function()
+		self.battery_check_fn = nil
 
-        if not self.ui or not self.ui.document or not self:isEnabled() then
-            return
-        end
+		if not self.ui or not self.ui.document or not self:isEnabled() then
+			return
+		end
 
-        local power = self:getPowerSnapshot()
+		local power = self:getPowerSnapshot()
 
-        if power.level ~= self.last_battery_level or power.charging ~= self.last_charging then
-            self.last_battery_level = power.level
-            self.last_charging = power.charging
-            self:requestTopIndicatorRefresh()
-        end
+		if power.level ~= self.last_battery_level or power.charging ~= self.last_charging then
+			self.last_battery_level = power.level
+			self.last_charging = power.charging
+			self:requestTopIndicatorRefresh()
+		end
 
-        self:startBatteryWatcher()
-    end
+		self:startBatteryWatcher()
+	end
 
-    UIManager:scheduleIn(REFRESH.battery_check_interval, self.battery_check_fn)
+	UIManager:scheduleIn(REFRESH.battery_check_interval, self.battery_check_fn)
 end
 
 function ReaderHeaderFooter:stopBatteryWatcher()
-    if self.battery_check_fn then
-        UIManager:unschedule(self.battery_check_fn)
-        self.battery_check_fn = nil
-    end
+	if self.battery_check_fn then
+		UIManager:unschedule(self.battery_check_fn)
+		self.battery_check_fn = nil
+	end
 end
 
 function ReaderHeaderFooter:onNetworkConnected()
-    if not self:isEnabled() then
-        return
-    end
+	if not self:isEnabled() then
+		return
+	end
 
-    local wifi_on = self:getWifiState()
-    if wifi_on ~= self.last_wifi_on then
-        self.last_wifi_on = wifi_on
-        self:requestTopIndicatorRefresh()
-    end
+	local wifi_on = self:getWifiState()
+	if wifi_on ~= self.last_wifi_on then
+		self.last_wifi_on = wifi_on
+		self:requestTopIndicatorRefresh()
+	end
 end
 
 function ReaderHeaderFooter:onNetworkDisconnected()
-    if not self:isEnabled() then
-        return
-    end
+	if not self:isEnabled() then
+		return
+	end
 
-    local wifi_on = self:getWifiState()
-    if wifi_on ~= self.last_wifi_on then
-        self.last_wifi_on = wifi_on
-        self:requestTopIndicatorRefresh()
-    end
+	local wifi_on = self:getWifiState()
+	if wifi_on ~= self.last_wifi_on then
+		self.last_wifi_on = wifi_on
+		self:requestTopIndicatorRefresh()
+	end
 end
 
 function ReaderHeaderFooter:onCharging()
-    if not self:isEnabled() then
-        return
-    end
+	if not self:isEnabled() then
+		return
+	end
 
-    local power = self:getPowerSnapshot()
-    self.last_battery_level = power.level
-    self.last_charging = power.charging
+	local power = self:getPowerSnapshot()
+	self.last_battery_level = power.level
+	self.last_charging = power.charging
 
-    self:requestTopIndicatorRefresh()
+	self:requestTopIndicatorRefresh()
 end
 
 function ReaderHeaderFooter:onNotCharging()
-    if not self:isEnabled() then
-        return
-    end
+	if not self:isEnabled() then
+		return
+	end
 
-    local power = self:getPowerSnapshot()
-    self.last_battery_level = power.level
-    self.last_charging = power.charging
+	local power = self:getPowerSnapshot()
+	self.last_battery_level = power.level
+	self.last_charging = power.charging
 
-    self:requestTopIndicatorRefresh()
+	self:requestTopIndicatorRefresh()
 end
 
 -- ============================================================================
@@ -618,99 +886,101 @@ end
 -- ============================================================================
 
 function ReaderHeaderFooter:init()
-    self:loadSettings()
-    self:refreshFontFace()
+	self:loadSettings()
+	self:refreshFontFace()
 
-    if self.ui and self.ui.view and self.ui.view.registerViewModule then
-        self.ui.view:registerViewModule(self.name, self)
-    end
+	if self.ui and self.ui.view and self.ui.view.registerViewModule then
+		self.ui.view:registerViewModule(self.name, self)
+	end
 
-    -- self.ui.menu may not be ready yet; onReaderReady() retries this.
-    self:registerMenu()
+	-- self.ui.menu may not be ready yet; onReaderReady() retries this.
+	self:registerMenu()
 end
 
 function ReaderHeaderFooter:onReaderReady()
-    self:registerMenu()
+	self:registerMenu()
 
-    if self.ui and self.ui.document then
-        self.pages = safe_call(function()
-            return self.ui.document:getPageCount()
-        end, nil)
-    end
+	if self.ui and self.ui.document then
+		self.pages = safe_call(function()
+			return self.ui.document:getPageCount()
+		end, nil)
+	end
 
-    if self.ui and self.ui.view and self.ui.view.state then
-        self.pageno = self.ui.view.state.page
-    end
+	if self.ui and self.ui.view and self.ui.view.state then
+		self.pageno = self.ui.view.state.page
+	end
 
-    self:rememberCurrentIndicatorState()
+	self:rememberCurrentIndicatorState()
 
-    if self:isEnabled() then
-        self:startClockWatcher()
-        self:startBatteryWatcher()
-    end
+	if self:isEnabled() then
+		self:startClockWatcher()
+		self:startBatteryWatcher()
+	end
 end
 
 function ReaderHeaderFooter:onCloseDocument()
-    self:stopClockWatcher()
-    self:stopBatteryWatcher()
-    self:stopDeferredRefreshCheck()
+	self:stopClockWatcher()
+	self:stopBatteryWatcher()
+	self:stopDeferredRefreshCheck()
 end
 
 function ReaderHeaderFooter:onResume()
-    if not self:isEnabled() then
-        self:stopClockWatcher()
-        self:stopBatteryWatcher()
-        self:stopDeferredRefreshCheck()
-        return
-    end
+	if not self:isEnabled() then
+		self:stopClockWatcher()
+		self:stopBatteryWatcher()
+		self:stopDeferredRefreshCheck()
+		return
+	end
 
-    local old_wifi = self.last_wifi_on
-    local old_battery = self.last_battery_level
-    local old_charging = self.last_charging
+	local old_wifi = self.last_wifi_on
+	local old_battery = self.last_battery_level
+	local old_charging = self.last_charging
 
-    local power = self:getPowerSnapshot()
+	local power = self:getPowerSnapshot()
 
-    self.last_wifi_on = self:getWifiState()
-    self.last_battery_level = power.level
-    self.last_charging = power.charging
+	self.last_wifi_on = self:getWifiState()
+	self.last_battery_level = power.level
+	self.last_charging = power.charging
 
-    if old_wifi ~= self.last_wifi_on
-        or old_battery ~= self.last_battery_level
-        or old_charging ~= self.last_charging then
-        self:requestTopIndicatorRefresh()
-    end
+	if
+		old_wifi ~= self.last_wifi_on
+		or old_battery ~= self.last_battery_level
+		or old_charging ~= self.last_charging
+	then
+		self:requestTopIndicatorRefresh()
+	end
 
-    self:startClockWatcher()
-    self:startBatteryWatcher()
-    self:scheduleDeferredRefreshCheck()
+	self:startClockWatcher()
+	self:startBatteryWatcher()
+	self:scheduleDeferredRefreshCheck()
 end
 
 function ReaderHeaderFooter:onPageUpdate(pageno)
-    self.pageno = pageno
+	self.pageno = pageno
 
-    if self:isEnabled() then
-        self:requestAllIndicatorRefresh()
-    end
+	if self:isEnabled() then
+		self:requestAllIndicatorRefresh()
+	end
 end
 
 function ReaderHeaderFooter:onPosUpdate(_, pageno)
-    if pageno then
-        self.pageno = pageno
+	if pageno then
+		self.pageno = pageno
 
-        if self:isEnabled() then
-            self:requestAllIndicatorRefresh()
-        end
-    end
+		if self:isEnabled() then
+			self:requestAllIndicatorRefresh()
+		end
+	end
 end
 
 function ReaderHeaderFooter:onViewRecalculate(visible_area, page_area)
-    self.visible_area = visible_area and visible_area:copy() or nil
-    self.page_area = page_area and page_area:copy() or nil
+	self.visible_area = visible_area and visible_area:copy() or nil
+	self.page_area = page_area and page_area:copy() or nil
 end
 
 function ReaderHeaderFooter:onSetDimensions()
-    -- Kept intentionally: KOReader may call this after orientation/layout changes.
-    -- Current drawing code recalculates dimensions lazily in paintTo().
+	-- Kept intentionally: KOReader may call this after orientation/layout changes.
+	-- Current drawing code recalculates dimensions lazily in paintTo().
 end
 
 -- ============================================================================
@@ -718,118 +988,118 @@ end
 -- ============================================================================
 
 function ReaderHeaderFooter:getCurrentPage()
-    if self.pageno then
-        return self.pageno
-    end
+	if self.pageno then
+		return self.pageno
+	end
 
-    if self.ui and self.ui.view and self.ui.view.state then
-        return self.ui.view.state.page
-    end
+	if self.ui and self.ui.view and self.ui.view.state then
+		return self.ui.view.state.page
+	end
 
-    if self.ui and self.ui.document then
-        return safe_call(function()
-            return self.ui.document:getCurrentPage()
-        end, 1)
-    end
+	if self.ui and self.ui.document then
+		return safe_call(function()
+			return self.ui.document:getCurrentPage()
+		end, 1)
+	end
 
-    return 1
+	return 1
 end
 
 function ReaderHeaderFooter:getPageCount()
-    if self.pages then
-        return self.pages
-    end
+	if self.pages then
+		return self.pages
+	end
 
-    if self.ui and self.ui.document then
-        self.pages = safe_call(function()
-            return self.ui.document:getPageCount()
-        end, nil)
-    end
+	if self.ui and self.ui.document then
+		self.pages = safe_call(function()
+			return self.ui.document:getPageCount()
+		end, nil)
+	end
 
-    return self.pages
+	return self.pages
 end
 
 function ReaderHeaderFooter:getTitle()
-    if self.ui and self.ui.doc_props then
-        return self.ui.doc_props.display_title or self.ui.doc_props.title or _("Document")
-    end
+	if self.ui and self.ui.doc_props then
+		return self.ui.doc_props.display_title or self.ui.doc_props.title or _("Document")
+	end
 
-    return _("Document")
+	return _("Document")
 end
 
 function ReaderHeaderFooter:getAuthor()
-    if self.ui and self.ui.doc_props then
-        return self.ui.doc_props.authors or self.ui.doc_props.author or _("Unknown")
-    end
+	if self.ui and self.ui.doc_props then
+		return self.ui.doc_props.authors or self.ui.doc_props.author or _("Unknown")
+	end
 
-    return _("Unknown")
+	return _("Unknown")
 end
 
 function ReaderHeaderFooter:getChapterTitle(pageno)
-    if not self.ui or not self.ui.toc then
-        return ""
-    end
+	if not self.ui or not self.ui.toc then
+		return ""
+	end
 
-    return safe_call(function()
-        return self.ui.toc:getTocTitleByPage(pageno)
-    end, "") or ""
+	return safe_call(function()
+		return self.ui.toc:getTocTitleByPage(pageno)
+	end, "") or ""
 end
 
 function ReaderHeaderFooter:isChapterStart(pageno)
-    if not self.ui or not self.ui.toc or not pageno then
-        return false
-    end
+	if not self.ui or not self.ui.toc or not pageno then
+		return false
+	end
 
-    -- Preferred path: KOReader tells how many pages were already read in chapter.
-    local pages_done = safe_call(function()
-        return self.ui.toc:getChapterPagesDone(pageno)
-    end, nil)
+	-- Preferred path: KOReader tells how many pages were already read in chapter.
+	local pages_done = safe_call(function()
+		return self.ui.toc:getChapterPagesDone(pageno)
+	end, nil)
 
-    if pages_done ~= nil then
-        return pages_done == 0
-    end
+	if pages_done ~= nil then
+		return pages_done == 0
+	end
 
-    -- Fallback: first page where the chapter title differs from previous page.
-    if pageno > 1 then
-        local current = self:getChapterTitle(pageno)
-        local previous = self:getChapterTitle(pageno - 1)
-        return current ~= "" and current ~= previous
-    end
+	-- Fallback: first page where the chapter title differs from previous page.
+	if pageno > 1 then
+		local current = self:getChapterTitle(pageno)
+		local previous = self:getChapterTitle(pageno - 1)
+		return current ~= "" and current ~= previous
+	end
 
-    return true
+	return true
 end
 
 function ReaderHeaderFooter:getPagesLeftInChapter()
-    local pageno = self:getCurrentPage()
+	local pageno = self:getCurrentPage()
 
-    if self.ui and self.ui.toc then
-        local left = safe_call(function()
-            return self.ui.toc:getChapterPagesLeft(pageno)
-        end, nil)
+	if self.ui and self.ui.toc then
+		local left = safe_call(function()
+			return self.ui.toc:getChapterPagesLeft(pageno)
+		end, nil)
 
-        if left ~= nil then
-            return left
-        end
-    end
+		if left ~= nil then
+			return left
+		end
+	end
 
-    if self.ui and self.ui.document then
-        return safe_call(function()
-            return self.ui.document:getTotalPagesLeft(pageno)
-        end, 0)
-    end
+	if self.ui and self.ui.document then
+		return safe_call(function()
+			return self.ui.document:getTotalPagesLeft(pageno)
+		end, 0)
+	end
 
-    return 0
+	return 0
 end
 
 function ReaderHeaderFooter:getPercentageRead()
-    local pageno = self:getCurrentPage()
-    local pages = self:getPageCount()
+	local pageno = self:getCurrentPage()
+	local pages = self:getPageCount()
 
-    if pages and pages > 0 then
-        return math.min(100, math.max(0, (pageno / pages) * 100))
-    end
+	if pages and pages > 0 then
+		return math.min(100, math.max(0, (pageno / pages) * 100))
+	end
 
-    return 0
+	return 0
 end
 
 -- ============================================================================
@@ -837,62 +1107,62 @@ end
 -- ============================================================================
 
 function ReaderHeaderFooter:getBatteryText()
-    if not Device:hasBattery() then
-        return ""
-    end
+	if not Device:hasBattery() then
+		return ""
+	end
 
-    local powerd = Device:getPowerDevice()
-    if not powerd then
-        return ""
-    end
+	local powerd = Device:getPowerDevice()
+	if not powerd then
+		return ""
+	end
 
-    local level = safe_call(function()
-        return powerd:getCapacity()
-    end, nil)
+	local level = safe_call(function()
+		return powerd:getCapacity()
+	end, nil)
 
-    if not level then
-        return ""
-    end
+	if not level then
+		return ""
+	end
 
-    local charging = safe_call(function()
-        return powerd:isCharging()
-    end, false)
+	local charging = safe_call(function()
+		return powerd:isCharging()
+	end, false)
 
-    local charged = safe_call(function()
-        return powerd:isCharged()
-    end, false)
+	local charged = safe_call(function()
+		return powerd:isCharged()
+	end, false)
 
-    local icon = safe_call(function()
-        return powerd:getBatterySymbol(charged, charging, level)
-    end, "")
+	local icon = safe_call(function()
+		return powerd:getBatterySymbol(charged, charging, level)
+	end, "")
 
-    return string.format("%s %d%%", icon, level)
+	return string.format("%s %d%%", icon, level)
 end
 
 function ReaderHeaderFooter:getRightTopStatus()
-    local wifi_icon = self:getWifiState() and " • " or ""
-    local time = os.date("%H:%M")
-    local battery = self:getBatteryText()
+	local wifi_icon = self:getWifiState() and " • " or ""
+	local time = os.date("%H:%M")
+	local battery = self:getBatteryText()
 
-    if battery == "" then
-        return string.format("%s%s", wifi_icon, time)
-    end
+	if battery == "" then
+		return string.format("%s%s", wifi_icon, time)
+	end
 
-    return string.format("%s%s • %s", wifi_icon, time, battery)
+	return string.format("%s%s • %s", wifi_icon, time, battery)
 end
 
 function ReaderHeaderFooter:getLeftTopStatus()
-    local pageno = self:getCurrentPage()
+	local pageno = self:getCurrentPage()
 
-    if self:isChapterStart(pageno) then
-        return ""
-    end
+	if self:isChapterStart(pageno) then
+		return ""
+	end
 
-    if pageno % 2 == 0 then
-        return string.format("%s • %s", self:getAuthor(), self:getTitle())
-    end
+	if pageno % 2 == 0 then
+		return string.format("%s • %s", self:getAuthor(), self:getTitle())
+	end
 
-    return self:getChapterTitle(pageno)
+	return self:getChapterTitle(pageno)
 end
 
 -- ============================================================================
@@ -900,183 +1170,192 @@ end
 -- ============================================================================
 
 function ReaderHeaderFooter:getContentHorizontalBounds()
-    local screen_w = Screen:getWidth()
-    local pad = Screen:scaleBySize(LAYOUT.padding)
+	local screen_w = Screen:getWidth()
+	local pad = Screen:scaleBySize(LAYOUT.padding)
 
-    local left_x = pad
-    local right_x = screen_w - pad
+	local left_x = pad
+	local right_x = screen_w - pad
 
-    local offset_x = 0
-    if self.ui and self.ui.view and self.ui.view.state and self.ui.view.state.offset then
-        offset_x = self.ui.view.state.offset.x or 0
-    end
+	local offset_x = 0
+	if self.ui and self.ui.view and self.ui.view.state and self.ui.view.state.offset then
+		offset_x = self.ui.view.state.offset.x or 0
+	end
 
-    -- Best case: align with real document margins.
-    if self.ui and self.ui.document and self.ui.document.getPageMargins then
-        local ok, margins = pcall(function()
-            return self.ui.document:getPageMargins()
-        end)
+	if self:usesDocumentMargins() then
+		-- Best case: align with real document margins.
+		if self.ui and self.ui.document and self.ui.document.getPageMargins then
+			local ok, margins = pcall(function()
+				return self.ui.document:getPageMargins()
+			end)
 
-        if ok and type(margins) == "table" then
-            local left_margin = margins.left or 0
-            local right_margin = margins.right or 0
+			if ok and type(margins) == "table" then
+				local left_margin = margins.left or 0
+				local right_margin = margins.right or 0
 
-            left_x = math.max(left_x, offset_x + left_margin)
-            right_x = math.min(right_x, screen_w - offset_x - right_margin)
-        end
-    end
+				left_x = math.max(left_x, offset_x + left_margin)
+				right_x = math.min(right_x, screen_w - offset_x - right_margin)
+			end
+		end
 
-    -- Fallback/refinement: also respect the ReaderView visible area.
-    if self.visible_area then
-        left_x = math.max(left_x, self.visible_area.x + pad)
-        right_x = math.min(right_x, self.visible_area.x + self.visible_area.w - pad)
-    end
+		-- Fallback/refinement: also respect the ReaderView visible area when
+		-- following document margins. This keeps indicators aligned with the
+		-- actual reading area after layout/zoom changes.
+		if self.visible_area then
+			left_x = math.max(left_x, self.visible_area.x + pad)
+			right_x = math.min(right_x, self.visible_area.x + self.visible_area.w - pad)
+		end
+	else
+		-- Manual mode: margins are controlled by the plugin settings and do not
+		-- depend on the current book margins.
+		left_x = Screen:scaleBySize(self.custom_left_margin)
+		right_x = screen_w - Screen:scaleBySize(self.custom_right_margin)
+	end
 
-    -- Safety fallback for uncommon layouts.
-    if right_x <= left_x then
-        left_x = pad
-        right_x = screen_w - pad
-    end
+	-- Safety fallback for uncommon layouts or overly large custom margins.
+	if right_x <= left_x then
+		left_x = pad
+		right_x = screen_w - pad
+	end
 
-    return left_x, right_x
+	return left_x, right_x
 end
 
 function ReaderHeaderFooter:getIndicatorRefreshRegions()
-    local screen_w = Screen:getWidth()
-    local screen_h = Screen:getHeight()
+	local screen_w = Screen:getWidth()
+	local screen_h = Screen:getHeight()
 
-    local pad = Screen:scaleBySize(LAYOUT.padding)
-    local extra = Screen:scaleBySize(LAYOUT.text_clear_extra)
+	local pad = Screen:scaleBySize(LAYOUT.padding)
+	local extra = Screen:scaleBySize(LAYOUT.text_clear_extra)
 
-    -- Use the largest recent font size so shrinking text clears old pixels too.
-    local region_font_size = self.refresh_region_font_size or self.font_size
-    local line_h = Screen:scaleBySize(region_font_size + LAYOUT.line_extra_for_region)
+	-- Use the largest recent font size so shrinking text clears old pixels too.
+	local region_font_size = self.refresh_region_font_size or self.font_size
+	local line_h = Screen:scaleBySize(region_font_size + LAYOUT.line_extra_for_region)
 
-    local left_bound, right_bound = self:getContentHorizontalBounds()
-    local region_w = right_bound - left_bound + extra * 2
+	local left_bound, right_bound = self:getContentHorizontalBounds()
+	local region_w = right_bound - left_bound + extra * 2
 
-    local top_region = Geom:new({
-        x = math.max(0, left_bound - extra),
-        y = math.max(0, pad - extra),
-        w = math.min(screen_w, region_w),
-        h = line_h + extra * 2,
-    })
+	local top_region = Geom:new({
+		x = math.max(0, left_bound - extra),
+		y = math.max(0, pad - extra),
+		w = math.min(screen_w, region_w),
+		h = line_h + extra * 2,
+	})
 
-    local bottom_region = Geom:new({
-        x = math.max(0, left_bound - extra),
-        y = math.max(0, screen_h - line_h - pad - extra),
-        w = math.min(screen_w, region_w),
-        h = line_h + extra * 2,
-    })
+	local bottom_region = Geom:new({
+		x = math.max(0, left_bound - extra),
+		y = math.max(0, screen_h - line_h - pad - extra),
+		w = math.min(screen_w, region_w),
+		h = line_h + extra * 2,
+	})
 
-    return top_region, bottom_region
+	return top_region, bottom_region
 end
 
 function ReaderHeaderFooter:getTextSize(text)
-    local widget = TextWidget:new({
-        text = text,
-        face = self.font_face,
-    })
+	local widget = TextWidget:new({
+		text = text,
+		face = self.font_face,
+	})
 
-    local size = widget:getSize()
-    widget:free()
+	local size = widget:getSize()
+	widget:free()
 
-    return size
+	return size
 end
 
 function ReaderHeaderFooter:fitTextToWidth(text, max_width)
-    if not text or text == "" then
-        return ""
-    end
+	if not text or text == "" then
+		return ""
+	end
 
-    if self:getTextSize(text).w <= max_width then
-        return text
-    end
+	if self:getTextSize(text).w <= max_width then
+		return text
+	end
 
-    local ellipsis = "..."
-    local fitted = text
+	local ellipsis = "..."
+	local fitted = text
 
-    while #fitted > 1 and self:getTextSize(fitted .. ellipsis).w > max_width do
-        fitted = fitted:sub(1, -2)
-    end
+	while #fitted > 1 and self:getTextSize(fitted .. ellipsis).w > max_width do
+		fitted = fitted:sub(1, -2)
+	end
 
-    return fitted .. ellipsis
+	return fitted .. ellipsis
 end
 
 function ReaderHeaderFooter:drawText(bb, x, y, text)
-    if not text or text == "" then
-        return
-    end
+	if not text or text == "" then
+		return
+	end
 
-    local widget = TextWidget:new({
-        text = text,
-        face = self.font_face,
-    })
+	local widget = TextWidget:new({
+		text = text,
+		face = self.font_face,
+	})
 
-    widget:paintTo(bb, x, y)
-    widget:free()
+	widget:paintTo(bb, x, y)
+	widget:free()
 end
 
 function ReaderHeaderFooter:clearTextArea(bb, x, y, width, line_h)
-    bb:paintRect(x - 2, y - 1, width + 4, line_h + 2, Blitbuffer.COLOR_WHITE)
+	bb:paintRect(x - 2, y - 1, width + 4, line_h + 2, Blitbuffer.COLOR_WHITE)
 end
 
 function ReaderHeaderFooter:paintTo(bb, x, y)
-    if not self:isEnabled() then
-        return
-    end
+	if not self:isEnabled() then
+		return
+	end
 
-    if not self.ui or not self.ui.document then
-        return
-    end
+	if not self.ui or not self.ui.document then
+		return
+	end
 
-    local screen_h = Screen:getHeight()
-    local pad = Screen:scaleBySize(LAYOUT.padding)
-    local line_h = Screen:scaleBySize(self.font_size + LAYOUT.line_extra_for_paint)
+	local screen_h = Screen:getHeight()
+	local pad = Screen:scaleBySize(LAYOUT.padding)
+	local line_h = Screen:scaleBySize(self.font_size + LAYOUT.line_extra_for_paint)
 
-    local left_bound, right_bound = self:getContentHorizontalBounds()
-    local usable_w = right_bound - left_bound
+	local left_bound, right_bound = self:getContentHorizontalBounds()
+	local usable_w = right_bound - left_bound
 
-    -- Top right: Wi-Fi, clock, battery.
-    local rt_text = self:getRightTopStatus()
-    local rt_size = self:getTextSize(rt_text)
-    local rt_x = right_bound - rt_size.w
-    local rt_y = pad
+	-- Top right: Wi-Fi, clock, battery.
+	local rt_text = self:getRightTopStatus()
+	local rt_size = self:getTextSize(rt_text)
+	local rt_x = right_bound - rt_size.w
+	local rt_y = pad
 
-    self:clearTextArea(bb, rt_x, rt_y, rt_size.w, line_h)
-    self:drawText(bb, rt_x, rt_y, rt_text)
+	self:clearTextArea(bb, rt_x, rt_y, rt_size.w, line_h)
+	self:drawText(bb, rt_x, rt_y, rt_text)
 
-    -- Top left: chapter / author-title, hidden at chapter start.
-    local lt_text = self:getLeftTopStatus()
-    if lt_text ~= "" then
-        local gap = Screen:scaleBySize(LAYOUT.left_right_gap)
-        local max_left_w = math.max(40, usable_w - rt_size.w - gap)
+	-- Top left: chapter / author-title, hidden at chapter start.
+	local lt_text = self:getLeftTopStatus()
+	if lt_text ~= "" then
+		local gap = Screen:scaleBySize(LAYOUT.left_right_gap)
+		local max_left_w = math.max(40, usable_w - rt_size.w - gap)
 
-        lt_text = self:fitTextToWidth(lt_text, max_left_w)
-        local lt_size = self:getTextSize(lt_text)
+		lt_text = self:fitTextToWidth(lt_text, max_left_w)
+		local lt_size = self:getTextSize(lt_text)
 
-        self:clearTextArea(bb, left_bound, pad, lt_size.w, line_h)
-        self:drawText(bb, left_bound, pad, lt_text)
-    end
+		self:clearTextArea(bb, left_bound, pad, lt_size.w, line_h)
+		self:drawText(bb, left_bound, pad, lt_text)
+	end
 
-    -- Bottom left: pages left in chapter.
-    local lb_text = string.format("%d pages left in chapter", self:getPagesLeftInChapter())
-    lb_text = self:fitTextToWidth(lb_text, math.floor(usable_w * 0.6))
+	-- Bottom left: pages left in chapter.
+	local lb_text = string.format("%d pages left in chapter", self:getPagesLeftInChapter())
+	lb_text = self:fitTextToWidth(lb_text, math.floor(usable_w * 0.6))
 
-    local lb_size = self:getTextSize(lb_text)
-    local lb_y = screen_h - line_h - pad
+	local lb_size = self:getTextSize(lb_text)
+	local lb_y = screen_h - line_h - pad
 
-    self:clearTextArea(bb, left_bound, lb_y, lb_size.w, line_h)
-    self:drawText(bb, left_bound, lb_y, lb_text)
+	self:clearTextArea(bb, left_bound, lb_y, lb_size.w, line_h)
+	self:drawText(bb, left_bound, lb_y, lb_text)
 
-    -- Bottom right: read percentage.
-    local rb_text = string.format("%.1f%%", self:getPercentageRead())
-    local rb_size = self:getTextSize(rb_text)
-    local rb_x = right_bound - rb_size.w
-    local rb_y = lb_y
+	-- Bottom right: read percentage.
+	local rb_text = string.format("%.1f%%", self:getPercentageRead())
+	local rb_size = self:getTextSize(rb_text)
+	local rb_x = right_bound - rb_size.w
+	local rb_y = lb_y
 
-    self:clearTextArea(bb, rb_x, rb_y, rb_size.w, line_h)
-    self:drawText(bb, rb_x, rb_y, rb_text)
+	self:clearTextArea(bb, rb_x, rb_y, rb_size.w, line_h)
+	self:drawText(bb, rb_x, rb_y, rb_text)
 end
 
 return ReaderHeaderFooter
