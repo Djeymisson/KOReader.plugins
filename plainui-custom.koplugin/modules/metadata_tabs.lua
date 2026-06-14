@@ -4,6 +4,7 @@
 local userpatch = require("userpatch")
 local Button = require("ui/widget/button")
 local ButtonDialog = require("ui/widget/buttondialog")
+local CenterContainer = require("ui/widget/container/centercontainer")
 local Device = require("device")
 local Event = require("ui/event")
 local FileManager = require("apps/filemanager/filemanager")
@@ -36,9 +37,11 @@ local AUTHOR_SYMBOL = VirtualPath.AUTHOR_SYMBOL
 local SERIES_SYMBOL = VirtualPath.SERIES_SYMBOL
 local TAG_SYMBOL = VirtualPath.KEYWORD_SYMBOL
 
--- Move the metadata navigation tabs (Books/Series/Authors/Tags) from the
+-- Move the metadata navigation tabs (Files/Series/Authors/Tags) from the
 -- title bar to the bottom footer, centered below the page navigation controls.
 local PLAINUI_TABS_AT_BOTTOM = true
+local PLAINUI_BOTTOM_FONT_SIZE = 22
+local PLAINUI_SIDE_MARGIN = Screen:scaleBySize(14)
 
 local function getMetadataLeafInfo(path)
     local base_dir, active_dimension, filter_state = VirtualPath.parse(path)
@@ -318,7 +321,7 @@ function MetadataTabsTitleBar:init()
         return tab
     end
 
-    self.books_tab = makeTab("books", _("Books"), function()
+    self.books_tab = makeTab("books", _("Files"), function()
         openBooks(file_manager)
     end, function()
         file_manager:onShowFolderMenu()
@@ -498,7 +501,9 @@ function MetadataTabsTitleBar:init()
         },
         self.status_stack,
     }
-    table.insert(self, self.status_container)
+    if not PLAINUI_TABS_AT_BOTTOM then
+        table.insert(self, self.status_container)
+    end
 
     self.back_title_width = self.width - self.status_width - self.tab_padding_h
     self.back_button = Button:new{
@@ -561,7 +566,7 @@ function MetadataTabsTitleBar:init()
             h = titlebar_body_height,
         },
         visible_func = function()
-            return self.back_title_info ~= nil
+            return not PLAINUI_TABS_AT_BOTTOM and self.back_title_info ~= nil
         end,
         self.back_stack,
     }
@@ -817,6 +822,61 @@ function MetadataTabsTitleBar:getHeight()
     return self.titlebar_height
 end
 
+function MetadataTabsTitleBar:installPageControls(page_controls, header_status)
+    if not page_controls or self._plainui_header_page_controls then
+        return
+    end
+
+    local controls_size = page_controls:getSize()
+    local status_size = header_status and header_status:getSize() or nil
+    local max_height = self.titlebar_height
+    if controls_size and controls_size.h then
+        max_height = math.max(max_height, controls_size.h)
+    end
+    if status_size and status_size.h then
+        max_height = math.max(max_height, status_size.h)
+    end
+    if max_height > self.titlebar_height then
+        self.titlebar_height = max_height
+        if self.dimen then
+            self.dimen.h = self.titlebar_height
+        end
+    end
+
+    local header_dimen = Geom:new{
+        x = 0,
+        y = 0,
+        w = self.width or Screen:getWidth(),
+        h = self.titlebar_height,
+    }
+
+    -- Left side: 24h clock, battery and Wi-Fi indicator.
+    if header_status then
+        self._plainui_header_status = header_status
+        self._plainui_header_status_container = LeftContainer:new{
+            allow_mirroring = false,
+            dimen = header_dimen,
+            header_status,
+        }
+        table.insert(self, self._plainui_header_status_container)
+    end
+
+    -- Right side: page navigation buttons plus the page indicator, with a small
+    -- side margin so the last button is not glued to the screen edge.
+    local padded_page_controls = HorizontalGroup:new{
+        align = "center",
+        allow_mirroring = false,
+        page_controls,
+        HorizontalSpan:new{ width = PLAINUI_SIDE_MARGIN },
+    }
+    self._plainui_header_page_controls = RightContainer:new{
+        allow_mirroring = false,
+        dimen = header_dimen,
+        padded_page_controls,
+    }
+    table.insert(self, self._plainui_header_page_controls)
+end
+
 function MetadataTabsTitleBar:setTitle()
 end
 
@@ -831,6 +891,19 @@ end
 
 function MetadataTabsTitleBar:setRightIcon()
     self:updateStatusIndicators()
+    local file_manager = self.file_manager or FileManager.instance
+    local bottom_status = file_manager
+        and file_manager.file_chooser
+        and file_manager.file_chooser._plainui_bottom_status_bar
+    if bottom_status then
+        bottom_status:updateStatusIndicators()
+    end
+    local header_status = file_manager
+        and file_manager.file_chooser
+        and file_manager.file_chooser._plainui_header_status_bar
+    if header_status then
+        header_status:updateStatusIndicators()
+    end
 end
 
 function MetadataTabsTitleBar:onNetworkConnected()
@@ -981,7 +1054,7 @@ function PlainUIMetadataTabsBar:init()
     self.tab_padding_h = Screen:scaleBySize(7)
     self.tab_padding_v = Screen:scaleBySize(5)
     self.tab_font_face = "smallinfofont"
-    self.tab_font_size = 18
+    self.tab_font_size = PLAINUI_BOTTOM_FONT_SIZE
 
     local function getTextWidth(text, bold)
         local face = Font:getFace(self.tab_font_face, self.tab_font_size)
@@ -1036,7 +1109,7 @@ function PlainUIMetadataTabsBar:init()
         return tab
     end
 
-    self.books_tab = makeTab("books", _("Books"), function()
+    self.books_tab = makeTab("books", _("Files"), function()
         openBooks(file_manager)
     end, function()
         file_manager:onShowFolderMenu()
@@ -1098,6 +1171,10 @@ function PlainUIMetadataTabsBar:refreshForTabOptionChange()
     end
 end
 
+function PlainUIMetadataTabsBar:isVisible()
+    return getBackTitleBarInfo(self.file_manager or FileManager.instance) == nil
+end
+
 function PlainUIMetadataTabsBar:paintTo(bb, x, y)
     if not self.dimen then
         local size = self:getSize()
@@ -1112,7 +1189,704 @@ function PlainUIMetadataTabsBar:paintTo(bb, x, y)
         self.dimen.y = y or 0
     end
     self:updateSelectedTab(false)
+    if self:isVisible() then
+        VerticalGroup.paintTo(self, bb, x, y)
+    end
+end
+
+function PlainUIMetadataTabsBar:handleEvent(event)
+    self:updateSelectedTab(false)
+    if self:isVisible() then
+        return VerticalGroup.handleEvent(self, event)
+    end
+    return false
+end
+
+local PlainUIBackTitleBar = VerticalGroup:extend{
+    file_manager = nil,
+    show_parent = nil,
+}
+
+function PlainUIBackTitleBar:init()
+    self.show_parent = self.show_parent or self
+    self.file_manager = self.file_manager or FileManager.instance
+    local file_manager = self.file_manager
+
+    self.width = Screen:getWidth()
+    self.tab_padding_h = Screen:scaleBySize(7)
+    self.tab_padding_v = Screen:scaleBySize(5)
+    self.tab_font_face = "smallinfofont"
+    self.tab_font_size = PLAINUI_BOTTOM_FONT_SIZE
+
+    local face = Font:getFace(self.tab_font_face, self.tab_font_size)
+    local sample = TextWidget:new{
+        text = "W",
+        face = face,
+        bold = true,
+    }
+    self.tab_label_height = sample:getSize().h
+    sample:free()
+
+    -- This widget now renders only the current metadata listing title.
+    -- The back arrow itself is handled by PlainUIBackButtonBar on the left side.
+    self.back_title_width = math.floor(self.width * 0.56)
+
+    self.back_button = Button:new{
+        text = "",
+        align = "center",
+        text_font_face = self.tab_font_face,
+        text_font_size = self.tab_font_size,
+        text_font_bold = true,
+        avoid_text_truncation = false,
+        width = self.back_title_width,
+        height = self.tab_label_height,
+        bordersize = 0,
+        padding_h = self.tab_padding_h,
+        padding_v = self.tab_padding_v,
+        callback = function()
+            MetadataFacetDropdown.show(file_manager, function()
+                return self:getDropdownAnchor()
+            end)
+        end,
+        show_parent = self.show_parent,
+    }
+
+    self.back_row = HorizontalGroup:new{
+        align = "bottom",
+        allow_mirroring = false,
+        self.back_button,
+    }
+
+    local row_size = self.back_row:getSize()
+    self.dimen = Geom:new{
+        x = 0,
+        y = 0,
+        w = self.back_title_width,
+        h = row_size.h,
+    }
+
+    table.insert(self, self.back_row)
+    self:updateBackTitle(false)
+end
+
+PlainUIBackTitleBar.updateBackTitle = MetadataTabsTitleBar.updateBackTitle
+PlainUIBackTitleBar.onBackTitleTap = MetadataTabsTitleBar.onBackTitleTap
+PlainUIBackTitleBar.getDropdownAnchor = MetadataTabsTitleBar.getDropdownAnchor
+
+function PlainUIBackTitleBar:isVisible()
+    return self.back_title_info ~= nil
+end
+
+function PlainUIBackTitleBar:paintTo(bb, x, y)
+    if not self.dimen then
+        local size = self:getSize()
+        self.dimen = Geom:new{
+            x = x or 0,
+            y = y or 0,
+            w = size and size.w or self.back_title_width or 0,
+            h = size and size.h or 0,
+        }
+    else
+        self.dimen.x = x or 0
+        self.dimen.y = y or 0
+    end
+
+    self:updateBackTitle(false)
+    if self:isVisible() then
+        VerticalGroup.paintTo(self, bb, x, y)
+    end
+end
+
+function PlainUIBackTitleBar:handleEvent(event)
+    self:updateBackTitle(false)
+    if self:isVisible() then
+        return VerticalGroup.handleEvent(self, event)
+    end
+    return false
+end
+
+local PlainUIBackButtonBar = VerticalGroup:extend{
+    file_manager = nil,
+    show_parent = nil,
+}
+
+function PlainUIBackButtonBar:init()
+    self.show_parent = self.show_parent or self
+    self.file_manager = self.file_manager or FileManager.instance
+
+    self.tab_padding_h = Screen:scaleBySize(7)
+    self.tab_padding_v = Screen:scaleBySize(5)
+    self.tab_font_face = "smallinfofont"
+    self.tab_font_size = PLAINUI_BOTTOM_FONT_SIZE
+
+    local face = Font:getFace(self.tab_font_face, self.tab_font_size)
+    local sample = TextWidget:new{
+        text = "W",
+        face = face,
+        bold = true,
+    }
+    self.tab_label_height = sample:getSize().h
+    sample:free()
+
+    self.back_chevron_hit_width = self.tab_label_height + self.tab_padding_h
+    self.back_chevron_button = Button:new{
+        icon = "chevron.left",
+        align = "left",
+        icon_width = self.tab_label_height,
+        icon_height = self.tab_label_height,
+        width = self.back_chevron_hit_width,
+        height = self.tab_label_height,
+        bordersize = 0,
+        padding_h = 0,
+        padding_v = self.tab_padding_v,
+        callback = function()
+            self:onBackTitleTap()
+        end,
+        show_parent = self.show_parent,
+    }
+
+    self.back_row = HorizontalGroup:new{
+        align = "bottom",
+        allow_mirroring = false,
+        self.back_chevron_button,
+    }
+
+    local row_size = self.back_row:getSize()
+    self.dimen = Geom:new{
+        x = 0,
+        y = 0,
+        w = row_size.w,
+        h = row_size.h,
+    }
+
+    table.insert(self, self.back_row)
+    self:updateBackTitle(false)
+end
+
+function PlainUIBackButtonBar:updateBackTitle(refresh)
+    local file_manager = self.file_manager or FileManager.instance
+    local back_title_info = getBackTitleBarInfo(file_manager)
+    local title = back_title_info and back_title_info.title or nil
+    if self.back_title == title then
+        return
+    end
+
+    self.back_title_info = back_title_info
+    self.back_title = title
+
+    if refresh ~= false and self.dimen then
+        UIManager:setDirty(self.show_parent, "ui", self.dimen)
+    end
+end
+
+PlainUIBackButtonBar.onBackTitleTap = MetadataTabsTitleBar.onBackTitleTap
+
+function PlainUIBackButtonBar:isVisible()
+    return self.back_title_info ~= nil
+end
+
+function PlainUIBackButtonBar:paintTo(bb, x, y)
+    if not self.dimen then
+        local size = self:getSize()
+        self.dimen = Geom:new{
+            x = x or 0,
+            y = y or 0,
+            w = size and size.w or self.back_chevron_hit_width or 0,
+            h = size and size.h or 0,
+        }
+    else
+        self.dimen.x = x or 0
+        self.dimen.y = y or 0
+    end
+
+    self:updateBackTitle(false)
+    if self:isVisible() then
+        VerticalGroup.paintTo(self, bb, x, y)
+    end
+end
+
+function PlainUIBackButtonBar:handleEvent(event)
+    self:updateBackTitle(false)
+    if self:isVisible() then
+        return VerticalGroup.handleEvent(self, event)
+    end
+    return false
+end
+
+
+local PlainUIBottomStatusBar = VerticalGroup:extend{
+    file_manager = nil,
+    show_parent = nil,
+}
+
+function PlainUIBottomStatusBar:init()
+    self.show_parent = self.show_parent or self
+    self.file_manager = self.file_manager or FileManager.instance
+    local file_manager = self.file_manager
+
+    self.width = Screen:getWidth()
+    self.tab_padding_h = Screen:scaleBySize(7)
+    self.tab_padding_v = Screen:scaleBySize(5)
+    self.tab_font_face = "smallinfofont"
+    self.tab_font_size = PLAINUI_BOTTOM_FONT_SIZE
+    self.status_padding_h = Screen:scaleBySize(7)
+    self.status_gap = self.tab_padding_h
+
+    local face = Font:getFace(self.tab_font_face, self.tab_font_size)
+    local sample = TextWidget:new{
+        text = "W",
+        face = face,
+        bold = false,
+    }
+    self.tab_label_height = sample:getSize().h
+    sample:free()
+
+    local status_widths = StatusIndicators.getWidths(self.tab_font_face, self.tab_font_size, self.status_padding_h)
+    self.night_mode_width = status_widths.night_mode
+    self.frontlight_width = status_widths.frontlight
+    self.wifi_width = status_widths.wifi
+    self.battery_width = status_widths.battery
+    self.time_width = measureTextWidth("23:59", self.tab_font_face, self.tab_font_size, false)
+        + 2 * self.status_padding_h
+    self.right_icon_width = self.tab_label_height + 2 * self.status_padding_h
+
+    self.time_button = Button:new{
+        text = os.date("%H:%M"),
+        text_font_face = self.tab_font_face,
+        text_font_size = self.tab_font_size,
+        text_font_bold = false,
+        width = self.time_width,
+        height = self.tab_label_height,
+        bordersize = 0,
+        padding_h = self.status_padding_h,
+        padding_v = self.tab_padding_v,
+        show_parent = self.show_parent,
+    }
+    self.night_mode_button = Button:new{
+        text = StatusIndicators.NIGHT_MODE_SYMBOL,
+        text_font_face = self.tab_font_face,
+        text_font_size = self.tab_font_size,
+        text_font_bold = false,
+        width = self.night_mode_width,
+        height = self.tab_label_height,
+        bordersize = 0,
+        padding_h = self.status_padding_h,
+        padding_v = self.tab_padding_v,
+        callback = function()
+            UIManager:broadcastEvent(Event:new("ToggleNightMode"))
+        end,
+        show_parent = self.show_parent,
+    }
+    self.frontlight_button = Button:new{
+        text = StatusIndicators.getFrontlightText(),
+        text_font_face = self.tab_font_face,
+        text_font_size = self.tab_font_size,
+        text_font_bold = false,
+        width = self.frontlight_width,
+        height = self.tab_label_height,
+        bordersize = 0,
+        padding_h = self.status_padding_h,
+        padding_v = self.tab_padding_v,
+        callback = function()
+            if Device:hasFrontlight() then
+                UIManager:broadcastEvent(Event:new("ShowFlDialog"))
+            end
+        end,
+        hold_callback = function()
+            if Device:hasFrontlight() then
+                UIManager:broadcastEvent(Event:new("ToggleFrontlight"))
+                self:refreshStatusIndicators()
+            end
+        end,
+        show_parent = self.show_parent,
+    }
+    self.wifi_button = Button:new{
+        text = StatusIndicators.getWifiText(),
+        text_font_face = self.tab_font_face,
+        text_font_size = self.tab_font_size,
+        text_font_bold = false,
+        width = self.wifi_width,
+        height = self.tab_label_height,
+        bordersize = 0,
+        padding_h = self.status_padding_h,
+        padding_v = self.tab_padding_v,
+        callback = function()
+            StatusIndicators.toggleWifi(function()
+                self:updateStatusIndicators()
+            end)
+        end,
+        hold_callback = function()
+            StatusIndicators.showWifiNetworks(function()
+                self:updateStatusIndicators()
+            end)
+        end,
+        show_parent = self.show_parent,
+    }
+    self.battery_button = Button:new{
+        text = StatusIndicators.getBatteryText(),
+        text_font_face = self.tab_font_face,
+        text_font_size = self.tab_font_size,
+        text_font_bold = false,
+        width = self.battery_width,
+        height = self.tab_label_height,
+        bordersize = 0,
+        padding_h = self.status_padding_h,
+        padding_v = self.tab_padding_v,
+        hold_callback = function()
+            StatusIndicators.showBatteryInfo()
+            self:updateStatusIndicators()
+        end,
+        show_parent = self.show_parent,
+    }
+    self.right_icon_button = Button:new{
+        icon = self:getRightIcon(),
+        icon_width = self.tab_label_height,
+        icon_height = self.tab_label_height,
+        width = self.right_icon_width,
+        height = self.tab_label_height,
+        bordersize = 0,
+        padding_h = self.status_padding_h,
+        padding_v = self.tab_padding_v,
+        callback = function()
+            if file_manager and file_manager.onShowPlusMenu then
+                file_manager:onShowPlusMenu()
+            end
+        end,
+        hold_callback = false,
+        show_parent = self.show_parent,
+    }
+
+    local status_row_items = {
+        align = "bottom",
+        allow_mirroring = false,
+    }
+    -- Footer keeps only the night mode indicator; battery and clock were moved to the header.
+    table.insert(status_row_items, self.night_mode_button)
+    table.insert(status_row_items, HorizontalSpan:new{ width = PLAINUI_SIDE_MARGIN })
+    self.status_row = HorizontalGroup:new(status_row_items)
+
+    local row_size = self.status_row:getSize()
+    self.dimen = Geom:new{
+        x = 0,
+        y = 0,
+        w = row_size.w,
+        h = row_size.h,
+    }
+
+    table.insert(self, self.status_row)
+    self:updateStatusIndicators(false)
+    self:scheduleClockRefresh()
+end
+
+function PlainUIBottomStatusBar:getRightIcon()
+    local file_manager = self.file_manager or FileManager.instance
+    return file_manager and file_manager.selected_files and "check" or "plus"
+end
+
+function PlainUIBottomStatusBar:scheduleClockRefresh()
+    if self._clock_scheduled then
+        return
+    end
+    local seconds = 60 - tonumber(os.date("%S"))
+    if seconds < 1 or seconds > 60 then
+        seconds = 60
+    end
+    self._clock_scheduled = true
+    UIManager:scheduleIn(seconds, self.refreshStatusIndicators, self)
+end
+
+function PlainUIBottomStatusBar:updateStatusIndicators(refresh)
+    if not self.battery_button then
+        return
+    end
+
+    local time_text = os.date("%H:%M")
+    local battery_text = StatusIndicators.getBatteryText()
+    local wifi_text = StatusIndicators.getWifiText()
+    local frontlight_text = StatusIndicators.getFrontlightText()
+    local right_icon = self:getRightIcon()
+
+    local changed = false
+    if self.time_text ~= time_text then
+        self.time_text = time_text
+        self.time_button:setText(time_text, self.time_width)
+        changed = true
+    end
+    if self.battery_text ~= battery_text then
+        self.battery_text = battery_text
+        self.battery_button:setText(battery_text, self.battery_width)
+        changed = true
+    end
+    if self.wifi_text ~= wifi_text then
+        self.wifi_text = wifi_text
+        self.wifi_button:setText(wifi_text, self.wifi_width)
+        changed = true
+    end
+    if self.frontlight_text ~= frontlight_text then
+        self.frontlight_text = frontlight_text
+        self.frontlight_button:setText(frontlight_text, self.frontlight_width)
+        changed = true
+    end
+    if self.right_icon ~= right_icon then
+        self.right_icon = right_icon
+        self.right_icon_button:setIcon(right_icon, self.right_icon_width)
+        changed = true
+    end
+
+    if changed and refresh ~= false and self.dimen then
+        UIManager:setDirty(self.show_parent, "ui", self.dimen)
+    end
+end
+
+function PlainUIBottomStatusBar:refreshStatusIndicators()
+    self._clock_scheduled = false
+    self:updateStatusIndicators(false)
+    if self.dimen then
+        UIManager:setDirty(self.show_parent, "ui", self.dimen)
+    end
+    self:scheduleClockRefresh()
+end
+
+function PlainUIBottomStatusBar:paintTo(bb, x, y)
+    if not self.dimen then
+        local size = self:getSize()
+        self.dimen = Geom:new{
+            x = x or 0,
+            y = y or 0,
+            w = size and size.w or 0,
+            h = size and size.h or 0,
+        }
+    else
+        self.dimen.x = x or 0
+        self.dimen.y = y or 0
+    end
+    self:updateStatusIndicators(false)
+    self:scheduleClockRefresh()
     VerticalGroup.paintTo(self, bb, x, y)
+end
+
+function PlainUIBottomStatusBar:handleEvent(event)
+    self:updateStatusIndicators(false)
+    return VerticalGroup.handleEvent(self, event)
+end
+
+function PlainUIBottomStatusBar:onNetworkConnected()
+    NetworkMgr:queryNetworkState()
+    self:updateStatusIndicators()
+end
+
+function PlainUIBottomStatusBar:onNetworkDisconnected()
+    NetworkMgr:queryNetworkState()
+    self:updateStatusIndicators()
+end
+
+function PlainUIBottomStatusBar:onNetworkDisconnecting()
+    NetworkMgr.is_wifi_on = false
+    self:updateStatusIndicators()
+end
+
+function PlainUIBottomStatusBar:onFrontlightStateChanged()
+    self:refreshStatusIndicators()
+    UIManager:scheduleIn(0.2, self.refreshStatusIndicators, self)
+    UIManager:scheduleIn(1, self.refreshStatusIndicators, self)
+end
+
+
+local PlainUIHeaderStatusBar = VerticalGroup:extend{
+    file_manager = nil,
+    show_parent = nil,
+}
+
+function PlainUIHeaderStatusBar:init()
+    self.show_parent = self.show_parent or self
+    self.file_manager = self.file_manager or FileManager.instance
+
+    self.tab_padding_h = Screen:scaleBySize(7)
+    self.tab_padding_v = Screen:scaleBySize(5)
+    self.tab_font_face = "smallinfofont"
+    self.tab_font_size = PLAINUI_BOTTOM_FONT_SIZE
+    self.status_padding_h = Screen:scaleBySize(7)
+    self.status_gap = self.tab_padding_h
+
+    local face = Font:getFace(self.tab_font_face, self.tab_font_size)
+    local sample = TextWidget:new{
+        text = "W",
+        face = face,
+        bold = false,
+    }
+    self.tab_label_height = sample:getSize().h
+    sample:free()
+
+    local status_widths = StatusIndicators.getWidths(self.tab_font_face, self.tab_font_size, self.status_padding_h)
+    self.battery_width = status_widths.battery
+    self.wifi_width = status_widths.wifi
+    self.time_width = measureTextWidth("23:59", self.tab_font_face, self.tab_font_size, false)
+        + 2 * self.status_padding_h
+
+    self.time_button = Button:new{
+        text = os.date("%H:%M"),
+        text_font_face = self.tab_font_face,
+        text_font_size = self.tab_font_size,
+        text_font_bold = false,
+        width = self.time_width,
+        height = self.tab_label_height,
+        bordersize = 0,
+        padding_h = self.status_padding_h,
+        padding_v = self.tab_padding_v,
+        show_parent = self.show_parent,
+    }
+    self.battery_button = Button:new{
+        text = StatusIndicators.getBatteryText(),
+        text_font_face = self.tab_font_face,
+        text_font_size = self.tab_font_size,
+        text_font_bold = false,
+        width = self.battery_width,
+        height = self.tab_label_height,
+        bordersize = 0,
+        padding_h = self.status_padding_h,
+        padding_v = self.tab_padding_v,
+        hold_callback = function()
+            StatusIndicators.showBatteryInfo()
+            self:updateStatusIndicators()
+        end,
+        show_parent = self.show_parent,
+    }
+    self.wifi_button = Button:new{
+        text = StatusIndicators.getWifiText(),
+        text_font_face = self.tab_font_face,
+        text_font_size = self.tab_font_size,
+        text_font_bold = false,
+        width = self.wifi_width,
+        height = self.tab_label_height,
+        bordersize = 0,
+        padding_h = self.status_padding_h,
+        padding_v = self.tab_padding_v,
+        callback = function()
+            StatusIndicators.toggleWifi(function()
+                self:updateStatusIndicators()
+            end)
+        end,
+        hold_callback = function()
+            StatusIndicators.showWifiNetworks(function()
+                self:updateStatusIndicators()
+            end)
+        end,
+        show_parent = self.show_parent,
+    }
+
+    self.status_row = HorizontalGroup:new{
+        align = "bottom",
+        allow_mirroring = false,
+        HorizontalSpan:new{ width = PLAINUI_SIDE_MARGIN },
+        self.time_button,
+        HorizontalSpan:new{ width = self.status_gap },
+        self.battery_button,
+        HorizontalSpan:new{ width = self.status_gap },
+        self.wifi_button,
+    }
+
+    local row_size = self.status_row:getSize()
+    self.dimen = Geom:new{
+        x = 0,
+        y = 0,
+        w = row_size.w,
+        h = row_size.h,
+    }
+
+    table.insert(self, self.status_row)
+    self:updateStatusIndicators(false)
+    self:scheduleClockRefresh()
+end
+
+function PlainUIHeaderStatusBar:scheduleClockRefresh()
+    if self._clock_scheduled then
+        return
+    end
+    local seconds = 60 - tonumber(os.date("%S"))
+    if seconds < 1 or seconds > 60 then
+        seconds = 60
+    end
+    self._clock_scheduled = true
+    UIManager:scheduleIn(seconds, self.refreshStatusIndicators, self)
+end
+
+function PlainUIHeaderStatusBar:updateStatusIndicators(refresh)
+    if not self.battery_button then
+        return
+    end
+
+    local time_text = os.date("%H:%M")
+    local battery_text = StatusIndicators.getBatteryText()
+    local wifi_text = StatusIndicators.getWifiText()
+    local changed = false
+
+    if self.time_text ~= time_text then
+        self.time_text = time_text
+        self.time_button:setText(time_text, self.time_width)
+        changed = true
+    end
+    if self.battery_text ~= battery_text then
+        self.battery_text = battery_text
+        self.battery_button:setText(battery_text, self.battery_width)
+        changed = true
+    end
+    if self.wifi_text ~= wifi_text then
+        self.wifi_text = wifi_text
+        self.wifi_button:setText(wifi_text, self.wifi_width)
+        changed = true
+    end
+
+    if changed and refresh ~= false and self.dimen then
+        UIManager:setDirty(self.show_parent, "ui", self.dimen)
+    end
+end
+
+function PlainUIHeaderStatusBar:refreshStatusIndicators()
+    self._clock_scheduled = false
+    self:updateStatusIndicators(false)
+    if self.dimen then
+        UIManager:setDirty(self.show_parent, "ui", self.dimen)
+    end
+    self:scheduleClockRefresh()
+end
+
+function PlainUIHeaderStatusBar:paintTo(bb, x, y)
+    if not self.dimen then
+        local size = self:getSize()
+        self.dimen = Geom:new{
+            x = x or 0,
+            y = y or 0,
+            w = size and size.w or 0,
+            h = size and size.h or 0,
+        }
+    else
+        self.dimen.x = x or 0
+        self.dimen.y = y or 0
+    end
+    self:updateStatusIndicators(false)
+    self:scheduleClockRefresh()
+    VerticalGroup.paintTo(self, bb, x, y)
+end
+
+function PlainUIHeaderStatusBar:handleEvent(event)
+    self:updateStatusIndicators(false)
+    return VerticalGroup.handleEvent(self, event)
+end
+
+function PlainUIHeaderStatusBar:onNetworkConnected()
+    self:updateStatusIndicators()
+end
+
+function PlainUIHeaderStatusBar:onNetworkDisconnected()
+    self:updateStatusIndicators()
+end
+
+function PlainUIHeaderStatusBar:onNetworkDisconnecting()
+    self:updateStatusIndicators()
+end
+
+function PlainUIHeaderStatusBar:onFrontlightStateChanged()
+    self:refreshStatusIndicators()
 end
 
 local function installBottomMetadataTabs(file_manager)
@@ -1128,11 +1902,11 @@ local function installBottomMetadataTabs(file_manager)
         return
     end
 
-    -- Reuse the original page navigation buttons, but wrap them in a vertical
-    -- footer so the metadata tabs can live centered below them.
+    -- Move the original page navigation buttons and the page indicator to the
+    -- right side of the header. Clock, battery and night mode stay on the left side.
     file_chooser.page_info:clear()
 
-    local spacer_width = Screen:scaleBySize(32)
+    local spacer_width = Screen:scaleBySize(24)
     local page_controls = HorizontalGroup:new{
         align = "center",
         allow_mirroring = false,
@@ -1146,24 +1920,93 @@ local function installBottomMetadataTabs(file_manager)
         HorizontalSpan:new{ width = spacer_width },
         file_chooser.page_info_last_chev,
     }
+    local header_status = PlainUIHeaderStatusBar:new{
+        file_manager = file_manager,
+        show_parent = file_manager.show_parent or file_manager,
+    }
+
+    local title_bar = file_manager.title_bar
+    if title_bar and title_bar.installPageControls then
+        title_bar:installPageControls(page_controls, header_status)
+    end
 
     local metadata_tabs = PlainUIMetadataTabsBar:new{
         file_manager = file_manager,
         show_parent = file_manager.show_parent or file_manager,
     }
+    local back_button = PlainUIBackButtonBar:new{
+        file_manager = file_manager,
+        show_parent = file_manager.show_parent or file_manager,
+    }
+    local back_title = PlainUIBackTitleBar:new{
+        file_manager = file_manager,
+        show_parent = file_manager.show_parent or file_manager,
+    }
+    local metadata_tabs_size = metadata_tabs:getSize()
+    local back_button_size = back_button:getSize()
+    local back_title_size = back_title:getSize()
+    local bottom_row_height = math.max(
+        metadata_tabs_size.h,
+        back_button_size.h,
+        back_title_size.h
+    )
 
-    local footer_gap = Screen:scaleBySize(2)
+    local bottom_row = OverlapGroup:new{
+        dimen = Geom:new{
+            x = 0,
+            y = 0,
+            w = Screen:getWidth(),
+            h = bottom_row_height,
+        },
+        LeftContainer:new{
+            allow_mirroring = false,
+            dimen = Geom:new{
+                x = 0,
+                y = 0,
+                w = Screen:getWidth(),
+                h = bottom_row_height,
+            },
+            HorizontalGroup:new{
+                align = "center",
+                allow_mirroring = false,
+                HorizontalSpan:new{ width = PLAINUI_SIDE_MARGIN },
+                back_button,
+            },
+        },
+        CenterContainer:new{
+            allow_mirroring = false,
+            dimen = Geom:new{
+                x = 0,
+                y = 0,
+                w = Screen:getWidth(),
+                h = bottom_row_height,
+            },
+            metadata_tabs,
+        },
+        CenterContainer:new{
+            allow_mirroring = false,
+            dimen = Geom:new{
+                x = 0,
+                y = 0,
+                w = Screen:getWidth(),
+                h = bottom_row_height,
+            },
+            back_title,
+        },
+    }
+
     local footer_content = VerticalGroup:new{
         align = "center",
-        page_controls,
-        VerticalSpan:new{ width = footer_gap },
-        metadata_tabs,
+        bottom_row,
     }
 
     table.insert(file_chooser.page_info, footer_content)
     file_chooser._plainui_bottom_metadata_tabs_installed = true
     file_chooser._plainui_bottom_metadata_tabs = metadata_tabs
-    file_chooser._plainui_bottom_metadata_tabs_extra_height = metadata_tabs:getSize().h + footer_gap
+    file_chooser._plainui_bottom_back_button = back_button
+    file_chooser._plainui_bottom_back_title = back_title
+    file_chooser._plainui_header_status_bar = header_status
+    file_chooser._plainui_bottom_metadata_tabs_extra_height = bottom_row_height
     file_chooser.page_info:resetLayout()
     file_chooser:updateItems(1)
 end
