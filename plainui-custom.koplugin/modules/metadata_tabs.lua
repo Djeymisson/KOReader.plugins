@@ -41,9 +41,8 @@ local TAG_SYMBOL = VirtualPath.KEYWORD_SYMBOL
 -- title bar to the bottom footer, centered below the page navigation controls.
 local PLAINUI_TABS_AT_BOTTOM = true
 local PLAINUI_BOTTOM_FONT_SIZE = 22
+local PLAINUI_HEADER_FOLDER_FONT_SIZE = 22
 local PLAINUI_SIDE_MARGIN = Screen:scaleBySize(14)
-local PLAINUI_FOLDER_TITLE_FONT_SIZE = PLAINUI_BOTTOM_FONT_SIZE
-local PLAINUI_FOLDER_TITLE_PADDING_V = Screen:scaleBySize(3)
 
 local function getMetadataLeafInfo(path)
     local base_dir, active_dimension, filter_state = VirtualPath.parse(path)
@@ -102,6 +101,55 @@ local function getSelectedTabKey(file_manager)
     end
 
     return "books"
+end
+
+local function normalizePlainUIPath(path)
+    if not path then
+        return
+    end
+    path = tostring(path)
+    while #path > 1 and path:sub(-1) == "/" do
+        path = path:sub(1, -2)
+    end
+    return path
+end
+
+local function getConfiguredHomeDir()
+    local home_dir
+    if G_reader_settings and G_reader_settings.readSetting then
+        home_dir = G_reader_settings:readSetting("home_dir")
+    end
+    if home_dir and home_dir ~= "" then
+        return home_dir
+    end
+    return Device.home_dir
+end
+
+local function getCurrentFolderTitle(file_manager)
+    if getSelectedTabKey(file_manager) ~= "books" then
+        return ""
+    end
+
+    local file_chooser = file_manager and file_manager.file_chooser
+    local path = file_chooser and file_chooser.path
+    if not path or VirtualPath.findRoot(path) then
+        return ""
+    end
+
+    local normalized_path = normalizePlainUIPath(path)
+    local normalized_home = normalizePlainUIPath(getConfiguredHomeDir())
+    if normalized_home and normalized_path == normalized_home then
+        return _("Home")
+    end
+
+    if not normalized_path or normalized_path == "" then
+        return ""
+    end
+    if normalized_path == "/" then
+        return "/"
+    end
+
+    return normalized_path:match("([^/]+)$") or normalized_path
 end
 
 local BOOKS_FILTER_STATUS = {
@@ -228,47 +276,6 @@ local function getBackTitleBarInfo(file_manager)
     }
 end
 
-local function normalizePlainUIPath(path)
-    if not path then
-        return
-    end
-    while #path > 1 and path:sub(-1) == "/" do
-        path = path:sub(1, -2)
-    end
-    return path
-end
-
-local function getConfiguredHomeDir()
-    local home_dir
-    if G_reader_settings and G_reader_settings.readSetting then
-        home_dir = G_reader_settings:readSetting("home_dir")
-    end
-    if home_dir and home_dir ~= "" then
-        return home_dir
-    end
-    return Device.home_dir
-end
-
-local function getCurrentFolderTitle(file_manager)
-    local file_chooser = file_manager and file_manager.file_chooser
-    local path = file_chooser and file_chooser.path
-    if not path or isVirtualPath(path) then
-        return ""
-    end
-
-    local normalized_path = normalizePlainUIPath(path)
-    local normalized_home = normalizePlainUIPath(getConfiguredHomeDir())
-    if normalized_home and normalized_path == normalized_home then
-        return _("Home")
-    end
-
-    local title = normalized_path and normalized_path:match("([^/]+)$")
-    if title and title ~= "" then
-        return title
-    end
-    return _("Home")
-end
-
 local ModeLeftContainer = LeftContainer:extend{
     visible_func = nil,
 }
@@ -309,7 +316,6 @@ function MetadataTabsTitleBar:init()
     self.status_padding_h = Screen:scaleBySize(7)
     self.status_gap = self.tab_padding_h
     self.titlebar_height = self.icon_size + self.button_padding * 2
-    self.header_primary_height = self.titlebar_height
 
     self.file_manager = self.file_manager or FileManager.instance
     local file_manager = self.file_manager
@@ -402,41 +408,6 @@ function MetadataTabsTitleBar:init()
     local tabs_size = self.tabs_group:getSize()
     if not PLAINUI_TABS_AT_BOTTOM then
         self.titlebar_height = math.max(self.titlebar_height, tabs_size.h)
-        self.header_primary_height = self.titlebar_height
-    end
-
-    if PLAINUI_TABS_AT_BOTTOM then
-        local folder_sample = TextWidget:new{
-            text = "W",
-            face = Font:getFace(self.tab_font_face, PLAINUI_FOLDER_TITLE_FONT_SIZE),
-            bold = true,
-        }
-        self.folder_title_label_height = folder_sample:getSize().h
-        folder_sample:free()
-        self.folder_title_button = Button:new{
-            text = "",
-            align = "center",
-            text_font_face = self.tab_font_face,
-            text_font_size = PLAINUI_FOLDER_TITLE_FONT_SIZE,
-            text_font_bold = true,
-            avoid_text_truncation = false,
-            width = math.max(1, self.width - 2 * PLAINUI_SIDE_MARGIN),
-            height = self.folder_title_label_height,
-            bordersize = 0,
-            padding_h = self.tab_padding_h,
-            padding_v = PLAINUI_FOLDER_TITLE_PADDING_V,
-            show_parent = self.show_parent,
-        }
-        self.folder_title_row = HorizontalGroup:new{
-            align = "bottom",
-            allow_mirroring = false,
-            HorizontalSpan:new{ width = PLAINUI_SIDE_MARGIN },
-            self.folder_title_button,
-            HorizontalSpan:new{ width = PLAINUI_SIDE_MARGIN },
-        }
-        local folder_title_size = self.folder_title_row:getSize()
-        self.folder_title_height = folder_title_size.h
-        self.titlebar_height = self.header_primary_height + self.folder_title_height
     end
     local titlebar_body_height = self.titlebar_height
     self.dimen = Geom:new{
@@ -466,27 +437,6 @@ function MetadataTabsTitleBar:init()
     }
     table.insert(self, self.tabs_container)
     self:updateSelectedTab(false)
-
-    if PLAINUI_TABS_AT_BOTTOM and self.folder_title_row then
-        self.folder_title_top_spacer = VerticalSpan:new{ width = self.header_primary_height }
-        self.folder_title_stack = VerticalGroup:new{
-            align = "left",
-            self.folder_title_top_spacer,
-            self.folder_title_row,
-        }
-        self.folder_title_container = LeftContainer:new{
-            allow_mirroring = false,
-            dimen = Geom:new{
-                x = 0,
-                y = 0,
-                w = self.width,
-                h = titlebar_body_height,
-            },
-            self.folder_title_stack,
-        }
-        table.insert(self, self.folder_title_container)
-        self:updateFolderTitle(false)
-    end
 
     local status_widths = StatusIndicators.getWidths(self.tab_font_face, self.tab_font_size, self.status_padding_h)
     self.night_mode_width = status_widths.night_mode
@@ -901,23 +851,31 @@ function MetadataTabsTitleBar:updateSelectedTab(refresh)
         self:setTabSelected(tab, tab.key == selected_tab_key)
     end
 
+    if self.updateFolderTitle then
+        self:updateFolderTitle(false)
+    end
+
     if refresh ~= false then
         UIManager:setDirty(self.show_parent, "ui", self.dimen)
     end
 end
 
 function MetadataTabsTitleBar:updateFolderTitle(refresh)
-    if not self.folder_title_button then
+    if not self._plainui_header_folder_button then
         return
     end
 
     local title = getCurrentFolderTitle(self.file_manager or FileManager.instance)
-    if self.folder_title == title then
+    if self._plainui_header_folder_title == title then
         return
     end
 
-    self.folder_title = title
-    self.folder_title_button:setText(title or "", self.folder_title_button.width)
+    self._plainui_header_folder_title = title
+    local show_folder_title = title ~= nil and title ~= ""
+    self._plainui_header_folder_button:setText(show_folder_title and title or "", self._plainui_header_folder_button.width)
+    if self._plainui_header_folder_separator then
+        self._plainui_header_folder_separator:setText(show_folder_title and "·" or "", self._plainui_header_folder_separator.width)
+    end
     if refresh ~= false and self.dimen then
         UIManager:setDirty(self.show_parent, "ui", self.dimen)
     end
@@ -947,24 +905,15 @@ function MetadataTabsTitleBar:installPageControls(page_controls, header_status)
 
     local controls_size = page_controls:getSize()
     local status_size = header_status and header_status:getSize() or nil
-    local folder_extra_height = self.folder_title_height or 0
-    local primary_height = self.header_primary_height or math.max(0, self.titlebar_height - folder_extra_height)
-    local max_primary_height = primary_height
+    local max_height = self.titlebar_height
     if controls_size and controls_size.h then
-        max_primary_height = math.max(max_primary_height, controls_size.h)
+        max_height = math.max(max_height, controls_size.h)
     end
     if status_size and status_size.h then
-        max_primary_height = math.max(max_primary_height, status_size.h)
+        max_height = math.max(max_height, status_size.h)
     end
-    if max_primary_height > primary_height then
-        self.header_primary_height = max_primary_height
-        self.titlebar_height = max_primary_height + folder_extra_height
-        if self.folder_title_top_spacer then
-            self.folder_title_top_spacer.width = max_primary_height
-        end
-        if self.folder_title_container and self.folder_title_container.dimen then
-            self.folder_title_container.dimen.h = self.titlebar_height
-        end
+    if max_height > self.titlebar_height then
+        self.titlebar_height = max_height
         if self.dimen then
             self.dimen.h = self.titlebar_height
         end
@@ -974,19 +923,68 @@ function MetadataTabsTitleBar:installPageControls(page_controls, header_status)
         x = 0,
         y = 0,
         w = self.width or Screen:getWidth(),
-        h = self.header_primary_height or self.titlebar_height,
+        h = self.titlebar_height,
     }
 
-    -- Left side: 24h clock, battery and Wi-Fi indicator.
+    -- Left side: 24h clock, battery, Wi-Fi and the current folder name.
+    -- The folder name only has text while the active view is Files; in metadata
+    -- tabs it stays empty so the footer can remain the source of context.
+    local folder_title_width = math.max(
+        Screen:scaleBySize(260),
+        math.floor((self.width or Screen:getWidth()) * 0.28)
+    )
+    local header_status_size = header_status and header_status:getSize() or nil
+    local header_item_height = header_status_size and header_status_size.h or self.tab_label_height
+    self._plainui_header_folder_button = Button:new{
+        text = "",
+        align = "left",
+        text_font_face = self.tab_font_face,
+        text_font_size = PLAINUI_HEADER_FOLDER_FONT_SIZE,
+        text_font_bold = true,
+        avoid_text_truncation = false,
+        width = folder_title_width,
+        height = header_item_height,
+        bordersize = 0,
+        padding_h = self.tab_padding_h,
+        padding_v = self.tab_padding_v,
+        show_parent = self.show_parent,
+    }
+    self._plainui_header_folder_separator = Button:new{
+        text = "",
+        text_font_face = self.tab_font_face,
+        text_font_size = self.tab_font_size,
+        text_font_bold = false,
+        width = measureTextWidth("·", self.tab_font_face, self.tab_font_size, false) + 2 * self.status_padding_h,
+        height = header_item_height,
+        bordersize = 0,
+        padding_h = self.status_padding_h,
+        padding_v = self.tab_padding_v,
+        show_parent = self.show_parent,
+    }
+
+    local left_header_items = {
+        align = "center",
+        allow_mirroring = false,
+    }
     if header_status then
         self._plainui_header_status = header_status
-        self._plainui_header_status_container = LeftContainer:new{
-            allow_mirroring = false,
-            dimen = header_dimen,
-            header_status,
-        }
-        table.insert(self, self._plainui_header_status_container)
+        table.insert(left_header_items, header_status)
+        table.insert(left_header_items, HorizontalSpan:new{ width = self.status_gap })
+        table.insert(left_header_items, self._plainui_header_folder_separator)
+        table.insert(left_header_items, HorizontalSpan:new{ width = self.status_gap })
+    else
+        table.insert(left_header_items, HorizontalSpan:new{ width = PLAINUI_SIDE_MARGIN })
     end
+    table.insert(left_header_items, self._plainui_header_folder_button)
+
+    self._plainui_header_left_group = HorizontalGroup:new(left_header_items)
+    self._plainui_header_status_container = LeftContainer:new{
+        allow_mirroring = false,
+        dimen = header_dimen,
+        self._plainui_header_left_group,
+    }
+    table.insert(self, self._plainui_header_status_container)
+    self:updateFolderTitle(false)
 
     -- Right side: page navigation buttons plus the page indicator, with a small
     -- side margin so the last button is not glued to the screen edge.
