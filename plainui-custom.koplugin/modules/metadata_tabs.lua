@@ -42,6 +42,8 @@ local TAG_SYMBOL = VirtualPath.KEYWORD_SYMBOL
 local PLAINUI_TABS_AT_BOTTOM = true
 local PLAINUI_BOTTOM_FONT_SIZE = 22
 local PLAINUI_SIDE_MARGIN = Screen:scaleBySize(14)
+local PLAINUI_FOLDER_TITLE_FONT_SIZE = PLAINUI_BOTTOM_FONT_SIZE
+local PLAINUI_FOLDER_TITLE_PADDING_V = Screen:scaleBySize(3)
 
 local function getMetadataLeafInfo(path)
     local base_dir, active_dimension, filter_state = VirtualPath.parse(path)
@@ -226,6 +228,47 @@ local function getBackTitleBarInfo(file_manager)
     }
 end
 
+local function normalizePlainUIPath(path)
+    if not path then
+        return
+    end
+    while #path > 1 and path:sub(-1) == "/" do
+        path = path:sub(1, -2)
+    end
+    return path
+end
+
+local function getConfiguredHomeDir()
+    local home_dir
+    if G_reader_settings and G_reader_settings.readSetting then
+        home_dir = G_reader_settings:readSetting("home_dir")
+    end
+    if home_dir and home_dir ~= "" then
+        return home_dir
+    end
+    return Device.home_dir
+end
+
+local function getCurrentFolderTitle(file_manager)
+    local file_chooser = file_manager and file_manager.file_chooser
+    local path = file_chooser and file_chooser.path
+    if not path or isVirtualPath(path) then
+        return ""
+    end
+
+    local normalized_path = normalizePlainUIPath(path)
+    local normalized_home = normalizePlainUIPath(getConfiguredHomeDir())
+    if normalized_home and normalized_path == normalized_home then
+        return _("Home")
+    end
+
+    local title = normalized_path and normalized_path:match("([^/]+)$")
+    if title and title ~= "" then
+        return title
+    end
+    return _("Home")
+end
+
 local ModeLeftContainer = LeftContainer:extend{
     visible_func = nil,
 }
@@ -266,6 +309,7 @@ function MetadataTabsTitleBar:init()
     self.status_padding_h = Screen:scaleBySize(7)
     self.status_gap = self.tab_padding_h
     self.titlebar_height = self.icon_size + self.button_padding * 2
+    self.header_primary_height = self.titlebar_height
 
     self.file_manager = self.file_manager or FileManager.instance
     local file_manager = self.file_manager
@@ -358,6 +402,41 @@ function MetadataTabsTitleBar:init()
     local tabs_size = self.tabs_group:getSize()
     if not PLAINUI_TABS_AT_BOTTOM then
         self.titlebar_height = math.max(self.titlebar_height, tabs_size.h)
+        self.header_primary_height = self.titlebar_height
+    end
+
+    if PLAINUI_TABS_AT_BOTTOM then
+        local folder_sample = TextWidget:new{
+            text = "W",
+            face = Font:getFace(self.tab_font_face, PLAINUI_FOLDER_TITLE_FONT_SIZE),
+            bold = true,
+        }
+        self.folder_title_label_height = folder_sample:getSize().h
+        folder_sample:free()
+        self.folder_title_button = Button:new{
+            text = "",
+            align = "center",
+            text_font_face = self.tab_font_face,
+            text_font_size = PLAINUI_FOLDER_TITLE_FONT_SIZE,
+            text_font_bold = true,
+            avoid_text_truncation = false,
+            width = math.max(1, self.width - 2 * PLAINUI_SIDE_MARGIN),
+            height = self.folder_title_label_height,
+            bordersize = 0,
+            padding_h = self.tab_padding_h,
+            padding_v = PLAINUI_FOLDER_TITLE_PADDING_V,
+            show_parent = self.show_parent,
+        }
+        self.folder_title_row = HorizontalGroup:new{
+            align = "bottom",
+            allow_mirroring = false,
+            HorizontalSpan:new{ width = PLAINUI_SIDE_MARGIN },
+            self.folder_title_button,
+            HorizontalSpan:new{ width = PLAINUI_SIDE_MARGIN },
+        }
+        local folder_title_size = self.folder_title_row:getSize()
+        self.folder_title_height = folder_title_size.h
+        self.titlebar_height = self.header_primary_height + self.folder_title_height
     end
     local titlebar_body_height = self.titlebar_height
     self.dimen = Geom:new{
@@ -387,6 +466,27 @@ function MetadataTabsTitleBar:init()
     }
     table.insert(self, self.tabs_container)
     self:updateSelectedTab(false)
+
+    if PLAINUI_TABS_AT_BOTTOM and self.folder_title_row then
+        self.folder_title_top_spacer = VerticalSpan:new{ width = self.header_primary_height }
+        self.folder_title_stack = VerticalGroup:new{
+            align = "left",
+            self.folder_title_top_spacer,
+            self.folder_title_row,
+        }
+        self.folder_title_container = LeftContainer:new{
+            allow_mirroring = false,
+            dimen = Geom:new{
+                x = 0,
+                y = 0,
+                w = self.width,
+                h = titlebar_body_height,
+            },
+            self.folder_title_stack,
+        }
+        table.insert(self, self.folder_title_container)
+        self:updateFolderTitle(false)
+    end
 
     local status_widths = StatusIndicators.getWidths(self.tab_font_face, self.tab_font_size, self.status_padding_h)
     self.night_mode_width = status_widths.night_mode
@@ -806,12 +906,30 @@ function MetadataTabsTitleBar:updateSelectedTab(refresh)
     end
 end
 
+function MetadataTabsTitleBar:updateFolderTitle(refresh)
+    if not self.folder_title_button then
+        return
+    end
+
+    local title = getCurrentFolderTitle(self.file_manager or FileManager.instance)
+    if self.folder_title == title then
+        return
+    end
+
+    self.folder_title = title
+    self.folder_title_button:setText(title or "", self.folder_title_button.width)
+    if refresh ~= false and self.dimen then
+        UIManager:setDirty(self.show_parent, "ui", self.dimen)
+    end
+end
+
 function MetadataTabsTitleBar:paintTo(bb, x, y)
     self.dimen.x = x
     self.dimen.y = y
     self:updateBackTitle(false)
     self:updateSelectedTab(false)
     self:updateStatusIndicators(false)
+    self:updateFolderTitle(false)
     OverlapGroup.paintTo(self, bb, x, y)
     if self.books_button and self.books_button[1] and self.books_button[1].dimen then
         self.left_button.image.dimen = self.books_button[1].dimen
@@ -829,15 +947,24 @@ function MetadataTabsTitleBar:installPageControls(page_controls, header_status)
 
     local controls_size = page_controls:getSize()
     local status_size = header_status and header_status:getSize() or nil
-    local max_height = self.titlebar_height
+    local folder_extra_height = self.folder_title_height or 0
+    local primary_height = self.header_primary_height or math.max(0, self.titlebar_height - folder_extra_height)
+    local max_primary_height = primary_height
     if controls_size and controls_size.h then
-        max_height = math.max(max_height, controls_size.h)
+        max_primary_height = math.max(max_primary_height, controls_size.h)
     end
     if status_size and status_size.h then
-        max_height = math.max(max_height, status_size.h)
+        max_primary_height = math.max(max_primary_height, status_size.h)
     end
-    if max_height > self.titlebar_height then
-        self.titlebar_height = max_height
+    if max_primary_height > primary_height then
+        self.header_primary_height = max_primary_height
+        self.titlebar_height = max_primary_height + folder_extra_height
+        if self.folder_title_top_spacer then
+            self.folder_title_top_spacer.width = max_primary_height
+        end
+        if self.folder_title_container and self.folder_title_container.dimen then
+            self.folder_title_container.dimen.h = self.titlebar_height
+        end
         if self.dimen then
             self.dimen.h = self.titlebar_height
         end
@@ -847,7 +974,7 @@ function MetadataTabsTitleBar:installPageControls(page_controls, header_status)
         x = 0,
         y = 0,
         w = self.width or Screen:getWidth(),
-        h = self.titlebar_height,
+        h = self.header_primary_height or self.titlebar_height,
     }
 
     -- Left side: 24h clock, battery and Wi-Fi indicator.
@@ -884,6 +1011,7 @@ function MetadataTabsTitleBar:setSubTitle()
     self:updateBackTitle()
     self:updateSelectedTab()
     self:updateStatusIndicators()
+    self:updateFolderTitle()
 end
 
 function MetadataTabsTitleBar:setLeftIcon()
