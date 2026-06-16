@@ -44,6 +44,34 @@ local PLAINUI_BOTTOM_FONT_SIZE = 22
 local PLAINUI_HEADER_FOLDER_FONT_SIZE = 22
 local PLAINUI_SIDE_MARGIN = Screen:scaleBySize(14)
 
+local function plainUIFileManagerIsTopmost(widget)
+    if not widget then
+        return false
+    end
+    if not UIManager or not UIManager.getTopmostVisibleWidget then
+        return true
+    end
+    local ok, top_widget = pcall(function()
+        return UIManager:getTopmostVisibleWidget()
+    end)
+    if not ok or not top_widget then
+        return true
+    end
+
+    local file_manager = widget.file_manager or FileManager.instance
+    local show_parent = widget.show_parent
+    if top_widget == show_parent or top_widget == file_manager then
+        return true
+    end
+    if file_manager and top_widget.file_chooser == file_manager.file_chooser then
+        return true
+    end
+    if file_manager and top_widget.ui == file_manager then
+        return true
+    end
+    return false
+end
+
 local function getMetadataLeafInfo(path)
     local base_dir, active_dimension, filter_state = VirtualPath.parse(path)
     if active_dimension then
@@ -1713,6 +1741,9 @@ function PlainUIBottomStatusBar:scheduleClockRefresh()
     if self._clock_scheduled then
         return
     end
+    if not plainUIFileManagerIsTopmost(self) then
+        return
+    end
     local seconds = 60 - tonumber(os.date("%S"))
     if seconds < 1 or seconds > 60 then
         seconds = 60
@@ -1766,6 +1797,9 @@ end
 
 function PlainUIBottomStatusBar:refreshStatusIndicators()
     self._clock_scheduled = false
+    if not plainUIFileManagerIsTopmost(self) then
+        return
+    end
     self:updateStatusIndicators(false)
     if self.dimen then
         UIManager:setDirty(self.show_parent, "ui", self.dimen)
@@ -1928,6 +1962,9 @@ function PlainUIHeaderStatusBar:scheduleClockRefresh()
     if self._clock_scheduled then
         return
     end
+    if not plainUIFileManagerIsTopmost(self) then
+        return
+    end
     local seconds = 60 - tonumber(os.date("%S"))
     if seconds < 1 or seconds > 60 then
         seconds = 60
@@ -1969,6 +2006,9 @@ end
 
 function PlainUIHeaderStatusBar:refreshStatusIndicators()
     self._clock_scheduled = false
+    if not plainUIFileManagerIsTopmost(self) then
+        return
+    end
     self:updateStatusIndicators(false)
     if self.dimen then
         UIManager:setDirty(self.show_parent, "ui", self.dimen)
