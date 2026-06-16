@@ -325,6 +325,15 @@ function ModeLeftContainer:handleEvent(event)
     return false
 end
 
+-- Text-like button used for header labels. It paints like a Button, but it
+-- never consumes touch events. This avoids the folder name/separator blocking
+-- the leftmost page navigation button when their hit boxes overlap.
+local PlainUINonInteractiveButton = Button:extend{}
+
+function PlainUINonInteractiveButton:handleEvent(_event)
+    return false
+end
+
 local MetadataTabsTitleBar = OverlapGroup:extend{
     show_parent = nil,
     right_icon = nil,
@@ -957,13 +966,28 @@ function MetadataTabsTitleBar:installPageControls(page_controls, header_status)
     -- Left side: 24h clock, battery, Wi-Fi and the current folder name.
     -- The folder name only has text while the active view is Files; in metadata
     -- tabs it stays empty so the footer can remain the source of context.
-    local folder_title_width = math.max(
-        Screen:scaleBySize(260),
-        math.floor((self.width or Screen:getWidth()) * 0.28)
-    )
+    -- Keep this label conservative: the header uses an OverlapGroup, so a
+    -- too-wide left label can visually run under the right page controls.
+    local screen_width = self.width or Screen:getWidth()
+    local page_controls_width = controls_size and controls_size.w or 0
     local header_status_size = header_status and header_status:getSize() or nil
+    local header_status_width = header_status_size and header_status_size.w or 0
+    local separator_width = measureTextWidth("·", self.tab_font_face, self.tab_font_size, false)
+        + 2 * self.status_padding_h
+    local safe_gap = Screen:scaleBySize(1)
+    local available_folder_width = screen_width
+        - page_controls_width
+        - header_status_width
+        - separator_width
+        - 3 * self.status_gap
+        - PLAINUI_SIDE_MARGIN
+        - safe_gap
+    local folder_title_width = math.max(
+        Screen:scaleBySize(80),
+        math.min(Screen:scaleBySize(210), available_folder_width)
+    )
     local header_item_height = header_status_size and header_status_size.h or self.tab_label_height
-    self._plainui_header_folder_button = Button:new{
+    self._plainui_header_folder_button = PlainUINonInteractiveButton:new{
         text = "",
         align = "left",
         text_font_face = self.tab_font_face,
@@ -977,12 +1001,12 @@ function MetadataTabsTitleBar:installPageControls(page_controls, header_status)
         padding_v = self.tab_padding_v,
         show_parent = self.show_parent,
     }
-    self._plainui_header_folder_separator = Button:new{
+    self._plainui_header_folder_separator = PlainUINonInteractiveButton:new{
         text = "",
         text_font_face = self.tab_font_face,
         text_font_size = self.tab_font_size,
         text_font_bold = false,
-        width = measureTextWidth("·", self.tab_font_face, self.tab_font_size, false) + 2 * self.status_padding_h,
+        width = separator_width,
         height = header_item_height,
         bordersize = 0,
         padding_h = self.status_padding_h,
