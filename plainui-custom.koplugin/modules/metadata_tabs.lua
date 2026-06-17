@@ -180,6 +180,44 @@ local function getCurrentFolderTitle(file_manager)
     return normalized_path:match("([^/]+)$") or normalized_path
 end
 
+
+local function getCurrentViewFilterSummary(file_manager)
+    local tab_key = getSelectedTabKey(file_manager)
+    local tab_labels = {
+        books = _("Files"),
+        authors = _("Authors"),
+        series = _("Series"),
+        tags = _("Tags"),
+    }
+    local options = TabViewOptions.get(tab_key)
+    local filter_label = TabOptionPresenter.getFilterLabel(options and options.filter or "all")
+    return string.format("%s • %s", tab_labels[tab_key] or _("Files"), filter_label)
+end
+
+local function getCurrentOpenGroupTitle(file_manager)
+    local path = file_manager and file_manager.file_chooser and file_manager.file_chooser.path
+    local leaf_info = getMetadataLeafInfo(path)
+    return leaf_info and leaf_info.title or nil
+end
+
+local function getCurrentHeaderContext(file_manager)
+    local group_title = getCurrentOpenGroupTitle(file_manager)
+    if group_title and group_title ~= "" then
+        return group_title
+    end
+
+    local tab_key = getSelectedTabKey(file_manager)
+    if tab_key == "books" then
+        local folder_title = getCurrentFolderTitle(file_manager)
+        if folder_title and folder_title ~= "" then
+            return folder_title
+        end
+        return _("Files")
+    end
+
+    return getCurrentViewFilterSummary(file_manager)
+end
+
 local BOOKS_FILTER_STATUS = {
     unread = "new",
     reading = "reading",
@@ -902,17 +940,13 @@ function MetadataTabsTitleBar:updateFolderTitle(refresh)
         return
     end
 
-    local title = getCurrentFolderTitle(self.file_manager or FileManager.instance)
+    local title = getCurrentHeaderContext(self.file_manager or FileManager.instance)
     if self._plainui_header_folder_title == title then
         return
     end
 
     self._plainui_header_folder_title = title
-    local show_folder_title = title ~= nil and title ~= ""
-    self._plainui_header_folder_button:setText(show_folder_title and title or "", self._plainui_header_folder_button.width)
-    if self._plainui_header_folder_separator then
-        self._plainui_header_folder_separator:setText(show_folder_title and "·" or "", self._plainui_header_folder_separator.width)
-    end
+    self._plainui_header_folder_button:setText(title or "", self._plainui_header_folder_button.width)
     if refresh ~= false and self.dimen then
         UIManager:setDirty(self.show_parent, "ui", self.dimen)
     end
@@ -935,17 +969,13 @@ function MetadataTabsTitleBar:getHeight()
     return self.titlebar_height
 end
 
-function MetadataTabsTitleBar:installPageControls(page_controls, header_status)
-    if not page_controls or self._plainui_header_page_controls then
+function MetadataTabsTitleBar:installPageControls(_page_controls, header_status)
+    if self._plainui_header_context_installed then
         return
     end
 
-    local controls_size = page_controls:getSize()
     local status_size = header_status and header_status:getSize() or nil
     local max_height = self.titlebar_height
-    if controls_size and controls_size.h then
-        max_height = math.max(max_height, controls_size.h)
-    end
     if status_size and status_size.h then
         max_height = math.max(max_height, status_size.h)
     end
@@ -963,28 +993,15 @@ function MetadataTabsTitleBar:installPageControls(page_controls, header_status)
         h = self.titlebar_height,
     }
 
-    -- Left side: 24h clock, battery, Wi-Fi and the current folder name.
-    -- The folder name only has text while the active view is Files; in metadata
-    -- tabs it stays empty so the footer can remain the source of context.
-    -- Keep this label conservative: the header uses an OverlapGroup, so a
-    -- too-wide left label can visually run under the right page controls.
+    -- Left side: current context. In Files, show the opened folder. In metadata
+    -- views, show the view name plus the active status filter.
     local screen_width = self.width or Screen:getWidth()
-    local page_controls_width = controls_size and controls_size.w or 0
     local header_status_size = header_status and header_status:getSize() or nil
     local header_status_width = header_status_size and header_status_size.w or 0
-    local separator_width = measureTextWidth("·", self.tab_font_face, self.tab_font_size, false)
-        + 2 * self.status_padding_h
-    local safe_gap = Screen:scaleBySize(1)
-    local available_folder_width = screen_width
-        - page_controls_width
-        - header_status_width
-        - separator_width
-        - 3 * self.status_gap
-        - PLAINUI_SIDE_MARGIN
-        - safe_gap
-    local folder_title_width = math.max(
-        Screen:scaleBySize(80),
-        math.min(Screen:scaleBySize(210), available_folder_width)
+    local safe_gap = Screen:scaleBySize(24)
+    local context_width = math.max(
+        Screen:scaleBySize(140),
+        screen_width - header_status_width - 2 * PLAINUI_SIDE_MARGIN - safe_gap
     )
     local header_item_height = header_status_size and header_status_size.h or self.tab_label_height
     self._plainui_header_folder_button = PlainUINonInteractiveButton:new{
@@ -994,64 +1011,45 @@ function MetadataTabsTitleBar:installPageControls(page_controls, header_status)
         text_font_size = PLAINUI_HEADER_FOLDER_FONT_SIZE,
         text_font_bold = true,
         avoid_text_truncation = false,
-        width = folder_title_width,
+        width = context_width,
         height = header_item_height,
         bordersize = 0,
         padding_h = self.tab_padding_h,
         padding_v = self.tab_padding_v,
         show_parent = self.show_parent,
     }
-    self._plainui_header_folder_separator = PlainUINonInteractiveButton:new{
-        text = "",
-        text_font_face = self.tab_font_face,
-        text_font_size = self.tab_font_size,
-        text_font_bold = false,
-        width = separator_width,
-        height = header_item_height,
-        bordersize = 0,
-        padding_h = self.status_padding_h,
-        padding_v = self.tab_padding_v,
-        show_parent = self.show_parent,
-    }
 
-    local left_header_items = {
+    self._plainui_header_left_group = HorizontalGroup:new{
         align = "center",
         allow_mirroring = false,
+        HorizontalSpan:new{ width = PLAINUI_SIDE_MARGIN },
+        self._plainui_header_folder_button,
     }
-    if header_status then
-        self._plainui_header_status = header_status
-        table.insert(left_header_items, header_status)
-        table.insert(left_header_items, HorizontalSpan:new{ width = self.status_gap })
-        table.insert(left_header_items, self._plainui_header_folder_separator)
-        table.insert(left_header_items, HorizontalSpan:new{ width = self.status_gap })
-    else
-        table.insert(left_header_items, HorizontalSpan:new{ width = PLAINUI_SIDE_MARGIN })
-    end
-    table.insert(left_header_items, self._plainui_header_folder_button)
-
-    self._plainui_header_left_group = HorizontalGroup:new(left_header_items)
-    self._plainui_header_status_container = LeftContainer:new{
+    self._plainui_header_context_container = LeftContainer:new{
         allow_mirroring = false,
         dimen = header_dimen,
         self._plainui_header_left_group,
     }
-    table.insert(self, self._plainui_header_status_container)
-    self:updateFolderTitle(false)
+    table.insert(self, self._plainui_header_context_container)
 
-    -- Right side: page navigation buttons plus the page indicator, with a small
-    -- side margin so the last button is not glued to the screen edge.
-    local padded_page_controls = HorizontalGroup:new{
-        align = "center",
-        allow_mirroring = false,
-        page_controls,
-        HorizontalSpan:new{ width = PLAINUI_SIDE_MARGIN },
-    }
-    self._plainui_header_page_controls = RightContainer:new{
-        allow_mirroring = false,
-        dimen = header_dimen,
-        padded_page_controls,
-    }
-    table.insert(self, self._plainui_header_page_controls)
+    if header_status then
+        self._plainui_header_status = header_status
+        local padded_header_status = HorizontalGroup:new{
+            align = "center",
+            allow_mirroring = false,
+            header_status,
+            HorizontalSpan:new{ width = PLAINUI_SIDE_MARGIN },
+        }
+        self._plainui_header_status_container = RightContainer:new{
+            allow_mirroring = false,
+            dimen = header_dimen,
+            padded_header_status,
+        }
+        table.insert(self, self._plainui_header_status_container)
+    end
+
+    self._plainui_header_context_installed = true
+    self:updateFolderTitle(false)
 end
 
 function MetadataTabsTitleBar:setTitle()
@@ -1405,13 +1403,13 @@ function PlainUIBackTitleBar:init()
     self.tab_label_height = sample:getSize().h
     sample:free()
 
-    -- This widget now renders only the current metadata listing title.
-    -- The back arrow itself is handled by PlainUIBackButtonBar on the left side.
-    self.back_title_width = math.floor(self.width * 0.56)
+    -- This widget renders the current view + filter summary when a metadata
+    -- group is open. The back arrow itself is handled by PlainUIBackButtonBar.
+    self.back_title_width = self.back_title_width or math.floor(self.width * 0.56)
 
     self.back_button = Button:new{
         text = "",
-        align = "center",
+        align = "left",
         text_font_face = self.tab_font_face,
         text_font_size = self.tab_font_size,
         text_font_bold = true,
@@ -1422,7 +1420,8 @@ function PlainUIBackTitleBar:init()
         padding_h = self.tab_padding_h,
         padding_v = self.tab_padding_v,
         callback = function()
-            MetadataFacetDropdown.show(file_manager, function()
+            local tab_key = getSelectedTabKey(file_manager)
+            self:showTabOptions(tab_key, function()
                 return self:getDropdownAnchor()
             end)
         end,
@@ -1447,9 +1446,38 @@ function PlainUIBackTitleBar:init()
     self:updateBackTitle(false)
 end
 
-PlainUIBackTitleBar.updateBackTitle = MetadataTabsTitleBar.updateBackTitle
+PlainUIBackTitleBar.showTabOptions = MetadataTabsTitleBar.showTabOptions
+PlainUIBackTitleBar.showTabOptionValues = MetadataTabsTitleBar.showTabOptionValues
 PlainUIBackTitleBar.onBackTitleTap = MetadataTabsTitleBar.onBackTitleTap
 PlainUIBackTitleBar.getDropdownAnchor = MetadataTabsTitleBar.getDropdownAnchor
+
+function PlainUIBackTitleBar:refreshForTabOptionChange()
+    local file_manager = self.file_manager or FileManager.instance
+    local file_chooser = file_manager and file_manager.file_chooser
+    if file_chooser then
+        file_chooser:refreshPath()
+    elseif self.dimen then
+        UIManager:setDirty(self.show_parent, "ui", self.dimen)
+    end
+end
+
+function PlainUIBackTitleBar:updateBackTitle(refresh)
+    local file_manager = self.file_manager or FileManager.instance
+    local back_title_info = getBackTitleBarInfo(file_manager)
+    local title = back_title_info and getCurrentViewFilterSummary(file_manager) or nil
+    if self.back_title == title then
+        self.back_title_info = back_title_info
+        return
+    end
+
+    self.back_title_info = back_title_info
+    self.back_title = title
+    self.back_button:setText(title and title .. " \u{25be}" or "", self.back_button.width)
+
+    if refresh ~= false and self.dimen then
+        UIManager:setDirty(self.show_parent, "ui", self.dimen)
+    end
+end
 
 function PlainUIBackTitleBar:isVisible()
     return self.back_title_info ~= nil
@@ -1961,12 +1989,11 @@ function PlainUIHeaderStatusBar:init()
     self.status_row = HorizontalGroup:new{
         align = "bottom",
         allow_mirroring = false,
-        HorizontalSpan:new{ width = PLAINUI_SIDE_MARGIN },
-        self.time_button,
+        self.wifi_button,
         HorizontalSpan:new{ width = self.status_gap },
         self.battery_button,
         HorizontalSpan:new{ width = self.status_gap },
-        self.wifi_button,
+        self.time_button,
     }
 
     local row_size = self.status_row:getSize()
@@ -2093,7 +2120,8 @@ local function installBottomMetadataTabs(file_manager)
     end
 
     -- Move the original page navigation buttons and the page indicator to the
-    -- right side of the header. Clock, battery and night mode stay on the left side.
+    -- right side of the footer. The header keeps only context on the left and
+    -- Wi-Fi, battery and time on the right.
     file_chooser.page_info:clear()
 
     local spacer_width = Screen:scaleBySize(24)
@@ -2110,6 +2138,8 @@ local function installBottomMetadataTabs(file_manager)
         HorizontalSpan:new{ width = spacer_width },
         file_chooser.page_info_last_chev,
     }
+    local page_controls_size = page_controls:getSize()
+
     local header_status = PlainUIHeaderStatusBar:new{
         file_manager = file_manager,
         show_parent = file_manager.show_parent or file_manager,
@@ -2117,7 +2147,7 @@ local function installBottomMetadataTabs(file_manager)
 
     local title_bar = file_manager.title_bar
     if title_bar and title_bar.installPageControls then
-        title_bar:installPageControls(page_controls, header_status)
+        title_bar:installPageControls(nil, header_status)
     end
 
     local metadata_tabs = PlainUIMetadataTabsBar:new{
@@ -2128,18 +2158,61 @@ local function installBottomMetadataTabs(file_manager)
         file_manager = file_manager,
         show_parent = file_manager.show_parent or file_manager,
     }
+    local metadata_tabs_size = metadata_tabs:getSize()
+    local back_button_size = back_button:getSize()
+    local screen_width = Screen:getWidth()
+    local footer_gap = Screen:scaleBySize(18)
+    local page_controls_width = page_controls_size and page_controls_size.w or 0
+    local available_left_width = math.max(
+        Screen:scaleBySize(260),
+        screen_width - page_controls_width - 2 * PLAINUI_SIDE_MARGIN - footer_gap
+    )
+    local back_title_width = math.max(
+        Screen:scaleBySize(120),
+        available_left_width - (back_button_size.w or 0)
+    )
     local back_title = PlainUIBackTitleBar:new{
         file_manager = file_manager,
         show_parent = file_manager.show_parent or file_manager,
+        back_title_width = back_title_width,
     }
-    local metadata_tabs_size = metadata_tabs:getSize()
-    local back_button_size = back_button:getSize()
     local back_title_size = back_title:getSize()
     local bottom_row_height = math.max(
         metadata_tabs_size.h,
         back_button_size.h,
-        back_title_size.h
+        back_title_size.h,
+        page_controls_size.h
     )
+
+    local left_content_width = math.min(
+        available_left_width,
+        math.max(
+            metadata_tabs_size.w or 0,
+            (back_button_size.w or 0) + (back_title_size.w or 0)
+        )
+    )
+    local left_content = OverlapGroup:new{
+        dimen = Geom:new{
+            x = 0,
+            y = 0,
+            w = left_content_width,
+            h = bottom_row_height,
+        },
+        metadata_tabs,
+        HorizontalGroup:new{
+            align = "center",
+            allow_mirroring = false,
+            back_button,
+            back_title,
+        },
+    }
+
+    local padded_page_controls = HorizontalGroup:new{
+        align = "center",
+        allow_mirroring = false,
+        page_controls,
+        HorizontalSpan:new{ width = PLAINUI_SIDE_MARGIN },
+    }
 
     local bottom_row = OverlapGroup:new{
         dimen = Geom:new{
@@ -2160,10 +2233,10 @@ local function installBottomMetadataTabs(file_manager)
                 align = "center",
                 allow_mirroring = false,
                 HorizontalSpan:new{ width = PLAINUI_SIDE_MARGIN },
-                back_button,
+                left_content,
             },
         },
-        CenterContainer:new{
+        RightContainer:new{
             allow_mirroring = false,
             dimen = Geom:new{
                 x = 0,
@@ -2171,17 +2244,7 @@ local function installBottomMetadataTabs(file_manager)
                 w = Screen:getWidth(),
                 h = bottom_row_height,
             },
-            metadata_tabs,
-        },
-        CenterContainer:new{
-            allow_mirroring = false,
-            dimen = Geom:new{
-                x = 0,
-                y = 0,
-                w = Screen:getWidth(),
-                h = bottom_row_height,
-            },
-            back_title,
+            padded_page_controls,
         },
     }
 
