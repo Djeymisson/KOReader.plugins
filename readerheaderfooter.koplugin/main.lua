@@ -52,6 +52,8 @@ local FONT = {
 
 local LAYOUT = {
 	padding = 10,
+	top_padding = 2,
+	bottom_padding = 10,
 	text_clear_extra = 6,
 	line_extra_for_region = 8,
 	line_extra_for_paint = 4,
@@ -1277,6 +1279,8 @@ end
 function ReaderHeaderFooter:getContentHorizontalBounds()
 	local screen_w = Screen:getWidth()
 	local pad = Screen:scaleBySize(LAYOUT.padding)
+	local top_pad = Screen:scaleBySize(LAYOUT.top_padding or LAYOUT.padding)
+	local bottom_pad = Screen:scaleBySize(LAYOUT.bottom_padding or LAYOUT.padding)
 
 	local left_x = pad
 	local right_x = screen_w - pad
@@ -1330,6 +1334,8 @@ function ReaderHeaderFooter:getIndicatorRefreshRegions()
 	local screen_h = Screen:getHeight()
 
 	local pad = Screen:scaleBySize(LAYOUT.padding)
+	local top_pad = Screen:scaleBySize(LAYOUT.top_padding or LAYOUT.padding)
+	local bottom_pad = Screen:scaleBySize(LAYOUT.bottom_padding or LAYOUT.padding)
 	local extra = Screen:scaleBySize(LAYOUT.text_clear_extra)
 
 	-- Use the largest recent font size so shrinking text clears old pixels too.
@@ -1341,14 +1347,14 @@ function ReaderHeaderFooter:getIndicatorRefreshRegions()
 
 	local top_region = Geom:new({
 		x = math.max(0, left_bound - extra),
-		y = math.max(0, pad - extra),
+		y = math.max(0, top_pad - extra),
 		w = math.min(screen_w, region_w),
 		h = line_h + extra * 2,
 	})
 
 	local bottom_region = Geom:new({
 		x = math.max(0, left_bound - extra),
-		y = math.max(0, screen_h - line_h - pad - extra),
+		y = math.max(0, screen_h - line_h - bottom_pad - extra),
 		w = math.min(screen_w, region_w),
 		h = line_h + extra * 2,
 	})
@@ -1415,7 +1421,8 @@ function ReaderHeaderFooter:paintTo(bb, x, y)
 	end
 
 	local screen_h = Screen:getHeight()
-	local pad = Screen:scaleBySize(LAYOUT.padding)
+	local top_pad = Screen:scaleBySize(LAYOUT.top_padding or LAYOUT.padding)
+	local bottom_pad = Screen:scaleBySize(LAYOUT.bottom_padding or LAYOUT.padding)
 	local line_h = Screen:scaleBySize(self.font_size + LAYOUT.line_extra_for_paint)
 
 	local left_bound, right_bound = self:getContentHorizontalBounds()
@@ -1425,7 +1432,7 @@ function ReaderHeaderFooter:paintTo(bb, x, y)
 	local rt_text = self:getRightTopStatus()
 	local rt_size = self:getTextSize(rt_text)
 	local rt_x = right_bound - rt_size.w
-	local rt_y = pad
+	local rt_y = top_pad
 
 	self:clearTextArea(bb, rt_x, rt_y, rt_size.w, line_h)
 	self:drawText(bb, rt_x, rt_y, rt_text)
@@ -1439,8 +1446,8 @@ function ReaderHeaderFooter:paintTo(bb, x, y)
 		lt_text = self:fitTextToWidth(lt_text, max_left_w)
 		local lt_size = self:getTextSize(lt_text)
 
-		self:clearTextArea(bb, left_bound, pad, lt_size.w, line_h)
-		self:drawText(bb, left_bound, pad, lt_text)
+		self:clearTextArea(bb, left_bound, top_pad, lt_size.w, line_h)
+		self:drawText(bb, left_bound, top_pad, lt_text)
 	end
 
 	-- Bottom left: pages left in chapter or book, configurable from plugin menu.
@@ -1448,7 +1455,7 @@ function ReaderHeaderFooter:paintTo(bb, x, y)
 	lb_text = self:fitTextToWidth(lb_text, math.floor(usable_w * 0.6))
 
 	local lb_size = self:getTextSize(lb_text)
-	local lb_y = screen_h - line_h - pad
+	local lb_y = screen_h - line_h - bottom_pad
 
 	self:clearTextArea(bb, left_bound, lb_y, lb_size.w, line_h)
 	self:drawText(bb, left_bound, lb_y, lb_text)
