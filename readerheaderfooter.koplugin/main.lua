@@ -378,7 +378,7 @@ function ReaderHeaderFooter:addToMainMenu(menu_items)
 		sub_item_table = {
 			{
 				text_func = function()
-					return self:isEnabled() and _("Show header/footer") or _("Hide header/footer")
+					return self:isEnabled() and _("Show header/footer") or _("Show header/footer")
 				end,
 
 				checked_func = function()
