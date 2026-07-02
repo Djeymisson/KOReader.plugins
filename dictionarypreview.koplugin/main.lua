@@ -1,12 +1,100 @@
 local Device = require("device")
+local Blitbuffer = require("ffi/blitbuffer")
+local BottomContainer = require("ui/widget/container/bottomcontainer")
+local ButtonTable = require("ui/widget/buttontable")
+local FrameContainer = require("ui/widget/container/framecontainer")
+local Geom = require("ui/geometry")
+local GestureRange = require("ui/gesturerange")
+local HorizontalGroup = require("ui/widget/horizontalgroup")
+local HorizontalSpan = require("ui/widget/horizontalspan")
+local InputContainer = require("ui/widget/container/inputcontainer")
+local LineWidget = require("ui/widget/linewidget")
+local ScrollHtmlWidget = require("ui/widget/scrollhtmlwidget")
+local Size = require("ui/size")
+local VerticalGroup = require("ui/widget/verticalgroup")
+local VerticalSpan = require("ui/widget/verticalspan")
 local Event = require("ui/event")
-local FootnoteWidget = require("ui/widget/footnotewidget")
+local util = require("util")
 local UIManager = require("ui/uimanager")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local logger = require("logger")
 local _ = require("gettext")
 
+local function getKoreaderLanguage()
+	local lang = "en"
+
+	if G_reader_settings then
+		lang = G_reader_settings:readSetting("language") or lang
+	end
+
+	lang = tostring(lang):lower()
+	lang = lang:gsub("_", "-")
+
+	return lang
+end
+
+local function pluginText(key)
+	local lang = getKoreaderLanguage()
+
+	local translations = {
+		["en"] = {
+			search_in_book = "Search in book",
+			more = "More",
+			dictionary_preview = "Dictionary preview",
+		},
+
+		["pt"] = {
+			search_in_book = "Buscar no livro",
+			more = "Ver mais",
+			dictionary_preview = "Prévia do dicionário",
+		},
+
+		["pt-br"] = {
+			search_in_book = "Buscar no livro",
+			more = "Ver mais",
+			dictionary_preview = "Prévia do dicionário",
+		},
+
+		["es"] = {
+			search_in_book = "Buscar en el libro",
+			more = "Ver más",
+			dictionary_preview = "Vista previa del diccionario",
+		},
+
+		["fr"] = {
+			search_in_book = "Rechercher dans le livre",
+			more = "Voir plus",
+			dictionary_preview = "Aperçu du dictionnaire",
+		},
+
+		["de"] = {
+			search_in_book = "Im Buch suchen",
+			more = "Mehr anzeigen",
+			dictionary_preview = "Wörterbuchvorschau",
+		},
+	}
+
+	local exact = translations[lang]
+	if exact and exact[key] then
+		return exact[key]
+	end
+
+	local base_lang = lang:match("^([a-z]+)")
+	local base = translations[base_lang]
+	if base and base[key] then
+		return base[key]
+	end
+
+	return translations["en"][key] or key
+end
+
 local Screen = Device.screen
+
+-- O texto HTML do preview deve parecer parte da interface, não do livro.
+-- Button/ButtonTable usam a fonte de UI "cfont" com tamanho base 20;
+-- no HTML/MuPDF usamos Noto Sans, que é a fonte padrão equivalente na UI.
+local UI_FONT_FACE = "Noto Sans"
+local UI_FONT_SIZE = 20
 
 local DictionaryPreview = WidgetContainer:extend({
 	name = "dictionarypreview",
@@ -114,10 +202,7 @@ local function normalizeHeadingTags(html)
 	-- Por isso, convertemos h1-h6 em div, preservando atributos e conteúdo.
 	html = html:gsub("<%s*[hH][1-6]([^>]*)>", function(attrs)
 		return "<div"
-			.. appendStyleAttr(
-				attrs,
-				"font-size:1em; line-height:1.25; margin:0.35em 0 0.25em 0; font-weight:normal;"
-			)
+			.. appendStyleAttr(attrs, "font-size:1em; line-height:1.25; margin:0.35em 0 0.25em 0; font-weight:normal;")
 			.. ">"
 	end)
 
@@ -182,6 +267,419 @@ local function normalizeDictionaryPreviewHtml(definition)
 	return html
 end
 
+local FALLBACK_CSS = [[
+@page {
+    margin: 0;
+    font-family: 'Noto Sans';
+}
+body {
+    margin: 0;
+    padding: 0;
+    line-height: 1.3;
+    font-family: 'Noto Sans';
+}
+p, h1, h2, h3, h4, h5, h6, ol, ul, dl, dd {
+    margin: 0;
+}
+ul, ol {
+    padding-left: 1.1em;
+}
+a {
+    color: black;
+}
+.dictionarypreview-header {
+    margin-bottom: 0.45em;
+    font-size: 0.92em;
+    font-weight: bold;
+}
+.dictionarypreview-separator {
+    border-top: 1px solid #888;
+    margin: 0.3em 0 0.45em 0;
+}
+]]
+
+local function hasDictionaryCss(result)
+	return result and result.css and result.css ~= "" and looksLikeHtml(result.definition)
+end
+
+local function getDictionaryPanelCss(result)
+	local css_justify = G_reader_settings:nilOrTrue("dict_justify") and "text-align: justify;" or ""
+
+	-- Base inspirado no painel original do dicionário: mantém margens zeradas,
+	-- listas compactas e depois acrescenta o CSS que o próprio KOReader já
+	-- anexou ao resultado do dicionário em result.css.
+	local css = [[
+@page {
+    margin: 0;
+    font-family: 'Noto Sans';
+}
+body {
+    margin: 0;
+    padding: 0;
+    line-height: 1.3;
+    font-family: 'Noto Sans';
+]] .. css_justify .. [[
+}
+blockquote, dd {
+    margin: 0 1em;
+}
+ol, ul, menu {
+    margin: 0;
+    padding: 0 1.7em;
+}
+a {
+    color: black;
+}
+.dictionarypreview-header {
+    margin-bottom: 0.45em;
+    font-size: 0.92em;
+    font-weight: bold;
+}
+.dictionarypreview-separator {
+    border-top: 1px solid #888;
+    margin: 0.3em 0 0.45em 0;
+}
+]]
+
+	if result and result.css and result.css ~= "" then
+		css = css .. "\n" .. result.css
+	end
+
+	return css
+end
+
+local function stripHtmlForLineEstimate(html)
+	html = tostring(html or "")
+
+	-- Transforma os principais blocos HTML em quebras de linha para estimar
+	-- melhor quantas linhas visíveis o preview precisa mostrar.
+	html = html:gsub("<%s*[bB][rR]%s*/?%s*>", "\n")
+	html = html:gsub("</%s*[pP]%s*>", "\n")
+	html = html:gsub("</%s*[dD][iI][vV]%s*>", "\n")
+	html = html:gsub("</%s*[lL][iI]%s*>", "\n")
+	html = html:gsub("</%s*[uU][lL]%s*>", "\n")
+	html = html:gsub("</%s*[oO][lL]%s*>", "\n")
+	html = html:gsub("</%s*[hH][1-6]%s*>", "\n")
+
+	html = html:gsub("<[^>]+>", "")
+	html = html:gsub("&nbsp;", " ")
+	html = html:gsub("&amp;", "&")
+	html = html:gsub("&lt;", "<")
+	html = html:gsub("&gt;", ">")
+	html = html:gsub("&quot;", '"')
+
+	return html
+end
+
+local function estimateHtmlLineCount(html, content_width, font_size)
+	local text = stripHtmlForLineEstimate(html)
+
+	-- Estimativa conservadora para fontes proporcionais. O objetivo não é medir
+	-- com precisão pixel a pixel, mas evitar que previews curtos de 2 ou 3 linhas
+	-- acabem criando uma área rolável desnecessária.
+	local average_char_width = math.max(1, font_size * 0.50)
+	local chars_per_line = math.max(12, math.floor(content_width / average_char_width))
+
+	local lines = 0
+	text = text:gsub("\r\n", "\n"):gsub("\r", "\n") .. "\n"
+
+	for raw_line in text:gmatch("(.-)\n") do
+		local line = raw_line:gsub("^%s+", ""):gsub("%s+$", "")
+
+		if line ~= "" then
+			lines = lines + math.max(1, math.ceil(#line / chars_per_line))
+		end
+	end
+
+	return math.max(1, lines)
+end
+
+local function getAdaptiveMinHtmlHeight(html, content_width, font_size, max_html_height)
+	local estimated_lines = estimateHtmlLineCount(html, content_width, font_size)
+	local line_height = math.ceil(font_size * 1.35)
+
+	-- Para previews curtos, adicionamos uma folga maior. Isso evita o caso em que
+	-- duas linhas de texto aparecem como uma linha visível + rolagem.
+	local safety_lines = estimated_lines <= 3 and 1.25 or 0.75
+	local estimated_height = math.ceil((estimated_lines + safety_lines) * line_height + Screen:scaleBySize(8))
+
+	local base_height = math.max(Screen:scaleBySize(44), math.ceil(font_size * 2.2))
+	local min_height = math.max(base_height, estimated_height)
+
+	if max_html_height and max_html_height > 0 then
+		min_height = math.min(max_html_height, min_height)
+	end
+
+	return min_height
+end
+
+local DictionaryPreviewPopup = InputContainer:extend({
+	html_body = nil,
+	css = nil,
+	html_resource_directory = nil,
+	dialog = nil,
+	doc_font_size = Screen:scaleBySize(18),
+	doc_margins = nil,
+	open_callback = nil,
+	search_callback = nil,
+	close_preview_callback = nil,
+})
+
+function DictionaryPreviewPopup:init()
+	local screen_width = Screen:getWidth()
+	local screen_height = Screen:getHeight()
+
+	-- O painel ocupa toda a largura da tela, como o rodapé/footnote nativo.
+	-- O afastamento lateral fica apenas no conteúdo interno, não na borda externa.
+	self.width = screen_width
+
+	local top_border_size = Size.line.thick
+	local padding_top = Size.padding.default
+	local padding_bottom = Size.padding.default
+	local content_padding_left = Screen:scaleBySize(16)
+	local content_padding_right = Screen:scaleBySize(12)
+	local button_gap = Screen:scaleBySize(8)
+
+	local max_popup_height = math.floor(screen_height * 0.38)
+
+	self.doc_margins = self.doc_margins
+		or {
+			left = Screen:scaleBySize(20),
+			right = Screen:scaleBySize(20),
+			top = Screen:scaleBySize(10),
+			bottom = Screen:scaleBySize(10),
+		}
+
+	if Device:isTouchDevice() then
+		local range = Geom:new({
+			x = 0,
+			y = 0,
+			w = screen_width,
+			h = screen_height,
+		})
+
+		self.ges_events = {
+			TapClose = {
+				GestureRange:new({
+					ges = "tap",
+					range = range,
+				}),
+			},
+			SwipeFollow = {
+				GestureRange:new({
+					ges = "swipe",
+					range = range,
+				}),
+			},
+		}
+	end
+
+	if Device:hasKeys() then
+		self.key_events = {
+			Close = {
+				{ Device.input.group.Back },
+			},
+			Follow = {
+				{ "Press" },
+			},
+		}
+	end
+
+	local content_width = self.width - content_padding_left - content_padding_right
+	if content_width < Screen:scaleBySize(120) then
+		content_width = Screen:scaleBySize(120)
+	end
+
+	local buttons = ButtonTable:new({
+		width = content_width,
+		show_parent = self,
+		buttons = {
+			{
+				{
+					text = pluginText("search_in_book"),
+					callback = function()
+						return self:onSearchDocument()
+					end,
+				},
+				{
+					text = pluginText("more"),
+					callback = function()
+						return self:onFollow()
+					end,
+				},
+			},
+		},
+	})
+
+	local buttons_height = Screen:scaleBySize(48)
+	local ok_buttons_size, buttons_size = pcall(function()
+		return buttons:getSize()
+	end)
+	if ok_buttons_size and buttons_size and buttons_size.h then
+		buttons_height = buttons_size.h
+	end
+
+	local fixed_height = top_border_size + padding_top + button_gap + buttons_height + padding_bottom
+
+	local max_html_height = max_popup_height - fixed_height
+	local min_html_height = getAdaptiveMinHtmlHeight(self.html_body, content_width, self.doc_font_size, max_html_height)
+
+	if max_html_height < min_html_height then
+		max_html_height = min_html_height
+	end
+
+	local scroll_bar_width = Screen:scaleBySize(6)
+	local text_scroll_span = Screen:scaleBySize(8)
+
+	local function makeHtmlWidget(height)
+		return ScrollHtmlWidget:new({
+			html_body = self.html_body,
+			is_xhtml = true,
+			css = self.css or FALLBACK_CSS,
+			html_resource_directory = self.html_resource_directory,
+			default_font_size = self.doc_font_size,
+			width = content_width,
+			height = height,
+			scroll_bar_width = scroll_bar_width,
+			text_scroll_span = text_scroll_span,
+			dialog = self.dialog,
+			highlight_text_selection = true,
+		})
+	end
+
+	-- Primeiro renderizamos com a altura máxima para medir a altura real de uma página.
+	-- Se a definição for curta, recriamos o widget com uma altura menor.
+	local htmlwidget = makeHtmlWidget(max_html_height)
+	local htmlwidget_height = max_html_height
+
+	local ok_single_page_height, single_page_height = pcall(function()
+		return htmlwidget:getSinglePageHeight()
+	end)
+
+	if ok_single_page_height and type(single_page_height) == "number" and single_page_height > 0 then
+		local measurement_safety = math.ceil(self.doc_font_size * 0.75)
+		htmlwidget_height = math.ceil(single_page_height + measurement_safety)
+		htmlwidget_height = math.max(min_html_height, htmlwidget_height)
+		htmlwidget_height = math.min(max_html_height, htmlwidget_height)
+	end
+
+	if htmlwidget_height < max_html_height then
+		htmlwidget = makeHtmlWidget(htmlwidget_height)
+	end
+
+	self.htmlwidget = htmlwidget
+	self.height = fixed_height + htmlwidget_height
+
+	local vgroup = VerticalGroup:new({
+		LineWidget:new({
+			dimen = Geom:new({
+				w = self.width,
+				h = top_border_size,
+			}),
+		}),
+		VerticalSpan:new({ width = padding_top }),
+		HorizontalGroup:new({
+			HorizontalSpan:new({ width = content_padding_left }),
+			self.htmlwidget,
+			HorizontalSpan:new({ width = content_padding_right }),
+		}),
+		VerticalSpan:new({ width = button_gap }),
+		HorizontalGroup:new({
+			HorizontalSpan:new({ width = content_padding_left }),
+			buttons,
+			HorizontalSpan:new({ width = content_padding_right }),
+		}),
+		VerticalSpan:new({ width = padding_bottom }),
+	})
+
+	self.container = FrameContainer:new({
+		background = Blitbuffer.COLOR_WHITE,
+		bordersize = 0,
+		margin = 0,
+		padding = 0,
+		vgroup,
+	})
+
+	self[1] = BottomContainer:new({
+		dimen = Screen:getSize(),
+		self.container,
+	})
+end
+
+function DictionaryPreviewPopup:onShow()
+	UIManager:setDirty(self.dialog, function()
+		return "ui", self.container.dimen
+	end)
+end
+
+function DictionaryPreviewPopup:onCloseWidget()
+	UIManager:setDirty(self.dialog, function()
+		return "partial", self.container.dimen
+	end)
+end
+
+function DictionaryPreviewPopup:onClose()
+	UIManager:close(self)
+	if self.close_preview_callback then
+		return self.close_preview_callback()
+	end
+	return true
+end
+
+function DictionaryPreviewPopup:onClosePreview()
+	UIManager:close(self)
+	if self.close_preview_callback then
+		return self.close_preview_callback()
+	end
+	return true
+end
+
+function DictionaryPreviewPopup:onSearchDocument()
+	UIManager:close(self)
+	if self.search_callback then
+		return self.search_callback()
+	end
+	return true
+end
+
+function DictionaryPreviewPopup:onFollow()
+	UIManager:close(self)
+	if self.open_callback then
+		return self.open_callback()
+	end
+	return true
+end
+
+function DictionaryPreviewPopup:onTapClose(_arg, ges)
+	if
+		ges
+		and ges.pos
+		and self.container
+		and self.container.dimen
+		and ges.pos:notIntersectWith(self.container.dimen)
+	then
+		return self:onClosePreview()
+	end
+
+	-- Toques dentro do conteúdo não abrem automaticamente o popup completo.
+	-- Assim o usuário pode rolar/selecionar texto e usar os botões do rodapé.
+	return false
+end
+
+function DictionaryPreviewPopup:onSwipeFollow(_arg, ges)
+	if not ges or not ges.direction then
+		return false
+	end
+
+	if ges.direction == "west" then
+		return self:onFollow()
+	elseif ges.direction == "south" or ges.direction == "east" then
+		return self:onClosePreview()
+	end
+
+	return false
+end
+
 function DictionaryPreview:init()
 	self.enabled = G_reader_settings:nilOrTrue("dictionarypreview_enabled")
 	self.current_popup = nil
@@ -198,7 +696,7 @@ end
 
 function DictionaryPreview:addToMainMenu(menu_items)
 	menu_items.dictionarypreview = {
-		text = _("Dictionary preview"),
+		text = pluginText("dictionary_preview"),
 		sorting_hint = "more_tools",
 
 		checked_func = function()
@@ -310,18 +808,8 @@ function DictionaryPreview:getDocumentFontName(dict_self)
 	return "Noto Sans"
 end
 
-function DictionaryPreview:getDocumentFontSize(dict_self)
-	if
-		dict_self
-		and dict_self.ui
-		and dict_self.ui.document
-		and dict_self.ui.document.configurable
-		and dict_self.ui.document.configurable.font_size
-	then
-		return Screen:scaleBySize(dict_self.ui.document.configurable.font_size)
-	end
-
-	return Screen:scaleBySize(18)
+function DictionaryPreview:getInterfaceFontSize()
+	return Screen:scaleBySize(UI_FONT_SIZE)
 end
 
 function DictionaryPreview:getDocumentMargins(dict_self)
@@ -343,40 +831,154 @@ function DictionaryPreview:getDocumentMargins(dict_self)
 	}
 end
 
-function DictionaryPreview:buildPreviewHtml(word, result)
+function DictionaryPreview:getSearchText(word, result)
+	result = result or {}
+
+	local text = word or result.word or ""
+
+	if type(text) == "table" then
+		text = text.text or text.word or ""
+	end
+
+	text = tostring(text or "")
+
+	if util and util.stripPunctuation then
+		local ok, stripped = pcall(function()
+			return util.stripPunctuation(text)
+		end)
+
+		if ok and stripped and stripped ~= "" then
+			text = stripped
+		end
+	end
+
+	text = text:gsub("^%s+", ""):gsub("%s+$", "")
+
+	return text
+end
+
+function DictionaryPreview:showSearchDialog(search_text)
+	search_text = tostring(search_text or "")
+	search_text = search_text:gsub("^%s+", ""):gsub("%s+$", "")
+
+	if search_text == "" then
+		return true
+	end
+
+	local function openSearchInput()
+		-- Preferimos abrir a janela de entrada da busca já preenchida.
+		-- ReaderSearch:onShowFulltextSearchInput(search_string) usa esse argumento
+		-- diretamente como texto inicial do campo de busca.
+		if self.ui and self.ui.search and type(self.ui.search.onShowFulltextSearchInput) == "function" then
+			local ok, err = pcall(function()
+				self.ui.search:onShowFulltextSearchInput(search_text)
+			end)
+
+			if ok then
+				return true
+			end
+
+			logger.warn("DictionaryPreview: direct search input failed:", err)
+		end
+
+		-- Fallback: dispara o evento equivalente para o módulo ReaderSearch.
+		if self.ui and self.ui.handleEvent then
+			local ok, err = pcall(function()
+				self.ui:handleEvent(Event:new("ShowFulltextSearchInput", search_text))
+			end)
+
+			if ok then
+				return true
+			end
+
+			logger.warn("DictionaryPreview: search input event failed:", err)
+		end
+
+		-- Último fallback: executa a busca diretamente e mostra o painel de navegação
+		-- dos resultados. Isso não abre o campo de texto, mas garante a busca.
+		if self.ui and self.ui.search and type(self.ui.search.searchText) == "function" then
+			local ok, err = pcall(function()
+				self.ui.search:searchText(search_text)
+			end)
+
+			if ok then
+				return true
+			end
+
+			logger.warn("DictionaryPreview: direct search execution failed:", err)
+		end
+
+		if self.ui and self.ui.handleEvent then
+			local ok, err = pcall(function()
+				self.ui:handleEvent(Event:new("ShowSearchDialog", search_text, 0, false, true))
+			end)
+
+			if not ok then
+				logger.warn("DictionaryPreview: search dialog fallback failed:", err)
+			end
+		end
+
+		return true
+	end
+
+	-- Abrir a busca no próximo ciclo evita conflito de foco entre o fechamento
+	-- do preview e a abertura do InputDialog/teclado.
+	local ok_schedule = pcall(function()
+		UIManager:scheduleIn(0.05, openSearchInput)
+	end)
+
+	if not ok_schedule then
+		openSearchInput()
+	end
+
+	return true
+end
+
+function DictionaryPreview:buildPreviewPayload(word, result)
 	result = result or {}
 
 	local shown_word = result.word or word or _("Dictionary")
 	local dict_name = result.dict or _("Dictionary")
-	local definition_html = normalizeDictionaryPreviewHtml(result.definition)
 
-	return table.concat({
-		"<html>",
-		'<body style="margin:0; padding:0; font-size:1em; line-height:1.25;">',
+	local use_dictionary_css = hasDictionaryCss(result)
+	local definition_html
+	local css
 
-		'<div style="margin-bottom:0.45em; font-size:0.92em; font-weight:bold;">',
+	if use_dictionary_css then
+		-- Quando o resultado já traz CSS do dicionário, usamos o HTML cru,
+		-- como o painel original do dicionário. Isso preserva tamanhos,
+		-- espaçamentos, classes e recursos relativos do dicionário.
+		definition_html = normalizeDictionaryHtml(result.definition)
+		css = getDictionaryPanelCss(result)
+	else
+		-- Fallback para dicionários sem CSS próprio ou entradas de texto puro.
+		-- Mantém a normalização que corrige <h2> grandes e classes comuns.
+		definition_html = normalizeDictionaryPreviewHtml(result.definition)
+		css = FALLBACK_CSS
+	end
+
+	local html_body = table.concat({
+		'<div class="dictionarypreview-header">',
 		htmlEscape(shown_word),
 		" — ",
 		htmlEscape(dict_name),
 		"</div>",
 
-		'<div style="border-top:1px solid #888; margin:0.3em 0 0.45em 0;"></div>',
+		'<div class="dictionarypreview-separator"></div>',
 
 		definition_html,
-
-		'<div style="border-top:1px solid #888; margin:0.55em 0 0.35em 0;"></div>',
-
-		'<div style="font-weight:bold; font-size:0.92em; margin-top:0.35em;">',
-		htmlEscape(_("Toque aqui para ver mais")),
-		"</div>",
-
-		"</body>",
-		"</html>",
 	}, "\n")
+
+	return {
+		html_body = html_body,
+		css = css,
+		html_resource_directory = result.dictionary_resource_directory,
+	}
 end
 
 function DictionaryPreview:showFootnotePreview(dict_self, word, results, boxes, link, dict_close_callback)
 	local result = results and results[1] or {}
+	local search_text = self:getSearchText(word, result)
 
 	if self.current_popup then
 		UIManager:close(self.current_popup)
@@ -386,28 +988,13 @@ function DictionaryPreview:showFootnotePreview(dict_self, word, results, boxes, 
 	local popup
 	local opened_full_popup = false
 
-	local function closePreviewOnly()
-		if popup then
-			UIManager:close(popup)
-			popup = nil
-		end
-
-		self.current_popup = nil
-		self:clearOriginalHighlight(dict_self)
-		self:clearSelection()
-
-		if dict_close_callback then
-			pcall(dict_close_callback)
-		end
-
-		return true
-	end
-
 	local function openFullPopup()
 		opened_full_popup = true
 
 		if popup then
-			UIManager:close(popup)
+			pcall(function()
+				UIManager:close(popup)
+			end)
 			popup = nil
 		end
 
@@ -418,53 +1005,43 @@ function DictionaryPreview:showFootnotePreview(dict_self, word, results, boxes, 
 		return true
 	end
 
-	local html = self:buildPreviewHtml(word, result)
+	local preview_payload = self:buildPreviewPayload(word, result)
 
-	popup = FootnoteWidget:new({
-		html = html,
-
-		doc_font_name = self:getDocumentFontName(dict_self),
-		doc_font_size = self:getDocumentFontSize(dict_self),
+	popup = DictionaryPreviewPopup:new({
+		html_body = preview_payload.html_body,
+		css = preview_payload.css,
+		html_resource_directory = preview_payload.html_resource_directory,
+		doc_font_size = self:getInterfaceFontSize(),
 		doc_margins = self:getDocumentMargins(dict_self),
-
 		dialog = dict_self and dict_self.dialog,
-
-		-- Mantém o comportamento típico do FootnoteWidget:
-		-- o gesto de "seguir/abrir" também chama o popup completo.
-		follow_callback = function()
+		open_callback = function()
 			return openFullPopup()
 		end,
-	})
-
-	local original_on_close_widget = popup.onCloseWidget
-
-	popup.onTapClose = function(footnote_self, arg, ges)
-		-- Toque fora do painel: fecha o preview.
-		if
-			ges
-			and ges.pos
-			and footnote_self.container
-			and footnote_self.container.dimen
-			and ges.pos:notIntersectWith(footnote_self.container.dimen)
-		then
-			return closePreviewOnly()
-		end
-
-		-- Toque dentro do painel: abre o popup original completo.
-		return openFullPopup()
-	end
-
-	popup.onCloseWidget = function(footnote_self)
-		self.current_popup = nil
-
-		if not opened_full_popup then
+		search_callback = function()
+			self.current_popup = nil
 			self:clearOriginalHighlight(dict_self)
-		end
+			self:clearSelection()
 
-		if original_on_close_widget then
-			return original_on_close_widget(footnote_self)
-		end
-	end
+			if dict_close_callback then
+				pcall(dict_close_callback)
+			end
+
+			return self:showSearchDialog(search_text)
+		end,
+		close_preview_callback = function()
+			if not opened_full_popup then
+				self.current_popup = nil
+				self:clearOriginalHighlight(dict_self)
+				self:clearSelection()
+
+				if dict_close_callback then
+					pcall(dict_close_callback)
+				end
+			end
+
+			return true
+		end,
+	})
 
 	self.current_popup = popup
 	UIManager:show(popup)
