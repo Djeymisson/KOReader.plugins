@@ -437,14 +437,6 @@ function DictionaryPreviewPopup:init()
         content_width = Screen:scaleBySize(120)
     end
 
-    -- Botões do KOReader:
-    -- - appbar.search e appbar.menu vêm da base de ícones do KOReader
-    --   em resources/icons/mdlight/.
-    -- - As setas seguem como glifos grandes para manter o pedido anterior
-    --   de setas duplas.
-    local prev_icon = "«"
-    local next_icon = "»"
-
     local buttons = ButtonTable:new({
         width = content_width,
         show_parent = self,
@@ -459,21 +451,23 @@ function DictionaryPreviewPopup:init()
                     end,
                 },
                 {
-                    text = prev_icon,
-                    font_size = ICON_BUTTON_FONT_SIZE,
+                    icon = "chevron.left",
+                    icon_width = KOREADER_ICON_SIZE,
+                    icon_height = KOREADER_ICON_SIZE,
                     callback = function()
                         return self:onPrevDictionary()
                     end,
                 },
                 {
-                    text = next_icon,
-                    font_size = ICON_BUTTON_FONT_SIZE,
+                    icon = "chevron.right",
+                    icon_width = KOREADER_ICON_SIZE,
+                    icon_height = KOREADER_ICON_SIZE,
                     callback = function()
                         return self:onNextDictionary()
                     end,
                 },
                 {
-                    icon = "appbar.menu",
+                    icon = "chevron.up",
                     icon_width = KOREADER_ICON_SIZE,
                     icon_height = KOREADER_ICON_SIZE,
                     callback = function()
