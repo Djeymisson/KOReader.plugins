@@ -1,87 +1,87 @@
 # Reader Header Footer
 
-Plugin para o [KOReader](https://koreader.rocks/) que adiciona informações discretas no cabeçalho e no rodapé das páginas durante a leitura.
+Plugin for [KOReader](https://koreader.rocks/) that adds discreet header and footer information while reading.
 
-Ele exibe indicadores diretamente nas margens do documento, sem abrir barras extras ou alterar a interface principal do leitor.
+It displays indicators directly in the document margins, without opening extra bars or changing the reader's main interface.
 
-## Funcionalidades
+## Features
 
-O plugin adiciona quatro áreas de informação à tela de leitura:
+The plugin adds four information areas to the reading screen:
 
-- **Topo esquerdo**: título do capítulo ou autor + título do livro.
-- **Topo direito**: indicador de Wi-Fi, horário e bateria.
-- **Rodapé esquerdo**: páginas restantes no capítulo ou no livro.
-- **Rodapé direito**: porcentagem de leitura do documento.
+- **Top left**: chapter title or author + book title.
+- **Top right**: Wi-Fi indicator, time, and battery.
+- **Bottom left**: pages left in the current chapter or in the book.
+- **Bottom right**: document reading percentage.
 
-O objetivo é manter informações úteis sempre visíveis, mas de forma leve e pouco intrusiva.
+The goal is to keep useful information always visible while remaining lightweight and unobtrusive.
 
-## Como funciona
+## How it works
 
-O plugin é carregado como um módulo do leitor do KOReader e desenha os textos diretamente sobre as regiões superior e inferior da página.
+The plugin is loaded as a KOReader reader module and draws text directly over the top and bottom regions of the page.
 
-Ele evita redesenhos completos da tela sempre que possível. Em vez disso, invalida apenas as pequenas áreas onde os indicadores aparecem. Isso reduz flickering e evita atualizações pesadas da página inteira.
+It avoids full-screen redraws whenever possible. Instead, it invalidates only the small areas where the indicators are displayed. This reduces flickering and avoids heavy full-page refreshes.
 
-Também há uma proteção para menus e diálogos: se algum menu do KOReader estiver aberto, a atualização dos indicadores é adiada até que o leitor volte a ser a janela ativa.
+It also includes protection for menus and dialogs: if a KOReader menu is open, indicator updates are deferred until the reader becomes the active window again.
 
-## Informações exibidas
+## Displayed information
 
-### Topo direito
+### Top right
 
-Mostra:
+Shows:
 
 ```text
-Wi-Fi • HH:MM • Bateria
+Wi-Fi • HH:MM • Battery
 ```
 
-Exemplo:
+Example:
 
 ```text
  • 14:32 •  87%
 ```
 
-Se o dispositivo não possuir bateria, ou se a informação não estiver disponível, a bateria é omitida.
+If the device does not have a battery, or if battery information is unavailable, the battery indicator is omitted.
 
-### Topo esquerdo
+### Top left
 
-Mostra informações contextuais do livro:
+Shows contextual book information:
 
-- em páginas pares: `Autor • Título`;
-- em páginas ímpares: título do capítulo atual;
-- no início de um capítulo: o topo esquerdo fica vazio, evitando repetição desnecessária.
+- on even-numbered pages: `Author • Title`;
+- on odd-numbered pages: current chapter title;
+- at the beginning of a chapter: the top-left area stays empty to avoid unnecessary repetition.
 
-### Rodapé esquerdo
+### Bottom left
 
-Pode exibir uma das duas informações:
+Can display one of two pieces of information:
 
 ```text
 10 pages left in chapter
 ```
 
-ou:
+or:
 
 ```text
 120 pages left in book
 ```
 
-Esse comportamento é configurável pelo menu do plugin.
+This behavior can be configured from the plugin menu.
 
-### Rodapé direito
+### Bottom right
 
-Mostra a porcentagem lida do documento:
+Shows the percentage of the document that has been read:
 
 ```text
 42%
 ```
 
-## Instalação
+## Installation
 
-1. Crie uma pasta chamada:
+1. Create a folder named:
 
 ```text
 reader_header_footer.koplugin
 ```
 
-2. Copie os arquivos do plugin para dentro dela:
+2. Copy the plugin files into it:
 
 ```text
 reader_header_footer.koplugin/
@@ -89,79 +89,79 @@ reader_header_footer.koplugin/
 └── main.lua
 ```
 
-3. Copie a pasta para o diretório de plugins do KOReader.
+3. Copy the folder to KOReader's plugins directory.
 
-Em muitos dispositivos, o caminho será semelhante a:
+On many devices, the path will look similar to:
 
 ```text
 koreader/plugins/reader_header_footer.koplugin
 ```
 
-Em dispositivos Kindle, normalmente fica em:
+On Kindle devices, it is usually located at:
 
 ```text
 /mnt/us/koreader/plugins/reader_header_footer.koplugin
 ```
 
-4. Reinicie o KOReader.
+4. Restart KOReader.
 
-5. Abra um livro e acesse o menu do leitor para configurar o plugin.
+5. Open a book and access the reader menu to configure the plugin.
 
-## Configuração
+## Configuration
 
-O plugin adiciona um item ao menu principal do leitor:
+The plugin adds an item to the reader's main menu:
 
 ```text
 Header/footer indicators
 ```
 
-Nesse menu é possível configurar:
+From this menu, you can configure:
 
-### Ativar ou desativar
+### Enable or disable
 
-Permite ligar ou desligar os indicadores sem remover o plugin.
+Turns the indicators on or off without removing the plugin.
 
-### Informação do rodapé esquerdo
+### Bottom-left information
 
-Alterna entre:
+Switches between:
 
-- páginas restantes no capítulo;
-- páginas restantes no livro.
+- pages left in the current chapter;
+- pages left in the book.
 
-### Fonte
+### Font
 
-Permite alterar o tamanho da fonte dos indicadores.
+Allows changing the indicator font size.
 
-Valores suportados:
-
-```text
-mínimo: 10
-padrão: 16
-máximo: 28
-```
-
-Também há uma opção para restaurar o tamanho padrão.
-
-### Margens
-
-Por padrão, o plugin tenta seguir as margens reais do documento, alinhando os indicadores com a área de leitura.
-
-Também é possível desativar esse comportamento e definir margens manuais:
-
-- margem esquerda;
-- margem direita;
-- margem lateral comum para os dois lados.
-
-Valores suportados:
+Supported values:
 
 ```text
-mínimo: 0
-máximo: 300
+minimum: 10
+default: 16
+maximum: 28
 ```
 
-## Configurações salvas
+There is also an option to restore the default size.
 
-As preferências são armazenadas nas configurações do KOReader usando as seguintes chaves:
+### Margins
+
+By default, the plugin tries to follow the document's real margins, aligning the indicators with the reading area.
+
+You can also disable this behavior and define manual margins:
+
+- left margin;
+- right margin;
+- common side margin for both sides.
+
+Supported values:
+
+```text
+minimum: 0
+maximum: 300
+```
+
+## Saved settings
+
+Preferences are stored in KOReader's settings using the following keys:
 
 ```text
 reader_header_footer_enabled
@@ -173,34 +173,34 @@ reader_header_footer_custom_horizontal_margin
 reader_header_footer_left_footer_mode
 ```
 
-## Atualizações automáticas
+## Automatic updates
 
-O plugin atualiza automaticamente os indicadores nos seguintes eventos:
+The plugin automatically updates the indicators on the following events:
 
-- mudança de página;
-- atualização de posição de leitura;
-- mudança no estado do Wi-Fi;
-- mudança no carregamento da bateria;
-- retomada do dispositivo após suspensão;
-- virada de minuto, para atualizar o horário.
+- page change;
+- reading position update;
+- Wi-Fi state change;
+- battery charging state change;
+- device resume after suspension;
+- minute change, to update the clock.
 
-A bateria é verificada periodicamente a cada 5 minutos.
+The battery is checked periodically every 5 minutes.
 
-## Desempenho
+## Performance
 
-O plugin foi pensado para ser leve. Algumas decisões importantes:
+The plugin was designed to be lightweight. Some important decisions:
 
-- usa atualização regional em vez de refresh completo;
-- evita redesenhar enquanto menus ou diálogos estão abertos;
-- atualiza o relógio apenas na virada do minuto;
-- verifica bateria em intervalo periódico, não continuamente;
-- reaproveita o estado atual de página, contagem de páginas e área visível do leitor.
+- uses regional updates instead of full refreshes;
+- avoids redrawing while menus or dialogs are open;
+- updates the clock only when the minute changes;
+- checks the battery periodically, not continuously;
+- reuses the current page state, page count, and visible reader area.
 
-## Personalização avançada
+## Advanced customization
 
-Alguns valores podem ser ajustados diretamente no início do `main.lua`.
+Some values can be adjusted directly at the beginning of `main.lua`.
 
-### Tamanho da fonte
+### Font size
 
 ```lua
 local FONT = {
@@ -211,7 +211,7 @@ local FONT = {
 }
 ```
 
-### Espaçamento e posicionamento
+### Spacing and positioning
 
 ```lua
 local LAYOUT = {
@@ -225,7 +225,7 @@ local LAYOUT = {
 }
 ```
 
-### Margens padrão
+### Default margins
 
 ```lua
 local INDICATOR_MARGINS = {
@@ -237,22 +237,21 @@ local INDICATOR_MARGINS = {
 }
 ```
 
-## Limitações conhecidas
+## Known limitations
 
-- O plugin depende das informações de metadados e sumário disponibilizadas pelo KOReader.
-- Em documentos sem sumário, a contagem de páginas restantes no capítulo pode cair para a contagem restante no livro.
-- O título de capítulo pode ficar vazio se o documento não fornecer uma estrutura de TOC confiável.
-- Em layouts muito incomuns, as margens automáticas podem não corresponder exatamente à área visual do texto. Nesses casos, use margens manuais.
+- The plugin depends on metadata and table-of-contents information provided by KOReader.
+- In documents without a table of contents, the pages-left-in-chapter count may fall back to the pages-left-in-book count.
+- The chapter title may be empty if the document does not provide a reliable TOC structure.
+- In very unusual layouts, automatic margins may not exactly match the visual text area. In those cases, use manual margins.
 
-## Estrutura do plugin
+## Plugin structure
 
 ```text
 reader_header_footer.koplugin/
-├── _meta.lua   # metadados exibidos pelo KOReader
-└── main.lua    # implementação principal do plugin
+├── _meta.lua   # metadata displayed by KOReader
+└── main.lua    # main plugin implementation
 ```
 
-## Créditos
+## Credits
 
-Plugin customizado para KOReader.
-
+Custom plugin for KOReader.

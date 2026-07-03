@@ -1,93 +1,93 @@
 # KOReader Plugins
 
-Este repositório reúne plugins customizados para o [KOReader](https://koreader.rocks/).
+This repository contains custom plugins for [KOReader](https://koreader.rocks/).
 
-Cada plugin fica em sua própria pasta `.koplugin/` e possui um arquivo de documentação específico na raiz do repositório.
+Each plugin is kept in its own `.koplugin/` folder and has a dedicated documentation file in the repository root. This README is only a general entry point with common installation instructions and links to each plugin's documentation.
 
-## Plugins disponíveis
+## Available plugins
 
-| Plugin | Pasta | Documentação |
+| Plugin | Folder | Documentation |
 |---|---|---|
 | Plain UI Custom | `plainui-custom.koplugin/` | [plainui-custom.koplugin.md](./plainui-custom.koplugin.md) |
 | Dictionary Preview | `dictionarypreview.koplugin/` | [dictionarypreview.koplugin.md](./dictionarypreview.koplugin.md) |
 | Reader Header Footer | `readerheaderfooter.koplugin/` | [readerheaderfooter.koplugin.md](./readerheaderfooter.koplugin.md) |
 
-Cada pasta `.koplugin/` contém os arquivos necessários para o KOReader carregar o plugin, geralmente incluindo pelo menos:
+Each `.koplugin/` folder contains the files required for KOReader to load the plugin, usually including at least:
 
 ```text
 _meta.lua
 main.lua
 ```
 
-Alguns plugins podem possuir subpastas adicionais, como `modules/` ou `icons/`. Consulte o README específico de cada plugin antes de instalar ou modificar seus arquivos.
+Some plugins may include additional folders, such as `modules/` or `icons/`. Check each plugin's README before installing or modifying its files.
 
-## Instalação
+## Installation
 
-1. Baixe ou clone este repositório.
-2. Escolha o plugin que deseja instalar.
-3. Copie a pasta `.koplugin/` correspondente para o diretório de plugins do KOReader.
+1. Download or clone this repository.
+2. Choose the plugin you want to install.
+3. Copy the corresponding `.koplugin/` folder to KOReader's plugins directory.
 
-Exemplo:
+Example:
 
 ```text
-koreader/plugins/nome-do-plugin.koplugin/
+koreader/plugins/plugin-name.koplugin/
 ```
 
-Em alguns dispositivos, especialmente Kindle, o caminho pode ser semelhante a:
+On some devices, especially Kindle, the path may look like this:
 
 ```text
-/mnt/us/koreader/plugins/nome-do-plugin.koplugin/
+/extensions/koreader/plugins/plugin-name.koplugin/
 ```
 
-4. Reinicie o KOReader.
-5. Consulte o README do plugin instalado para saber onde encontrá-lo na interface e como configurá-lo.
+4. Restart KOReader.
+5. Read the plugin-specific README to learn where to find it in the interface and how to configure it.
 
-## Atualização
+## Updating
 
-Para atualizar um plugin:
+To update a plugin:
 
-1. Feche o KOReader.
-2. Substitua a pasta `.koplugin/` antiga pela versão nova.
-3. Reinicie o KOReader.
+1. Close KOReader.
+2. Replace the old `.koplugin/` folder with the new version.
+3. Restart KOReader.
 
-Se o plugin salvar preferências internas, essas configurações normalmente permanecem armazenadas pelo KOReader mesmo após a substituição dos arquivos.
+If the plugin stores internal preferences, those settings are usually kept by KOReader even after replacing the plugin files.
 
-## Remoção
+## Removing a plugin
 
-Para remover um plugin:
+To remove a plugin:
 
-1. Feche o KOReader.
-2. Apague a pasta `.koplugin/` correspondente do diretório de plugins.
-3. Reinicie o KOReader.
+1. Close KOReader.
+2. Delete the corresponding `.koplugin/` folder from KOReader's plugins directory.
+3. Restart KOReader.
 
-Exemplo:
+Example:
 
 ```text
-koreader/plugins/nome-do-plugin.koplugin/
+koreader/plugins/plugin-name.koplugin/
 ```
 
-As configurações salvas pelo KOReader podem permanecer no armazenamento interno, mas deixam de ter efeito quando o plugin não está mais instalado.
+Settings previously saved by KOReader may remain in internal storage, but they will no longer have any effect once the plugin is removed.
 
-## Compatibilidade
+## Compatibility
 
-Estes plugins foram criados para uso com versões recentes do KOReader e podem depender de APIs internas do aplicativo. Como o KOReader está em desenvolvimento ativo, atualizações futuras podem exigir ajustes nos plugins.
+These plugins are intended for recent KOReader versions and may depend on internal KOReader APIs. Since KOReader is actively developed, future updates may require plugin adjustments.
 
-Caso algum plugin deixe de carregar após uma atualização do KOReader, verifique primeiro o README específico dele e os logs do KOReader.
+If a plugin stops loading after a KOReader update, check the plugin-specific README first, then inspect KOReader's logs.
 
-## Desenvolvimento
+## Development
 
-Para adicionar um novo plugin ao repositório, recomenda-se manter o mesmo padrão:
+When adding a new plugin to this repository, it is recommended to follow the same structure:
 
 ```text
-novo-plugin.koplugin/
+new-plugin.koplugin/
 ├── _meta.lua
 └── main.lua
 
-novo-plugin.koplugin.md
+new-plugin.koplugin.md
 ```
 
-O arquivo `.md` na raiz deve explicar o funcionamento, instalação, opções de configuração e limitações específicas do plugin.
+The root-level `.md` file should explain the plugin's purpose, installation steps, configuration options, and known limitations.
 
-## Licença
+## License
 
-Consulte os cabeçalhos dos arquivos e a documentação específica de cada plugin para informações de licença e créditos.
+Check the file headers and each plugin's dedicated documentation for license and credit information.
