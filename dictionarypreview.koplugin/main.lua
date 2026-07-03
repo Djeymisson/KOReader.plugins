@@ -35,17 +35,25 @@ local DictionaryPreview = WidgetContainer:extend({
 
 local UI_FONT_FACE = "Noto Sans"
 local UI_FONT_SIZE = 20
+
+local PANEL_MAX_HEIGHT_RATIO = 0.38
+local MIN_CONTENT_WIDTH = Screen:scaleBySize(120)
+
 local KOREADER_ICON_SIZE = Screen:scaleBySize(28)
+local BUTTON_HEIGHT = Screen:scaleBySize(48)
+local BUTTON_SEPARATOR_WIDTH = math.max(1, Screen:scaleBySize(1))
+
+local PANEL_TOP_BORDER_SIZE = Size.line.thick
+local PANEL_PADDING_TOP = Screen:scaleBySize(4)
+local PANEL_PADDING_BOTTOM = Screen:scaleBySize(4)
+local TEXT_BUTTON_GAP = Screen:scaleBySize(2)
+local CONTENT_PADDING_LEFT = Screen:scaleBySize(16)
+local CONTENT_PADDING_RIGHT = Screen:scaleBySize(12)
 
 local ICON_SEARCH = "appbar.search"
 local ICON_PREVIOUS = "chevron.left"
 local ICON_NEXT = "chevron.right"
 local ICON_DETAILS = "chevron.up"
-local ICON_HIGHLIGHT = "dictionarypreview.highlight"
-local ICON_WIKIPEDIA = "dictionarypreview.wikipedia"
-
-local PANEL_MAX_HEIGHT_RATIO = 0.38
-local MIN_CONTENT_WIDTH = Screen:scaleBySize(120)
 
 local SETTING_ENABLED = "dictionarypreview_enabled"
 local SETTING_LEFT_ACTION = "dictionarypreview_left_action"
@@ -56,9 +64,9 @@ local LEFT_ACTION_WIKIPEDIA = "wikipedia"
 local DEFAULT_LEFT_ACTION = LEFT_ACTION_SEARCH_BOOK
 
 local LEFT_ACTIONS = {
-	{ id = LEFT_ACTION_HIGHLIGHT, label = _("Highlight"), icon = ICON_HIGHLIGHT },
-	{ id = LEFT_ACTION_SEARCH_BOOK, label = _("Fulltext search"), icon = ICON_SEARCH },
-	{ id = LEFT_ACTION_WIKIPEDIA, label = _("Wikipedia"), icon = ICON_WIKIPEDIA },
+	{ id = LEFT_ACTION_HIGHLIGHT, label = _("Highlight") },
+	{ id = LEFT_ACTION_SEARCH_BOOK, label = _("Fulltext search") },
+	{ id = LEFT_ACTION_WIKIPEDIA, label = _("Wikipedia") },
 }
 
 local LEFT_ACTION_BY_ID = {}
@@ -378,7 +386,7 @@ local function estimateHtmlLineCount(html, content_width, font_size)
 	return math.max(1, lines)
 end
 
-local function getAdaptiveMinHtmlHeight(html, content_width, font_size, max_html_height)
+local function getHtmlHeightProfile(html, content_width, font_size, max_html_height)
 	local estimated_lines = estimateHtmlLineCount(html, content_width, font_size)
 	local line_height = math.ceil(font_size * 1.30)
 	local safety_lines = estimated_lines <= 2 and 0.08 or estimated_lines <= 3 and 0.18 or 0.35
@@ -387,21 +395,19 @@ local function getAdaptiveMinHtmlHeight(html, content_width, font_size, max_html
 	local min_height = math.max(base_height, estimated_height)
 
 	if max_html_height and max_html_height > 0 then
-		return math.min(max_html_height, min_height)
+		min_height = math.min(max_html_height, min_height)
 	end
 
-	return min_height
-end
-
-local function getCompactHtmlHeightCap(html, content_width, font_size)
-	local estimated_lines = estimateHtmlLineCount(html, content_width, font_size)
-
-	if estimated_lines > 3 then
-		return nil
+	local compact_cap
+	if estimated_lines <= 3 then
+		compact_cap = math.ceil((estimated_lines + 0.35) * line_height + Screen:scaleBySize(4))
 	end
 
-	local line_height = math.ceil(font_size * 1.30)
-	return math.ceil((estimated_lines + 0.35) * line_height + Screen:scaleBySize(4))
+	return {
+		estimated_lines = estimated_lines,
+		min_height = min_height,
+		compact_cap = compact_cap,
+	}
 end
 
 -- Button helpers -------------------------------------------------------------
@@ -517,12 +523,6 @@ function DictionaryPreviewPopup:init()
 
 	self.width = screen_width
 
-	local top_border_size = Size.line.thick
-	local content_padding_left = Screen:scaleBySize(16)
-	local content_padding_right = Screen:scaleBySize(12)
-	local padding_top = Screen:scaleBySize(4)
-	local padding_bottom = Screen:scaleBySize(4)
-	local button_gap = Screen:scaleBySize(2)
 	local max_popup_height = math.floor(screen_height * PANEL_MAX_HEIGHT_RATIO)
 
 	if Device:isTouchDevice() then
@@ -540,20 +540,19 @@ function DictionaryPreviewPopup:init()
 		}
 	end
 
-	local content_width = math.max(MIN_CONTENT_WIDTH, self.width - content_padding_left - content_padding_right)
+	local content_width = math.max(MIN_CONTENT_WIDTH, self.width - CONTENT_PADDING_LEFT - CONTENT_PADDING_RIGHT)
 	local buttons = self:makeButtons(content_width)
-	local buttons_height = self:getWidgetHeight(buttons, Screen:scaleBySize(48))
-	local fixed_height = top_border_size + padding_top + button_gap + buttons_height + padding_bottom
+	local buttons_height = self:getWidgetHeight(buttons, BUTTON_HEIGHT)
+	local fixed_height = PANEL_TOP_BORDER_SIZE + PANEL_PADDING_TOP + TEXT_BUTTON_GAP + buttons_height + PANEL_PADDING_BOTTOM
 	local max_html_height = max_popup_height - fixed_height
-	local min_html_height = getAdaptiveMinHtmlHeight(self.html_body, content_width, self.doc_font_size, max_html_height)
-	local compact_html_height_cap = getCompactHtmlHeightCap(self.html_body, content_width, self.doc_font_size)
+	local height_profile = getHtmlHeightProfile(self.html_body, content_width, self.doc_font_size, max_html_height)
 
-	if max_html_height < min_html_height then
-		max_html_height = min_html_height
+	if max_html_height < height_profile.min_height then
+		max_html_height = height_profile.min_height
 	end
 
 	local htmlwidget, htmlwidget_height =
-		self:makeSizedHtmlWidget(content_width, max_html_height, min_html_height, compact_html_height_cap)
+		self:makeSizedHtmlWidget(content_width, max_html_height, height_profile)
 	self.htmlwidget = htmlwidget
 	self.height = fixed_height + htmlwidget_height
 
@@ -563,20 +562,20 @@ function DictionaryPreviewPopup:init()
 		margin = 0,
 		padding = 0,
 		VerticalGroup:new({
-			LineWidget:new({ dimen = Geom:new({ w = self.width, h = top_border_size }) }),
-			VerticalSpan:new({ width = padding_top }),
+			LineWidget:new({ dimen = Geom:new({ w = self.width, h = PANEL_TOP_BORDER_SIZE }) }),
+			VerticalSpan:new({ width = PANEL_PADDING_TOP }),
 			HorizontalGroup:new({
-				HorizontalSpan:new({ width = content_padding_left }),
+				HorizontalSpan:new({ width = CONTENT_PADDING_LEFT }),
 				self.htmlwidget,
-				HorizontalSpan:new({ width = content_padding_right }),
+				HorizontalSpan:new({ width = CONTENT_PADDING_RIGHT }),
 			}),
-			VerticalSpan:new({ width = button_gap }),
+			VerticalSpan:new({ width = TEXT_BUTTON_GAP }),
 			HorizontalGroup:new({
-				HorizontalSpan:new({ width = content_padding_left }),
+				HorizontalSpan:new({ width = CONTENT_PADDING_LEFT }),
 				buttons,
-				HorizontalSpan:new({ width = content_padding_right }),
+				HorizontalSpan:new({ width = CONTENT_PADDING_RIGHT }),
 			}),
-			VerticalSpan:new({ width = padding_bottom }),
+			VerticalSpan:new({ width = PANEL_PADDING_BOTTOM }),
 		}),
 	})
 
@@ -587,8 +586,8 @@ function DictionaryPreviewPopup:init()
 end
 
 function DictionaryPreviewPopup:makeButtons(width)
-	local button_height = Screen:scaleBySize(48)
-	local separator_width = math.max(1, Screen:scaleBySize(1))
+	local button_height = BUTTON_HEIGHT
+	local separator_width = BUTTON_SEPARATOR_WIDTH
 	local button_specs = {
 		{
 			spec = self.left_button or { icon = ICON_SEARCH },
@@ -698,25 +697,33 @@ function DictionaryPreviewPopup:makeHtmlWidget(content_width, height)
 	})
 end
 
-function DictionaryPreviewPopup:makeSizedHtmlWidget(content_width, max_height, min_height, compact_cap)
-	local htmlwidget = self:makeHtmlWidget(content_width, max_height)
-	local height = max_height
+function DictionaryPreviewPopup:makeSizedHtmlWidget(content_width, max_height, height_profile)
+	local min_height = height_profile.min_height
+	local compact_cap = height_profile.compact_cap
+	local is_compact = compact_cap ~= nil
+	local measure_height = is_compact and compact_cap or max_height
+	measure_height = math.max(1, math.min(max_height, measure_height))
+
+	local htmlwidget = self:makeHtmlWidget(content_width, measure_height)
+	local height = is_compact and measure_height or min_height
 
 	local ok, single_page_height = pcall(function()
 		return htmlwidget:getSinglePageHeight()
 	end)
 
 	if ok and type(single_page_height) == "number" and single_page_height > 0 then
-		local measurement_safety = compact_cap and Screen:scaleBySize(2) or math.ceil(self.doc_font_size * 0.45)
+		local measurement_safety = is_compact and 0 or math.ceil(self.doc_font_size * 0.35)
 		height = math.ceil(single_page_height + measurement_safety)
 		height = math.max(min_height, math.min(max_height, height))
 
-		if compact_cap then
-			height = math.max(min_height, math.min(height, compact_cap))
+		if is_compact then
+			height = math.max(1, math.min(height, compact_cap))
 		end
+	else
+		height = math.max(1, math.min(max_height, height))
 	end
 
-	if height < max_height then
+	if height ~= measure_height then
 		htmlwidget = self:makeHtmlWidget(content_width, height)
 	end
 
@@ -755,8 +762,6 @@ function DictionaryPreviewPopup:onLeftButton()
 	return true
 end
 
--- Compatibility with older local edits that may still call the old name.
-DictionaryPreviewPopup.onSearchDocument = DictionaryPreviewPopup.onLeftButton
 
 function DictionaryPreviewPopup:onPrevDictionary()
 	if not self.result_count or self.result_count <= 1 then
@@ -832,6 +837,7 @@ function DictionaryPreview:init()
 	self.native_dict_popup_active = false
 	self.native_dict_popup_count = 0
 	self.selection_snapshot = nil
+	self.plugin_icon_cache = {}
 
 	if self.ui and self.ui.menu then
 		self.ui.menu:registerToMainMenu(self)
@@ -891,22 +897,29 @@ function DictionaryPreview:setLeftButtonAction(action)
 end
 
 function DictionaryPreview:getPluginIconFile(action_id)
+	self.plugin_icon_cache = self.plugin_icon_cache or {}
+	if self.plugin_icon_cache[action_id] ~= nil then
+		return self.plugin_icon_cache[action_id] or nil
+	end
+
 	local candidates = PLUGIN_LEFT_ICON_CANDIDATES[action_id]
 	if not candidates or not self.path or self.path == "" then
+		self.plugin_icon_cache[action_id] = false
 		return nil
 	end
 
 	local icons_dir = self.path .. "/icons"
-
 	for _, basename in ipairs(candidates) do
 		for _, ext in ipairs(PLUGIN_ICON_EXTENSIONS) do
 			local path = icons_dir .. "/" .. basename .. ext
 			if fileExists(path) then
+				self.plugin_icon_cache[action_id] = path
 				return path
 			end
 		end
 	end
 
+	self.plugin_icon_cache[action_id] = false
 	return nil
 end
 
@@ -962,6 +975,7 @@ function DictionaryPreview:destroy()
 	self.original_showDict = nil
 	self.patched_dictionary = nil
 	self.selection_snapshot = nil
+	self.plugin_icon_cache = nil
 	self:resetNativeDictionaryPopupGuard()
 
 	if WidgetContainer.destroy then
