@@ -225,6 +225,16 @@ After changing these values, restart KOReader to apply the changes.
 
 This plugin is intended for recent KOReader versions with support for the `.koplugin` plugin system and the standard File Manager. Since it applies patches to internal classes, it is recommended to test it after major KOReader updates.
 
+## Screenshots
+
+![plainui-custom.koplugin1](assets/screenshots/plainui-custom.koplugin1.png)
+![plainui-custom.koplugin2](assets/screenshots/plainui-custom.koplugin2.png)
+![plainui-custom.koplugin3](assets/screenshots/plainui-custom.koplugin3.png)
+![plainui-custom.koplugin4](assets/screenshots/plainui-custom.koplugin4.png)
+![plainui-custom.koplugin5](assets/screenshots/plainui-custom.koplugin5.png)
+![plainui-custom.koplugin6](assets/screenshots/plainui-custom.koplugin6.png)
+![plainui-custom.koplugin7](assets/screenshots/plainui-custom.koplugin7.png)
+
 ## Credits
 
 Based on the work of **Anh Do** and on ideas/adaptations related to the Browse by Metadata patch, inspired by previous contributions from the KOReader community.

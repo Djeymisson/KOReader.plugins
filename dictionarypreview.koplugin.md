@@ -165,3 +165,10 @@ koreader/plugins/dictionarypreview.koplugin/
 Then restart KOReader.
 
 Settings saved in KOReader may remain until manually removed from KOReader's settings storage, but they will not have any effect once the plugin is removed.
+
+## Screenshots
+
+![dictionarypreview.koplugin1](assets/screenshots/dictionarypreview.koplugin1.png)
+![dictionarypreview.koplugin2](assets/screenshots/dictionarypreview.koplugin2.png)
+![dictionarypreview.koplugin3](assets/screenshots/dictionarypreview.koplugin3.png)
+![dictionarypreview.koplugin4](assets/screenshots/dictionarypreview.koplugin4.png)

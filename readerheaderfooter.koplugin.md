@@ -252,6 +252,12 @@ reader_header_footer.koplugin/
 └── main.lua    # main plugin implementation
 ```
 
+## Screenshots
+
+![readerheaderfooter.koplugin1](assets/screenshots/readerheaderfooter.koplugin1.png)
+![readerheaderfooter.koplugin2](assets/screenshots/readerheaderfooter.koplugin2.png)
+![readerheaderfooter.koplugin3](assets/screenshots/readerheaderfooter.koplugin3.png)
+
 ## Credits
 
 Custom plugin for KOReader.
