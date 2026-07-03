@@ -849,7 +849,7 @@ end
 function DictionaryPreview:addToMainMenu(menu_items)
 	menu_items.dictionarypreview = {
 		text = _("Dictionary preview"),
-		sorting_hint = "more_tools",
+		sorting_hint = "setting",
 		sub_item_table = {
 			{
 				text = _("Enable dictionary preview"),
