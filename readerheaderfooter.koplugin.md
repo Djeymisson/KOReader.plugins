@@ -254,9 +254,10 @@ reader_header_footer.koplugin/
 
 ## Screenshots
 
-![readerheaderfooter.koplugin1](assets/screenshots/readerheaderfooter.koplugin1.png)
-![readerheaderfooter.koplugin2](assets/screenshots/readerheaderfooter.koplugin2.png)
-![readerheaderfooter.koplugin3](assets/screenshots/readerheaderfooter.koplugin3.png)
+![settings-menu](assets/screenshots/readerheaderfooter.koplugin/settings-menu.png)
+![author-booktitle](assets/screenshots/readerheaderfooter.koplugin/author-booktitle.png)
+![chapter-title](assets/screenshots/readerheaderfooter.koplugin/chapter-title.png)
+![empty-corner](assets/screenshots/readerheaderfooter.koplugin/empty-corner.png)
 
 ## Credits
 

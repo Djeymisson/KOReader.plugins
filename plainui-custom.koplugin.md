@@ -227,13 +227,13 @@ This plugin is intended for recent KOReader versions with support for the `.kopl
 
 ## Screenshots
 
-![plainui-custom.koplugin1](assets/screenshots/plainui-custom.koplugin1.png)
-![plainui-custom.koplugin2](assets/screenshots/plainui-custom.koplugin2.png)
-![plainui-custom.koplugin3](assets/screenshots/plainui-custom.koplugin3.png)
-![plainui-custom.koplugin4](assets/screenshots/plainui-custom.koplugin4.png)
-![plainui-custom.koplugin5](assets/screenshots/plainui-custom.koplugin5.png)
-![plainui-custom.koplugin6](assets/screenshots/plainui-custom.koplugin6.png)
-![plainui-custom.koplugin7](assets/screenshots/plainui-custom.koplugin7.png)
+![files-tab](assets/screenshots/plainui-custom.koplugin/files-tab.png)
+![series-tab](assets/screenshots/plainui-custom.koplugin/series-tab.png)
+![series-tab-options](assets/screenshots/plainui-custom.koplugin/series-tab-options.png)
+![series-tab-book-status-filter](assets/screenshots/plainui-custom.koplugin/series-tab-book-status-filter.png)
+![authors-tab-reading](assets/screenshots/plainui-custom.koplugin/authors-tab-reading.png)
+![tags-tab](assets/screenshots/plainui-custom.koplugin/tags-tab.png)
+![tags-tab-sort-options](assets/screenshots/plainui-custom.koplugin/tags-tab-sort-options.png)
 
 ## Credits
 
