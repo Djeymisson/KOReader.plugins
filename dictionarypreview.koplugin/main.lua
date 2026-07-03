@@ -1,7 +1,10 @@
 local Device = require("device")
 local Blitbuffer = require("ffi/blitbuffer")
 local BottomContainer = require("ui/widget/container/bottomcontainer")
-local ButtonTable = require("ui/widget/buttontable")
+local CenterContainer = require("ui/widget/container/centercontainer")
+local Font = require("ui/font")
+local IconWidget = require("ui/widget/iconwidget")
+local TextWidget = require("ui/widget/textwidget")
 local FrameContainer = require("ui/widget/container/framecontainer")
 local Geom = require("ui/geometry")
 local GestureRange = require("ui/gesturerange")
@@ -18,6 +21,7 @@ local util = require("util")
 local UIManager = require("ui/uimanager")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local logger = require("logger")
+local Notification = require("ui/widget/notification")
 local _ = require("gettext")
 
 local Screen = Device.screen
@@ -37,14 +41,75 @@ local ICON_SEARCH = "appbar.search"
 local ICON_PREVIOUS = "chevron.left"
 local ICON_NEXT = "chevron.right"
 local ICON_DETAILS = "chevron.up"
+local ICON_HIGHLIGHT = "dictionarypreview.highlight"
+local ICON_WIKIPEDIA = "dictionarypreview.wikipedia"
 
 local PANEL_MAX_HEIGHT_RATIO = 0.38
 local MIN_CONTENT_WIDTH = Screen:scaleBySize(120)
+
+local SETTING_ENABLED = "dictionarypreview_enabled"
+local SETTING_LEFT_ACTION = "dictionarypreview_left_action"
+
+local LEFT_ACTION_HIGHLIGHT = "highlight"
+local LEFT_ACTION_SEARCH_BOOK = "search_book"
+local LEFT_ACTION_WIKIPEDIA = "wikipedia"
+local DEFAULT_LEFT_ACTION = LEFT_ACTION_SEARCH_BOOK
+
+local LEFT_ACTIONS = {
+	{ id = LEFT_ACTION_HIGHLIGHT, label = _("Highlight"), icon = ICON_HIGHLIGHT },
+	{ id = LEFT_ACTION_SEARCH_BOOK, label = _("Fulltext search"), icon = ICON_SEARCH },
+	{ id = LEFT_ACTION_WIKIPEDIA, label = _("Wikipedia"), icon = ICON_WIKIPEDIA },
+}
+
+local LEFT_ACTION_BY_ID = {}
+for _, action in ipairs(LEFT_ACTIONS) do
+	LEFT_ACTION_BY_ID[action.id] = action
+end
+
+local PLUGIN_ICON_EXTENSIONS = { ".svg", ".png" }
+local PLUGIN_LEFT_ICON_CANDIDATES = {
+	[LEFT_ACTION_HIGHLIGHT] = { "highlight", "dictionarypreview.highlight" },
+	[LEFT_ACTION_WIKIPEDIA] = { "wikipedia", "dictionarypreview.wikipedia" },
+}
 
 -- Small helpers --------------------------------------------------------------
 
 local function trim(text)
 	return tostring(text or ""):gsub("^%s+", ""):gsub("%s+$", "")
+end
+
+local function fileExists(path)
+	if not path or path == "" then
+		return false
+	end
+
+	local file = io.open(path, "rb")
+	if file then
+		file:close()
+		return true
+	end
+
+	return false
+end
+
+local function copyTable(value, seen)
+	if type(value) ~= "table" then
+		return value
+	end
+
+	seen = seen or {}
+	if seen[value] then
+		return seen[value]
+	end
+
+	local copy = {}
+	seen[value] = copy
+
+	for key, item in pairs(value) do
+		copy[copyTable(key, seen)] = copyTable(item, seen)
+	end
+
+	return copy
 end
 
 local function htmlEscape(text)
@@ -339,6 +404,96 @@ local function getCompactHtmlHeightCap(html, content_width, font_size)
 	return math.ceil((estimated_lines + 0.35) * line_height + Screen:scaleBySize(4))
 end
 
+-- Button helpers -------------------------------------------------------------
+-- ButtonTable only supports icons from KOReader's global icon search path.
+-- This small button keeps the same visual structure but can also render an
+-- SVG/PNG from this plugin's own icons/ folder via IconWidget's file field.
+
+local PreviewButton = InputContainer:extend({
+	text = nil,
+	icon = nil,
+	icon_file = nil,
+	width = nil,
+	height = Screen:scaleBySize(48),
+	icon_width = KOREADER_ICON_SIZE,
+	icon_height = KOREADER_ICON_SIZE,
+	callback = nil,
+	show_parent = nil,
+})
+
+function PreviewButton:init()
+	-- Borderless buttons: keep the touch area, but remove the visible
+	-- button frame so the footer looks like a native icon toolbar.
+	local bordersize = 0
+	local padding_h = Size.padding.button
+	local padding_v = Size.padding.button
+	local outer_w = self.width or Screen:scaleBySize(80)
+	local outer_h = self.height or Screen:scaleBySize(48)
+	local inner_w = math.max(1, outer_w - 2 * bordersize - 2 * padding_h)
+	local inner_h = math.max(1, outer_h - 2 * bordersize - 2 * padding_v)
+	local label
+
+	if self.icon_file then
+		label = IconWidget:new({
+			file = self.icon_file,
+			width = self.icon_width,
+			height = self.icon_height,
+			alpha = true,
+			is_icon = true,
+		})
+	elseif self.icon then
+		label = IconWidget:new({
+			icon = self.icon,
+			width = self.icon_width,
+			height = self.icon_height,
+			alpha = true,
+		})
+	else
+		label = TextWidget:new({
+			text = self.text or "",
+			face = Font:getFace("cfont", UI_FONT_SIZE),
+			bold = true,
+			max_width = inner_w,
+		})
+	end
+
+	self.label_widget = label
+	self.frame = FrameContainer:new({
+		show_parent = self.show_parent,
+		bordersize = bordersize,
+		background = Blitbuffer.COLOR_WHITE,
+		padding_left = padding_h,
+		padding_right = padding_h,
+		padding_top = padding_v,
+		padding_bottom = padding_v,
+		CenterContainer:new({
+			dimen = Geom:new({
+				w = inner_w,
+				h = inner_h,
+			}),
+			label,
+		}),
+	})
+
+	self.dimen = self.frame:getSize()
+	self[1] = self.frame
+	self.ges_events = {
+		TapSelectButton = {
+			GestureRange:new({
+				ges = "tap",
+				range = self.dimen,
+			}),
+		},
+	}
+end
+
+function PreviewButton:onTapSelectButton()
+	if self.callback then
+		self.callback()
+	end
+	return true
+end
+
 -- Preview popup --------------------------------------------------------------
 
 local DictionaryPreviewPopup = InputContainer:extend({
@@ -348,7 +503,8 @@ local DictionaryPreviewPopup = InputContainer:extend({
 	dialog = nil,
 	doc_font_size = Screen:scaleBySize(18),
 	open_callback = nil,
-	search_callback = nil,
+	left_callback = nil,
+	left_button = nil,
 	prev_callback = nil,
 	next_callback = nil,
 	close_preview_callback = nil,
@@ -431,35 +587,87 @@ function DictionaryPreviewPopup:init()
 end
 
 function DictionaryPreviewPopup:makeButtons(width)
-	local function iconButton(icon, callback)
-		return {
-			icon = icon,
-			icon_width = KOREADER_ICON_SIZE,
-			icon_height = KOREADER_ICON_SIZE,
-			callback = callback,
-		}
+	local button_height = Screen:scaleBySize(48)
+	local separator_width = math.max(1, Screen:scaleBySize(1))
+	local button_specs = {
+		{
+			spec = self.left_button or { icon = ICON_SEARCH },
+			callback = function()
+				return self:onLeftButton()
+			end,
+		},
+	}
+
+	-- Only show dictionary navigation when there is more than one useful
+	-- definition result. When a lookup has a single dictionary hit, or no hit at
+	-- all, the footer stays compact: left action + original dictionary popup.
+	if self.result_count and self.result_count > 1 then
+		table.insert(button_specs, {
+			spec = { icon = ICON_PREVIOUS },
+			callback = function()
+				return self:onPrevDictionary()
+			end,
+		})
+		table.insert(button_specs, {
+			spec = { icon = ICON_NEXT },
+			callback = function()
+				return self:onNextDictionary()
+			end,
+		})
 	end
 
-	return ButtonTable:new({
-		width = width,
-		show_parent = self,
-		buttons = {
-			{
-				iconButton(ICON_SEARCH, function()
-					return self:onSearchDocument()
-				end),
-				iconButton(ICON_PREVIOUS, function()
-					return self:onPrevDictionary()
-				end),
-				iconButton(ICON_NEXT, function()
-					return self:onNextDictionary()
-				end),
-				iconButton(ICON_DETAILS, function()
-					return self:onFollow()
-				end),
-			},
-		},
+	table.insert(button_specs, {
+		spec = { icon = ICON_DETAILS },
+		callback = function()
+			return self:onFollow()
+		end,
 	})
+
+	local button_count = #button_specs
+	local separator_count = math.max(0, button_count - 1)
+	local available_button_width = math.max(1, width - separator_width * separator_count)
+	local button_width = math.floor(available_button_width / button_count)
+	local remainder = available_button_width - (button_width * button_count)
+
+	local function makeButton(spec, callback, extra_width)
+		spec = spec or {}
+		return PreviewButton:new({
+			text = spec.text,
+			icon = spec.icon,
+			icon_file = spec.icon_file,
+			width = button_width + (extra_width or 0),
+			height = button_height,
+			icon_width = KOREADER_ICON_SIZE,
+			icon_height = KOREADER_ICON_SIZE,
+			show_parent = self,
+			callback = callback,
+		})
+	end
+
+	local function makeSeparator()
+		return LineWidget:new({
+			background = Blitbuffer.COLOR_GRAY,
+			dimen = Geom:new({
+				w = separator_width,
+				h = button_height,
+			}),
+		})
+	end
+
+	local widgets = {}
+	for index, item in ipairs(button_specs) do
+		if index > 1 then
+			table.insert(widgets, makeSeparator())
+		end
+
+		table.insert(widgets, makeButton(
+			item.spec,
+			item.callback,
+			index <= remainder and 1 or 0
+		))
+	end
+
+	return HorizontalGroup:new(widgets)
 end
 
 function DictionaryPreviewPopup:getWidgetHeight(widget, fallback)
@@ -539,13 +747,16 @@ function DictionaryPreviewPopup:onClosePreview()
 	return self:onClose()
 end
 
-function DictionaryPreviewPopup:onSearchDocument()
+function DictionaryPreviewPopup:onLeftButton()
 	UIManager:close(self)
-	if self.search_callback then
-		return self.search_callback()
+	if self.left_callback then
+		return self.left_callback()
 	end
 	return true
 end
+
+-- Compatibility with older local edits that may still call the old name.
+DictionaryPreviewPopup.onSearchDocument = DictionaryPreviewPopup.onLeftButton
 
 function DictionaryPreviewPopup:onPrevDictionary()
 	if not self.result_count or self.result_count <= 1 then
@@ -612,13 +823,15 @@ end
 -- Plugin lifecycle -----------------------------------------------------------
 
 function DictionaryPreview:init()
-	self.enabled = G_reader_settings:nilOrTrue("dictionarypreview_enabled")
+	self.enabled = self:isPreviewEnabled()
+	self.left_button_action = self:getLeftButtonAction()
 	self.current_popup = nil
 	self.original_showDict = nil
 	self.patched_dictionary = nil
 	self.opening_original_popup = false
 	self.native_dict_popup_active = false
 	self.native_dict_popup_count = 0
+	self.selection_snapshot = nil
 
 	if self.ui and self.ui.menu then
 		self.ui.menu:registerToMainMenu(self)
@@ -631,14 +844,108 @@ function DictionaryPreview:addToMainMenu(menu_items)
 	menu_items.dictionarypreview = {
 		text = _("Dictionary preview"),
 		sorting_hint = "more_tools",
-		checked_func = function()
-			return self.enabled
-		end,
-		callback = function()
-			self.enabled = not self.enabled
-			G_reader_settings:saveSetting("dictionarypreview_enabled", self.enabled)
-		end,
+		sub_item_table = {
+			{
+				text = _("Enable dictionary preview"),
+				checked_func = function()
+					return self:isPreviewEnabled()
+				end,
+				callback = function()
+					self:setPreviewEnabled(not self:isPreviewEnabled())
+				end,
+			},
+			{
+				text = _("Left button action"),
+				sub_item_table_func = function()
+					return self:genLeftButtonActionMenu()
+				end,
+				separator = true,
+			},
+		},
 	}
+end
+
+function DictionaryPreview:isPreviewEnabled()
+	return G_reader_settings:nilOrTrue(SETTING_ENABLED)
+end
+
+function DictionaryPreview:setPreviewEnabled(enabled)
+	self.enabled = enabled and true or false
+	G_reader_settings:saveSetting(SETTING_ENABLED, self.enabled)
+end
+
+function DictionaryPreview:getLeftButtonAction()
+	local action = G_reader_settings:readSetting(SETTING_LEFT_ACTION) or DEFAULT_LEFT_ACTION
+	if not LEFT_ACTION_BY_ID[action] then
+		action = DEFAULT_LEFT_ACTION
+	end
+	return action
+end
+
+function DictionaryPreview:setLeftButtonAction(action)
+	if not LEFT_ACTION_BY_ID[action] then
+		action = DEFAULT_LEFT_ACTION
+	end
+	self.left_button_action = action
+	G_reader_settings:saveSetting(SETTING_LEFT_ACTION, action)
+end
+
+function DictionaryPreview:getPluginIconFile(action_id)
+	local candidates = PLUGIN_LEFT_ICON_CANDIDATES[action_id]
+	if not candidates or not self.path or self.path == "" then
+		return nil
+	end
+
+	local icons_dir = self.path .. "/icons"
+
+	for _, basename in ipairs(candidates) do
+		for _, ext in ipairs(PLUGIN_ICON_EXTENSIONS) do
+			local path = icons_dir .. "/" .. basename .. ext
+			if fileExists(path) then
+				return path
+			end
+		end
+	end
+
+	return nil
+end
+
+function DictionaryPreview:getLeftButtonSpec()
+	local action_id = self:getLeftButtonAction()
+	local action = LEFT_ACTION_BY_ID[action_id] or LEFT_ACTION_BY_ID[DEFAULT_LEFT_ACTION]
+
+	if action_id == LEFT_ACTION_SEARCH_BOOK then
+		return { icon = ICON_SEARCH }
+	end
+
+	local plugin_icon = self:getPluginIconFile(action_id)
+	if plugin_icon then
+		return { icon_file = plugin_icon }
+	end
+
+	-- Fallback intentionally uses gettext labels from KOReader's catalog.
+	-- This avoids showing an untranslated custom English/Portuguese string
+	-- when the optional SVG/PNG is not present in icons/.
+	return { text = action.label }
+end
+
+function DictionaryPreview:genLeftButtonActionMenu()
+	local items = {}
+
+	for _, action in ipairs(LEFT_ACTIONS) do
+		table.insert(items, {
+			text = action.label,
+			radio = true,
+			checked_func = function()
+				return self:getLeftButtonAction() == action.id
+			end,
+			callback = function()
+				self:setLeftButtonAction(action.id)
+			end,
+		})
+	end
+
+	return items
 end
 
 function DictionaryPreview:destroy()
@@ -654,6 +961,7 @@ function DictionaryPreview:destroy()
 
 	self.original_showDict = nil
 	self.patched_dictionary = nil
+	self.selection_snapshot = nil
 	self:resetNativeDictionaryPopupGuard()
 
 	if WidgetContainer.destroy then
@@ -681,6 +989,7 @@ function DictionaryPreview:patchDictionary()
 	local plugin = self
 
 	dictionary.showDict = function(dict_self, word, results, boxes, link, dict_close_callback)
+		plugin.enabled = plugin:isPreviewEnabled()
 		if not plugin.enabled or plugin.opening_original_popup or not results or not results[1] then
 			return plugin.original_showDict(dict_self, word, results, boxes, link, dict_close_callback)
 		end
@@ -689,6 +998,8 @@ function DictionaryPreview:patchDictionary()
 			local wrapped_close_callback = plugin:beginNativeDictionaryPopup(dict_close_callback)
 			return plugin.original_showDict(dict_self, word, results, boxes, link, wrapped_close_callback)
 		end
+
+		plugin:rememberSelection(dict_self)
 
 		if dict_self.dismissLookupInfo then
 			pcall(function()
@@ -869,6 +1180,214 @@ function DictionaryPreview:showSearchDialog(search_text)
 	return true
 end
 
+
+function DictionaryPreview:getActiveHighlight(dict_self)
+	-- Depending on the KOReader path that opened the dictionary, the active
+	-- ReaderHighlight instance may be stored on ReaderDictionary or only on
+	-- the reader UI. Prefer an instance that still has a live selection.
+	local candidates = {}
+	if dict_self and dict_self.highlight then
+		table.insert(candidates, dict_self.highlight)
+	end
+	if self.ui and self.ui.highlight then
+		table.insert(candidates, self.ui.highlight)
+	end
+	if dict_self and dict_self.ui and dict_self.ui.highlight then
+		table.insert(candidates, dict_self.ui.highlight)
+	end
+
+	local fallback
+	for _, highlight in ipairs(candidates) do
+		if highlight then
+			if highlight.selected_text or highlight.hold_pos then
+				return highlight
+			end
+
+			if not fallback
+				and (type(highlight.showHighlightPrompt) == "function"
+					or type(highlight.lookupWikipedia) == "function") then
+				fallback = highlight
+			end
+		end
+	end
+
+	return fallback
+end
+
+function DictionaryPreview:rememberSelection(dict_self)
+	local highlight = self:getActiveHighlight(dict_self)
+	if not highlight then
+		self.selection_snapshot = nil
+		return nil
+	end
+
+	-- In the dictionary-on-single-word flow, KOReader may later clear the
+	-- live selection when the dictionary lookup UI is dismissed. Store a copy
+	-- now so the configurable Highlight action can restore it when pressed.
+	if not highlight.selected_text
+		and highlight.hold_pos
+		and type(highlight.highlightFromHoldPos) == "function" then
+		pcall(function()
+			highlight:highlightFromHoldPos()
+		end)
+	end
+
+	self.selection_snapshot = {
+		highlight = highlight,
+		selected_text = copyTable(highlight.selected_text),
+		hold_pos = copyTable(highlight.hold_pos),
+		selected_link = copyTable(highlight.selected_link),
+		is_word_selection = highlight.is_word_selection,
+	}
+
+	return self.selection_snapshot
+end
+
+function DictionaryPreview:restoreSelection(dict_self)
+	local snapshot = self.selection_snapshot
+	local highlight = snapshot and snapshot.highlight or self:getActiveHighlight(dict_self)
+
+	if not highlight then
+		return nil
+	end
+
+	if snapshot then
+		if snapshot.selected_text then
+			highlight.selected_text = copyTable(snapshot.selected_text)
+		end
+		if snapshot.hold_pos then
+			highlight.hold_pos = copyTable(snapshot.hold_pos)
+		end
+		if snapshot.selected_link then
+			highlight.selected_link = copyTable(snapshot.selected_link)
+		end
+
+		-- The original lookup may have been a single-word dictionary lookup.
+		-- For the highlight action we need to treat the restored selection as a
+		-- highlightable text selection, not as another dictionary lookup trigger.
+		highlight.is_word_selection = false
+	end
+
+	if not highlight.selected_text
+		and highlight.hold_pos
+		and type(highlight.highlightFromHoldPos) == "function" then
+		pcall(function()
+			highlight:highlightFromHoldPos()
+		end)
+	end
+
+	return highlight
+end
+
+function DictionaryPreview:hasHighlightSelection(highlight)
+	return highlight and (highlight.selected_text or highlight.hold_pos) ~= nil
+end
+
+function DictionaryPreview:notify(message)
+	UIManager:show(Notification:new({ text = message }))
+	return true
+end
+
+function DictionaryPreview:highlightSelection(dict_self, dict_close_callback)
+	local highlight = self:restoreSelection(dict_self)
+
+	if not highlight then
+		return self:notify(_("No selection to highlight."))
+	end
+
+	if not highlight.selected_text
+		and highlight.hold_pos
+		and type(highlight.highlightFromHoldPos) == "function" then
+		pcall(function()
+			highlight:highlightFromHoldPos()
+		end)
+	end
+
+	if not (highlight.selected_text and highlight.selected_text.pos0 and highlight.selected_text.pos1) then
+		return self:notify(_("No selection to highlight."))
+	end
+
+	UIManager:scheduleIn(0.05, function()
+		local ok, err = pcall(function()
+			if type(highlight.showHighlightPrompt) == "function" then
+				highlight:showHighlightPrompt(function(...)
+					self.selection_snapshot = nil
+					if dict_close_callback then
+						pcall(dict_close_callback, ...)
+					end
+				end)
+			elseif type(highlight.saveHighlight) == "function" then
+				local index = highlight:saveHighlight(true)
+				if type(highlight.clear) == "function" then
+					highlight:clear()
+				end
+				self.selection_snapshot = nil
+				if dict_close_callback then
+					pcall(dict_close_callback, index)
+				end
+			end
+		end)
+
+		if not ok then
+			logger.warn("DictionaryPreview: highlight action failed:", err)
+		end
+	end)
+
+	return true
+end
+
+function DictionaryPreview:lookupWikipedia(dict_self, search_text)
+	local highlight = self:restoreSelection(dict_self)
+
+	if highlight and type(highlight.lookupWikipedia) == "function" and self:hasHighlightSelection(highlight) then
+		UIManager:scheduleIn(0.05, function()
+			local ok, err = pcall(function()
+				if not highlight.selected_text
+					and highlight.hold_pos
+					and type(highlight.highlightFromHoldPos) == "function" then
+					highlight:highlightFromHoldPos()
+				end
+				highlight:lookupWikipedia()
+				self.selection_snapshot = nil
+			end)
+
+			if not ok then
+				logger.warn("DictionaryPreview: Wikipedia action failed:", err)
+			end
+		end)
+		return true
+	end
+
+	search_text = trim(search_text)
+	if search_text ~= "" and self.ui and self.ui.handleEvent then
+		self.ui:handleEvent(Event:new("LookupWikipedia", search_text))
+		return true
+	end
+
+	return self:notify(_("No selection to look up."))
+end
+
+function DictionaryPreview:runLeftButtonAction(action, dict_self, search_text, dict_close_callback)
+	action = LEFT_ACTION_BY_ID[action] and action or DEFAULT_LEFT_ACTION
+	self.current_popup = nil
+
+	if action == LEFT_ACTION_HIGHLIGHT then
+		-- Do not clear the selection before highlighting. ReaderHighlight needs
+		-- the original selected_text/hold_pos to create the annotation.
+		return self:highlightSelection(dict_self, dict_close_callback)
+	elseif action == LEFT_ACTION_WIKIPEDIA then
+		return self:lookupWikipedia(dict_self, search_text)
+	end
+
+	self.selection_snapshot = nil
+	self:clearOriginalHighlight(dict_self)
+	self:clearSelection()
+	if dict_close_callback then
+		pcall(dict_close_callback)
+	end
+	return self:showSearchDialog(search_text)
+end
+
 -- Preview construction -------------------------------------------------------
 
 function DictionaryPreview:buildPreviewPayload(word, result, result_index, result_count)
@@ -917,6 +1436,36 @@ local function getResultCount(results)
 	return #results
 end
 
+local function buildPreviewResults(results)
+	local preview_results = {}
+
+	if type(results) ~= "table" then
+		return preview_results
+	end
+
+	-- Ignore no-result placeholders when at least one dictionary has a real
+	-- definition. This keeps navigation focused only on usable dictionary hits.
+	for index, result in ipairs(results) do
+		if result and not result.no_result then
+			table.insert(preview_results, {
+				result = result,
+				source_index = index,
+			})
+		end
+	end
+
+	-- When no dictionary matched, keep a single placeholder preview so the user
+	-- can still use the left action or open the original dictionary popup.
+	if #preview_results == 0 and results[1] then
+		table.insert(preview_results, {
+			result = results[1],
+			source_index = 1,
+		})
+	end
+
+	return preview_results
+end
+
 local function normalizeResultIndex(index, count)
 	if not count or count <= 0 then
 		return 1
@@ -950,8 +1499,10 @@ local function reorderResultsFromIndex(results, index)
 end
 
 function DictionaryPreview:showPreview(dict_self, word, results, boxes, link, dict_close_callback)
-	local result_count = getResultCount(results)
-	if result_count <= 0 then
+	local preview_results = buildPreviewResults(results)
+	local preview_count = #preview_results
+
+	if preview_count <= 0 then
 		return true
 	end
 
@@ -978,14 +1529,16 @@ function DictionaryPreview:showPreview(dict_self, word, results, boxes, link, di
 		opened_full_popup = true
 		closeCurrentPopup()
 
-		local selected_results =
-			reorderResultsFromIndex(results, normalizeResultIndex(index or current_index, result_count))
+		local preview_index = normalizeResultIndex(index or current_index, preview_count)
+		local source_index = preview_results[preview_index] and preview_results[preview_index].source_index or 1
+		local selected_results = reorderResultsFromIndex(results, source_index)
 		return self:showOriginalDictionaryPopup(dict_self, word, selected_results, boxes, link, dict_close_callback)
 	end
 
 	local function closePreview()
 		if not opened_full_popup then
 			self.current_popup = nil
+			self.selection_snapshot = nil
 			self:clearOriginalHighlight(dict_self)
 			self:clearSelection()
 			if dict_close_callback then
@@ -996,10 +1549,11 @@ function DictionaryPreview:showPreview(dict_self, word, results, boxes, link, di
 	end
 
 	local function showResult(index)
-		current_index = normalizeResultIndex(index, result_count)
-		local result = results[current_index] or results[1] or {}
+		current_index = normalizeResultIndex(index, preview_count)
+		local preview_entry = preview_results[current_index] or preview_results[1] or {}
+		local result = preview_entry.result or {}
 		local search_text = self:getSearchText(word, result)
-		local preview_payload = self:buildPreviewPayload(word, result, current_index, result_count)
+		local preview_payload = self:buildPreviewPayload(word, result, current_index, preview_count)
 
 		closeCurrentPopup()
 
@@ -1009,18 +1563,13 @@ function DictionaryPreview:showPreview(dict_self, word, results, boxes, link, di
 			html_resource_directory = preview_payload.html_resource_directory,
 			doc_font_size = self:getInterfaceFontSize(),
 			dialog = dict_self and dict_self.dialog,
-			result_count = result_count,
+			result_count = preview_count,
+			left_button = self:getLeftButtonSpec(),
 			open_callback = function()
 				return openFullPopup(current_index)
 			end,
-			search_callback = function()
-				self.current_popup = nil
-				self:clearOriginalHighlight(dict_self)
-				self:clearSelection()
-				if dict_close_callback then
-					pcall(dict_close_callback)
-				end
-				return self:showSearchDialog(search_text)
+			left_callback = function()
+				return self:runLeftButtonAction(self:getLeftButtonAction(), dict_self, search_text, dict_close_callback)
 			end,
 			prev_callback = function()
 				return showResult(current_index - 1)
