@@ -1,16 +1,26 @@
 # KOReader Dictionary Preview
 
-**Dictionary Preview** is a KOReader reader plugin that changes the dictionary lookup flow. Instead of immediately opening KOReader's full dictionary popup, it first shows a compact preview panel at the bottom of the screen. From that panel you can open the original dictionary popup, switch between dictionary results, search the selected term, highlight the selection, or look it up on Wikipedia.
+**Dictionary Preview** is a KOReader reader plugin that changes the dictionary lookup flow. Instead of immediately opening KOReader's full dictionary popup, it first shows a compact preview with the dictionary result. The preview can be displayed either as a bottom panel or as an optional floating card that automatically avoids covering the selected word.
+
+From the preview you can open the original dictionary popup, switch between dictionary results, search the selected term, highlight the selection, or look it up on Wikipedia.
 
 The plugin metadata registers it as `dictionarypreview` with the display name **Dictionary Preview**. Its purpose is to show a compact dictionary preview before opening the full dictionary popup.
 
 ## Features
 
-- Shows dictionary results in a compact bottom panel.
+- Shows dictionary results in a compact preview before opening KOReader's full dictionary popup.
+- Supports two preview layouts:
+  - **Bottom panel**, displayed at the bottom of the screen;
+  - **Floating preview**, displayed as a compact floating card.
+- Floating preview automatically chooses whether to appear near the top or bottom of the screen to avoid covering the selected word.
 - Preserves dictionary HTML formatting when the dictionary result provides its own CSS.
 - Falls back to safe HTML normalization for dictionaries without CSS, avoiding oversized headings and broken spacing.
-- Keeps the panel full-width while preserving internal text padding.
-- Uses adaptive panel height, so short definitions do not reserve a large blank area.
+- Uses adaptive preview height, so short definitions do not reserve a large blank area.
+- Adds a minimum compact height to avoid unnecessary scrolling in short one-sentence definitions.
+- Shows a structured preview header:
+  - selected word in prominent bold text;
+  - dictionary name below it in smaller italic text;
+  - dictionary result count when multiple results are available.
 - Supports multiple dictionary results:
   - swipe left to go to the next dictionary result;
   - swipe right to go to the previous dictionary result;
@@ -22,6 +32,7 @@ The plugin metadata registers it as `dictionarypreview` with the display name **
   - **Fulltext search** in the current book;
   - **Wikipedia** lookup.
 - Supports optional custom plugin icons for Highlight and Wikipedia.
+- Includes small performance improvements such as cached icon lookup and reduced repeated layout calculations.
 
 ## Installation
 
@@ -51,13 +62,22 @@ After restarting KOReader, open a book and go to the reader menu. The plugin add
 The menu contains:
 
 - **Enable dictionary preview**: turns the preview behavior on or off.
-- **Left button action**: chooses what the left button in the preview panel does.
+- **Floating preview**: switches from the default bottom panel to the floating card layout.
+- **Left button action**: chooses what the left button in the preview does.
 
-By default, the preview is enabled and the left button performs a full-text search in the book.
+By default, the preview is enabled, the bottom panel layout is used, and the left button performs a full-text search in the book.
 
 ## How it works
 
-When a word or selection triggers KOReader's dictionary lookup, the plugin intercepts the dictionary result before KOReader opens the normal dictionary popup. If the preview is enabled, it closes the temporary lookup UI and shows a compact bottom panel with the first useful dictionary result.
+When a word or selection triggers KOReader's dictionary lookup, the plugin intercepts the dictionary result before KOReader opens the normal dictionary popup. If the preview is enabled, it closes the temporary lookup UI and shows a compact preview with the first useful dictionary result.
+
+In the default layout, the preview is shown as a bottom panel. When **Floating preview** is enabled, the preview is shown as a floating card. The card uses the selected word position to decide where it should appear:
+
+- if there is enough room below the selected word, the card appears near the bottom;
+- if the selected word is low on the screen, the card appears near the top;
+- if neither side has ideal space, the plugin chooses the side with more available room.
+
+This keeps the preview from overlapping the selected word whenever possible.
 
 If the lookup returns multiple real dictionary results, the preview allows navigation between them. Results that only represent “no definition found” placeholders are ignored for navigation. When no dictionary contains a definition, the plugin still opens a preview with a “No definition found” message, so the configured left action and original popup button remain available.
 
@@ -67,7 +87,7 @@ The original KOReader dictionary popup can still be opened from the preview. Onc
 
 ### Buttons
 
-The preview panel can show these buttons:
+The preview can show these buttons:
 
 | Button | Action |
 |---|---|
@@ -84,8 +104,9 @@ The left button uses KOReader's native search icon for full-text search. For Hig
 |---|---|
 | Swipe left | Next dictionary result |
 | Swipe right | Previous dictionary result |
-| Swipe down | Close preview |
-| Tap outside the panel | Close preview |
+| Swipe down | Close preview when using the bottom panel or a floating card anchored near the bottom |
+| Swipe up | Close preview when using a floating card anchored near the top |
+| Tap outside the preview | Close preview |
 
 ## Custom icons
 
@@ -130,6 +151,7 @@ The plugin stores settings through KOReader's reader settings system.
 | Setting key | Purpose |
 |---|---|
 | `dictionarypreview_enabled` | Enables or disables the preview |
+| `dictionarypreview_floating_preview` | Enables or disables floating preview mode |
 | `dictionarypreview_left_action` | Stores the selected left button action |
 
 Available left button action IDs:
@@ -144,15 +166,22 @@ wikipedia
 
 The plugin prefers the dictionary's own formatting when available. If a dictionary result contains CSS, the preview passes that CSS to `ScrollHtmlWidget`, along with the dictionary resource directory. This helps preserve fonts, spacing, lists, examples, and other dictionary-specific styling.
 
-For dictionaries that do not provide CSS, the plugin applies a fallback normalization pass. This is mainly useful for dictionaries that use tags like `<h1>` or `<h2>` for long grammatical forms, which can otherwise appear too large in a compact preview panel.
+For dictionaries that do not provide CSS, the plugin applies a fallback normalization pass. This is mainly useful for dictionaries that use tags like `<h1>` or `<h2>` for long grammatical forms, which can otherwise appear too large in a compact preview.
+
+## Performance notes
+
+The plugin keeps the preview lightweight by avoiding unnecessary recalculations and by reusing small cached values where safe, such as icon lookup results, static layout values, and repeated HTML class style mappings.
+
+Screen dimensions are still evaluated when the preview is created, so the layout can react correctly to orientation or screen-size changes.
 
 ## Notes and limitations
 
 - This plugin is intended for the reader view only.
 - It monkey-patches the reader dictionary lookup method at runtime, so future KOReader changes to dictionary internals may require adjustments.
-- Highlight and Wikipedia actions depend on KOReader's current selection/highlight state. The plugin stores a snapshot of the active selection before dismissing the lookup UI so these actions can still work from the preview panel.
+- Highlight and Wikipedia actions depend on KOReader's current selection/highlight state. The plugin stores a snapshot of the active selection before dismissing the lookup UI so these actions can still work from the preview.
+- Floating preview positioning depends on the selection boxes reported by KOReader. If that position is unavailable, the floating card falls back to the bottom position.
 - The custom icon loader only checks the plugin's local `icons/` directory for Highlight and Wikipedia icons.
-- The panel height is adaptive, but complex dictionary HTML can still produce slightly different spacing depending on the renderer and dictionary CSS.
+- The preview height is adaptive, but complex dictionary HTML can still produce slightly different spacing depending on the renderer and dictionary CSS.
 
 ## Uninstalling
 
