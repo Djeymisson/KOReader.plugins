@@ -1,4 +1,4 @@
-# Reader Header Footer
+# Reader Header Footer ![Version](https://img.shields.io/badge/version-v1.0.1-blue)
 
 Plugin for [KOReader](https://koreader.rocks/) that adds discreet header and footer information while reading.
 

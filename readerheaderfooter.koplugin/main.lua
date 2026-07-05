@@ -17,6 +17,7 @@ local Screen = Device.screen
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local TextWidget = require("ui/widget/textwidget")
 local SpinWidget = require("ui/widget/spinwidget")
+local InfoMessage = require("ui/widget/infomessage")
 
 local Font = require("ui/font")
 local Geom = require("ui/geometry")
@@ -31,6 +32,7 @@ local _ = require("gettext")
 -- ============================================================================
 
 local PLUGIN_NAME = "reader_header_footer"
+local PLUGIN_VERSION = "v1.0.1"
 
 local SETTINGS = {
 	enabled = "reader_header_footer_enabled",
@@ -648,6 +650,18 @@ function ReaderHeaderFooter:addToMainMenu(menu_items)
 						end,
 					},
 				},
+			},
+
+			{
+				text_func = function()
+					return string.format(_("Version: %s"), PLUGIN_VERSION)
+				end,
+
+				callback = function()
+					UIManager:show(InfoMessage:new({
+						text = string.format(_("Reader Header/Footer\nVersion: %s"), PLUGIN_VERSION),
+					}))
+				end,
 			},
 		},
 	}
