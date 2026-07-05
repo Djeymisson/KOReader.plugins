@@ -6,12 +6,12 @@ Each plugin is kept in its own `.koplugin/` folder and has a dedicated documenta
 
 ## Available plugins
 
-| Plugin | Folder | Documentation |
-|---|---|---|
-| Plain UI Custom | `plainui-custom.koplugin/` | [plainui-custom.koplugin.md](./plainui-custom.koplugin.md) |
-| Dictionary Preview | `dictionarypreview.koplugin/` | [dictionarypreview.koplugin.md](./dictionarypreview.koplugin.md) |
-| Reader Header Footer | `readerheaderfooter.koplugin/` | [readerheaderfooter.koplugin.md](./readerheaderfooter.koplugin.md) |
-| Selection Toolbar | `selectiontoolbar.koplugin/` | [selectiontoolbar.koplugin.md](./selectiontoolbar.koplugin.md) |
+| Plugin | Version | Folder | Documentation |
+|---|---|---|---|
+| Plain UI Custom | v1.0.0 | `plainui-custom.koplugin/` | [plainui-custom.koplugin.md](./plainui-custom.koplugin.md) |
+| Dictionary Preview | v1.1.1 | `dictionarypreview.koplugin/` | [dictionarypreview.koplugin.md](./dictionarypreview.koplugin.md) |
+| Reader Header Footer | v1.0.1 | `readerheaderfooter.koplugin/` | [readerheaderfooter.koplugin.md](./readerheaderfooter.koplugin.md) |
+| Selection Toolbar | v1.0.0 | `selectiontoolbar.koplugin/` | [selectiontoolbar.koplugin.md](./selectiontoolbar.koplugin.md) |
 
 Each `.koplugin/` folder contains the files required for KOReader to load the plugin, usually including at least:
 
