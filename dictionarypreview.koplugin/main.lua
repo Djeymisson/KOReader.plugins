@@ -36,6 +36,8 @@ local DictionaryPreview = WidgetContainer:extend({
 
 -- Constants -----------------------------------------------------------------
 
+local PLUGIN_VERSION = "v1.1.1"
+
 local UI_FONT_FACE = "Noto Sans"
 local UI_FONT_SIZE = 20
 local PREVIEW_FONT_SIZE = Screen:scaleBySize(UI_FONT_SIZE)
@@ -1028,10 +1030,20 @@ function DictionaryPreview:addToMainMenu(menu_items)
 				sub_item_table_func = function()
 					return self:genLeftButtonActionMenu()
 				end,
+			},
+			{
+				text = string.format("%s: %s", _("Version"), PLUGIN_VERSION),
+				callback = function()
+					self:showPluginVersion()
+				end,
 				separator = true,
 			},
 		},
 	}
+end
+
+function DictionaryPreview:showPluginVersion()
+	return self:notify(string.format("%s %s", _("Dictionary Preview"), PLUGIN_VERSION))
 end
 
 function DictionaryPreview:isPreviewEnabled()
