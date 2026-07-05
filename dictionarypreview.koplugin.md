@@ -168,9 +168,10 @@ Settings saved in KOReader may remain until manually removed from KOReader's set
 
 ## Screenshots
 
-![highlight-button](assets/screenshots/dictionarypreview.koplugin/highlight-button.png)
-![long-text](assets/screenshots/dictionarypreview.koplugin/long-text.png)
-![short-text](assets/screenshots/dictionarypreview.koplugin/short-text.png)
-![only-1-definition](assets/screenshots/dictionarypreview.koplugin/only-1-definition.png)
-![settings-menu1](assets/screenshots/dictionarypreview.koplugin/settings-menu1.png)
-![settings-menu2](assets/screenshots/dictionarypreview.koplugin/settings-menu2.png)
+![floating_down_search.png](assets/screenshots/dictionarypreview.koplugin/floating_down_search.png)
+![floating_down_wiki.png](assets/screenshots/dictionarypreview.koplugin/floating_down_wiki.png)
+![floating_up.png](assets/screenshots/dictionarypreview.koplugin/floating_up.png)
+![footer_dict_1.png](assets/screenshots/dictionarypreview.koplugin/footer_dict_1.png)
+![footer_dict_2.png](assets/screenshots/dictionarypreview.koplugin/footer_dict_2.png)
+![menu_1.png](assets/screenshots/dictionarypreview.koplugin/menu_1.png)
+![menu_left_button_action.png](assets/screenshots/dictionarypreview.koplugin/menu_left_button_action.png)
