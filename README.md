@@ -11,6 +11,7 @@ Each plugin is kept in its own `.koplugin/` folder and has a dedicated documenta
 | Plain UI Custom | `plainui-custom.koplugin/` | [plainui-custom.koplugin.md](./plainui-custom.koplugin.md) |
 | Dictionary Preview | `dictionarypreview.koplugin/` | [dictionarypreview.koplugin.md](./dictionarypreview.koplugin.md) |
 | Reader Header Footer | `readerheaderfooter.koplugin/` | [readerheaderfooter.koplugin.md](./readerheaderfooter.koplugin.md) |
+| Selection Toolbar | `selectiontoolbar.koplugin/` | [selectiontoolbar.koplugin.md](./selectiontoolbar.koplugin.md) |
 
 Each `.koplugin/` folder contains the files required for KOReader to load the plugin, usually including at least:
 
