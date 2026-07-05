@@ -1,4 +1,4 @@
-# Plain UI Custom
+# Plain UI Custom ![Version](https://img.shields.io/badge/version-v1.0.0-blue)
 
 **Plain UI Custom** is a plugin for [KOReader](https://github.com/koreader/koreader) that modifies the file manager screen to provide a more library-oriented navigation experience, with tabs for **Files**, **Series**, **Authors**, and **Tags**, as well as filters, per-view sorting, and visual annotations on covers/list entries.
 
