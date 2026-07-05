@@ -1,6 +1,7 @@
 local Device = require("device")
 local Blitbuffer = require("ffi/blitbuffer")
 local BottomContainer = require("ui/widget/container/bottomcontainer")
+local TopContainer = require("ui/widget/container/topcontainer")
 local CenterContainer = require("ui/widget/container/centercontainer")
 local Font = require("ui/font")
 local IconWidget = require("ui/widget/iconwidget")
@@ -25,16 +26,23 @@ local Notification = require("ui/widget/notification")
 local _ = require("gettext")
 
 local Screen = Device.screen
+local IS_TOUCH_DEVICE = Device:isTouchDevice()
+local HAS_KEYS = Device:hasKeys()
 
 local DictionaryPreview = WidgetContainer:extend({
 	name = "dictionarypreview",
 	is_doc_only = true,
 })
 
--- UI constants ---------------------------------------------------------------
+-- Constants -----------------------------------------------------------------
 
 local UI_FONT_FACE = "Noto Sans"
 local UI_FONT_SIZE = 20
+local PREVIEW_FONT_SIZE = Screen:scaleBySize(UI_FONT_SIZE)
+local DEFAULT_HTML_FONT_SIZE = Screen:scaleBySize(18)
+local BUTTON_TEXT_FACE = Font:getFace("cfont", UI_FONT_SIZE)
+local SCROLL_BAR_WIDTH = Screen:scaleBySize(6)
+local TEXT_SCROLL_SPAN = Screen:scaleBySize(8)
 
 local PANEL_MAX_HEIGHT_RATIO = 0.38
 local MIN_CONTENT_WIDTH = Screen:scaleBySize(120)
@@ -50,12 +58,25 @@ local TEXT_BUTTON_GAP = Screen:scaleBySize(2)
 local CONTENT_PADDING_LEFT = Screen:scaleBySize(16)
 local CONTENT_PADDING_RIGHT = Screen:scaleBySize(12)
 
+local FLOATING_SIDE_MARGIN = Screen:scaleBySize(10)
+local FLOATING_EDGE_MARGIN = Screen:scaleBySize(10)
+local FLOATING_CARD_BORDER_SIZE = Size.border.thin
+local FLOATING_CARD_RADIUS = Screen:scaleBySize(14)
+local FLOATING_SELECTION_GAP = Screen:scaleBySize(8)
+local FLOATING_PADDING_TOP = Screen:scaleBySize(10)
+local FLOATING_PADDING_BOTTOM = Screen:scaleBySize(6)
+local FLOATING_TEXT_BUTTON_GAP = Screen:scaleBySize(6)
+
+local COMPACT_MIN_HTML_HEIGHT = Screen:scaleBySize(112)
+local COMPACT_HEIGHT_SAFETY = Screen:scaleBySize(12)
+
 local ICON_SEARCH = "appbar.search"
 local ICON_PREVIOUS = "chevron.left"
 local ICON_NEXT = "chevron.right"
 local ICON_DETAILS = "chevron.up"
 
 local SETTING_ENABLED = "dictionarypreview_enabled"
+local SETTING_FLOATING_PREVIEW = "dictionarypreview_floating_preview"
 local SETTING_LEFT_ACTION = "dictionarypreview_left_action"
 
 local LEFT_ACTION_HIGHLIGHT = "highlight"
@@ -80,7 +101,7 @@ local PLUGIN_LEFT_ICON_CANDIDATES = {
 	[LEFT_ACTION_WIKIPEDIA] = { "wikipedia", "dictionarypreview.wikipedia" },
 }
 
--- Small helpers --------------------------------------------------------------
+-- Helpers -------------------------------------------------------------------
 
 local function trim(text)
 	return tostring(text or ""):gsub("^%s+", ""):gsub("%s+$", "")
@@ -164,10 +185,9 @@ local function appendStyleAttr(attrs, style)
 	return attrs .. ' style="' .. style .. '"'
 end
 
--- Fallback HTML normalization ------------------------------------------------
--- Used only when a dictionary result does not provide its own CSS. Some
--- dictionaries use heading tags for long grammatical forms; without CSS these
--- headings become too large in the preview panel.
+-- HTML normalization --------------------------------------------------------
+
+local CLASS_STYLE_CACHE = {}
 
 local dictionary_class_styles = {
 	hw = "font-size:1.15em; font-weight:bold;",
@@ -193,19 +213,24 @@ local dictionary_class_styles = {
 }
 
 local function buildStyleFromClassList(classes)
-	local style_parts = {}
+	classes = tostring(classes or "")
 
-	for class_name in tostring(classes or ""):gmatch("%S+") do
-		if dictionary_class_styles[class_name] then
-			table.insert(style_parts, dictionary_class_styles[class_name])
+	local cached = CLASS_STYLE_CACHE[classes]
+	if cached ~= nil then
+		return cached or nil
+	end
+
+	local style_parts = {}
+	for class_name in classes:gmatch("%S+") do
+		local style = dictionary_class_styles[class_name]
+		if style then
+			style_parts[#style_parts + 1] = style
 		end
 	end
 
-	if #style_parts == 0 then
-		return nil
-	end
-
-	return table.concat(style_parts, " ")
+	local result = #style_parts > 0 and table.concat(style_parts, " ") or false
+	CLASS_STYLE_CACHE[classes] = result
+	return result or nil
 end
 
 local function normalizeHeadingTags(html)
@@ -264,7 +289,7 @@ local function normalizeDictionaryPreviewHtml(definition)
 	return normalizeDictionaryLists(html)
 end
 
--- CSS ------------------------------------------------------------------------
+-- CSS -----------------------------------------------------------------------
 
 local function getBaseCss()
 	return [[
@@ -287,14 +312,20 @@ ul, ol {
 a {
     color: black;
 }
-.dictionarypreview-header {
-    margin-bottom: 0.22em;
-    font-size: 0.92em;
+.dictionarypreview-word {
+    font-size: 1.18em;
     font-weight: bold;
+    line-height: 1.15;
+}
+.dictionarypreview-meta {
+    margin-top: 0.08em;
+    font-size: 0.78em;
+    color: #777777;
+    font-style: italic;
 }
 .dictionarypreview-separator {
     border-top: 1px solid #888;
-    margin: 0.16em 0 0.24em 0;
+    margin: 0.35em 0 0.4em 0;
 }
 ]]
 end
@@ -330,14 +361,20 @@ ol, ul, menu {
 a {
     color: black;
 }
-.dictionarypreview-header {
-    margin-bottom: 0.22em;
-    font-size: 0.92em;
+.dictionarypreview-word {
+    font-size: 1.18em;
     font-weight: bold;
+    line-height: 1.15;
+}
+.dictionarypreview-meta {
+    margin-top: 0.08em;
+    font-size: 0.78em;
+    color: #777777;
+    font-style: italic;
 }
 .dictionarypreview-separator {
     border-top: 1px solid #888;
-    margin: 0.16em 0 0.24em 0;
+    margin: 0.35em 0 0.4em 0;
 }
 ]]
 
@@ -348,7 +385,7 @@ a {
 	return css
 end
 
--- Height estimation ----------------------------------------------------------
+-- Sizing --------------------------------------------------------------------
 
 local function stripHtmlForLineEstimate(html)
 	html = tostring(html or "")
@@ -399,28 +436,60 @@ local function getHtmlHeightProfile(html, content_width, font_size, max_html_hei
 	end
 
 	local compact_cap
+	local compact_min_height
 	if estimated_lines <= 3 then
 		compact_cap = math.ceil((estimated_lines + 0.35) * line_height + Screen:scaleBySize(4))
+		compact_min_height = math.min(max_html_height or COMPACT_MIN_HTML_HEIGHT, COMPACT_MIN_HTML_HEIGHT)
+		compact_cap = math.max(compact_cap, compact_min_height)
 	end
 
 	return {
 		estimated_lines = estimated_lines,
 		min_height = min_height,
 		compact_cap = compact_cap,
+		compact_min_height = compact_min_height,
 	}
 end
 
--- Button helpers -------------------------------------------------------------
--- ButtonTable only supports icons from KOReader's global icon search path.
--- This small button keeps the same visual structure but can also render an
--- SVG/PNG from this plugin's own icons/ folder via IconWidget's file field.
+local function getSelectionBounds(boxes)
+	if type(boxes) ~= "table" or #boxes == 0 then
+		return nil
+	end
+
+	local top
+	local bottom
+
+	for _, box in ipairs(boxes) do
+		if type(box) == "table" and box.y and box.h then
+			local box_top = tonumber(box.y)
+			local box_height = tonumber(box.h)
+			local box_bottom = box_top and box_height and (box_top + box_height)
+
+			if box_top and box_bottom then
+				top = top and math.min(top, box_top) or box_top
+				bottom = bottom and math.max(bottom, box_bottom) or box_bottom
+			end
+		end
+	end
+
+	if not top or not bottom then
+		return nil
+	end
+
+	return {
+		top = top,
+		bottom = bottom,
+	}
+end
+
+-- Buttons -------------------------------------------------------------------
 
 local PreviewButton = InputContainer:extend({
 	text = nil,
 	icon = nil,
 	icon_file = nil,
 	width = nil,
-	height = Screen:scaleBySize(48),
+	height = BUTTON_HEIGHT,
 	icon_width = KOREADER_ICON_SIZE,
 	icon_height = KOREADER_ICON_SIZE,
 	callback = nil,
@@ -428,8 +497,6 @@ local PreviewButton = InputContainer:extend({
 })
 
 function PreviewButton:init()
-	-- Borderless buttons: keep the touch area, but remove the visible
-	-- button frame so the footer looks like a native icon toolbar.
 	local bordersize = 0
 	local padding_h = Size.padding.button
 	local padding_v = Size.padding.button
@@ -457,7 +524,7 @@ function PreviewButton:init()
 	else
 		label = TextWidget:new({
 			text = self.text or "",
-			face = Font:getFace("cfont", UI_FONT_SIZE),
+			face = BUTTON_TEXT_FACE,
 			bold = true,
 			max_width = inner_w,
 		})
@@ -500,14 +567,14 @@ function PreviewButton:onTapSelectButton()
 	return true
 end
 
--- Preview popup --------------------------------------------------------------
+-- Preview popup -------------------------------------------------------------
 
 local DictionaryPreviewPopup = InputContainer:extend({
 	html_body = nil,
 	css = nil,
 	html_resource_directory = nil,
 	dialog = nil,
-	doc_font_size = Screen:scaleBySize(18),
+	doc_font_size = DEFAULT_HTML_FONT_SIZE,
 	open_callback = nil,
 	left_callback = nil,
 	left_button = nil,
@@ -515,17 +582,30 @@ local DictionaryPreviewPopup = InputContainer:extend({
 	next_callback = nil,
 	close_preview_callback = nil,
 	result_count = 1,
+	floating = false,
+	selection_bounds = nil,
+	anchor_top = false,
 })
 
 function DictionaryPreviewPopup:init()
 	local screen_width = Screen:getWidth()
 	local screen_height = Screen:getHeight()
+	local floating = self.floating == true
 
-	self.width = screen_width
+	self.width = floating and (screen_width - 2 * FLOATING_SIDE_MARGIN) or screen_width
 
+	local top_border_size = floating and 0 or PANEL_TOP_BORDER_SIZE
+	local padding_top = floating and FLOATING_PADDING_TOP or PANEL_PADDING_TOP
+	local padding_bottom = floating and FLOATING_PADDING_BOTTOM or PANEL_PADDING_BOTTOM
+	local button_gap = floating and FLOATING_TEXT_BUTTON_GAP or TEXT_BUTTON_GAP
+	local card_border_size = floating and FLOATING_CARD_BORDER_SIZE or 0
 	local max_popup_height = math.floor(screen_height * PANEL_MAX_HEIGHT_RATIO)
 
-	if Device:isTouchDevice() then
+	if floating then
+		max_popup_height = max_popup_height - FLOATING_EDGE_MARGIN
+	end
+
+	if IS_TOUCH_DEVICE then
 		local range = Geom:new({ x = 0, y = 0, w = screen_width, h = screen_height })
 		self.ges_events = {
 			TapClose = { GestureRange:new({ ges = "tap", range = range }) },
@@ -533,7 +613,7 @@ function DictionaryPreviewPopup:init()
 		}
 	end
 
-	if Device:hasKeys() then
+	if HAS_KEYS then
 		self.key_events = {
 			Close = { { Device.input.group.Back } },
 			Follow = { { "Press" } },
@@ -543,7 +623,12 @@ function DictionaryPreviewPopup:init()
 	local content_width = math.max(MIN_CONTENT_WIDTH, self.width - CONTENT_PADDING_LEFT - CONTENT_PADDING_RIGHT)
 	local buttons = self:makeButtons(content_width)
 	local buttons_height = self:getWidgetHeight(buttons, BUTTON_HEIGHT)
-	local fixed_height = PANEL_TOP_BORDER_SIZE + PANEL_PADDING_TOP + TEXT_BUTTON_GAP + buttons_height + PANEL_PADDING_BOTTOM
+	local fixed_height = top_border_size
+		+ padding_top
+		+ button_gap
+		+ buttons_height
+		+ padding_bottom
+		+ 2 * card_border_size
 	local max_html_height = max_popup_height - fixed_height
 	local height_profile = getHtmlHeightProfile(self.html_body, content_width, self.doc_font_size, max_html_height)
 
@@ -551,38 +636,101 @@ function DictionaryPreviewPopup:init()
 		max_html_height = height_profile.min_height
 	end
 
-	local htmlwidget, htmlwidget_height =
-		self:makeSizedHtmlWidget(content_width, max_html_height, height_profile)
+	local htmlwidget, htmlwidget_height = self:makeSizedHtmlWidget(content_width, max_html_height, height_profile)
 	self.htmlwidget = htmlwidget
 	self.height = fixed_height + htmlwidget_height
 
+	local vertical_items = {}
+
+	if top_border_size > 0 then
+		table.insert(vertical_items, LineWidget:new({ dimen = Geom:new({ w = self.width, h = top_border_size }) }))
+	end
+
+	table.insert(vertical_items, VerticalSpan:new({ width = padding_top }))
+	table.insert(
+		vertical_items,
+		HorizontalGroup:new({
+			HorizontalSpan:new({ width = CONTENT_PADDING_LEFT }),
+			self.htmlwidget,
+			HorizontalSpan:new({ width = CONTENT_PADDING_RIGHT }),
+		})
+	)
+	table.insert(vertical_items, VerticalSpan:new({ width = button_gap }))
+	table.insert(
+		vertical_items,
+		HorizontalGroup:new({
+			HorizontalSpan:new({ width = CONTENT_PADDING_LEFT }),
+			buttons,
+			HorizontalSpan:new({ width = CONTENT_PADDING_RIGHT }),
+		})
+	)
+	table.insert(vertical_items, VerticalSpan:new({ width = padding_bottom }))
+
 	self.container = FrameContainer:new({
 		background = Blitbuffer.COLOR_WHITE,
-		bordersize = 0,
+		bordersize = card_border_size,
+		color = floating and Blitbuffer.COLOR_DARK_GRAY or nil,
+		radius = floating and FLOATING_CARD_RADIUS or nil,
 		margin = 0,
 		padding = 0,
-		VerticalGroup:new({
-			LineWidget:new({ dimen = Geom:new({ w = self.width, h = PANEL_TOP_BORDER_SIZE }) }),
-			VerticalSpan:new({ width = PANEL_PADDING_TOP }),
-			HorizontalGroup:new({
-				HorizontalSpan:new({ width = CONTENT_PADDING_LEFT }),
-				self.htmlwidget,
-				HorizontalSpan:new({ width = CONTENT_PADDING_RIGHT }),
-			}),
-			VerticalSpan:new({ width = TEXT_BUTTON_GAP }),
-			HorizontalGroup:new({
-				HorizontalSpan:new({ width = CONTENT_PADDING_LEFT }),
-				buttons,
-				HorizontalSpan:new({ width = CONTENT_PADDING_RIGHT }),
-			}),
-			VerticalSpan:new({ width = PANEL_PADDING_BOTTOM }),
-		}),
+		VerticalGroup:new(vertical_items),
 	})
 
-	self[1] = BottomContainer:new({
-		dimen = Screen:getSize(),
-		self.container,
-	})
+	if floating then
+		self.anchor_top = self:shouldAnchorTop(self.height)
+
+		local card_row = HorizontalGroup:new({
+			HorizontalSpan:new({ width = FLOATING_SIDE_MARGIN }),
+			self.container,
+			HorizontalSpan:new({ width = FLOATING_SIDE_MARGIN }),
+		})
+
+		if self.anchor_top then
+			self[1] = TopContainer:new({
+				dimen = Screen:getSize(),
+				VerticalGroup:new({
+					VerticalSpan:new({ width = FLOATING_EDGE_MARGIN }),
+					card_row,
+				}),
+			})
+		else
+			self[1] = BottomContainer:new({
+				dimen = Screen:getSize(),
+				VerticalGroup:new({
+					card_row,
+					VerticalSpan:new({ width = FLOATING_EDGE_MARGIN }),
+				}),
+			})
+		end
+	else
+		self[1] = BottomContainer:new({
+			dimen = Screen:getSize(),
+			self.container,
+		})
+	end
+end
+
+function DictionaryPreviewPopup:shouldAnchorTop(card_height)
+	local bounds = self.selection_bounds
+	if type(bounds) ~= "table" or not bounds.top or not bounds.bottom then
+		return false
+	end
+
+	local screen_height = Screen:getHeight()
+	local top_card_bottom = FLOATING_EDGE_MARGIN + card_height
+	local bottom_card_top = screen_height - FLOATING_EDGE_MARGIN - card_height
+
+	if bottom_card_top > bounds.bottom + FLOATING_SELECTION_GAP then
+		return false
+	end
+
+	if top_card_bottom < bounds.top - FLOATING_SELECTION_GAP then
+		return true
+	end
+
+	local space_above = math.max(0, bounds.top - FLOATING_EDGE_MARGIN - FLOATING_SELECTION_GAP)
+	local space_below = math.max(0, screen_height - bounds.bottom - FLOATING_EDGE_MARGIN - FLOATING_SELECTION_GAP)
+	return space_above > space_below
 end
 
 function DictionaryPreviewPopup:makeButtons(width)
@@ -597,9 +745,6 @@ function DictionaryPreviewPopup:makeButtons(width)
 		},
 	}
 
-	-- Only show dictionary navigation when there is more than one useful
-	-- definition result. When a lookup has a single dictionary hit, or no hit at
-	-- all, the footer stays compact: left action + original dictionary popup.
 	if self.result_count and self.result_count > 1 then
 		table.insert(button_specs, {
 			spec = { icon = ICON_PREVIOUS },
@@ -659,11 +804,7 @@ function DictionaryPreviewPopup:makeButtons(width)
 			table.insert(widgets, makeSeparator())
 		end
 
-		table.insert(widgets, makeButton(
-			item.spec,
-			item.callback,
-			index <= remainder and 1 or 0
-		))
+		table.insert(widgets, makeButton(item.spec, item.callback, index <= remainder and 1 or 0))
 	end
 
 	return HorizontalGroup:new(widgets)
@@ -690,8 +831,8 @@ function DictionaryPreviewPopup:makeHtmlWidget(content_width, height)
 		default_font_size = self.doc_font_size,
 		width = content_width,
 		height = height,
-		scroll_bar_width = Screen:scaleBySize(6),
-		text_scroll_span = Screen:scaleBySize(8),
+		scroll_bar_width = SCROLL_BAR_WIDTH,
+		text_scroll_span = TEXT_SCROLL_SPAN,
 		dialog = self.dialog,
 		highlight_text_selection = true,
 	})
@@ -700,7 +841,13 @@ end
 function DictionaryPreviewPopup:makeSizedHtmlWidget(content_width, max_height, height_profile)
 	local min_height = height_profile.min_height
 	local compact_cap = height_profile.compact_cap
+	local compact_min_height = height_profile.compact_min_height
 	local is_compact = compact_cap ~= nil
+
+	if is_compact and compact_min_height then
+		compact_cap = math.max(compact_cap, compact_min_height)
+	end
+
 	local measure_height = is_compact and compact_cap or max_height
 	measure_height = math.max(1, math.min(max_height, measure_height))
 
@@ -712,16 +859,22 @@ function DictionaryPreviewPopup:makeSizedHtmlWidget(content_width, max_height, h
 	end)
 
 	if ok and type(single_page_height) == "number" and single_page_height > 0 then
-		local measurement_safety = is_compact and 0 or math.ceil(self.doc_font_size * 0.35)
+		local measurement_safety = is_compact and COMPACT_HEIGHT_SAFETY or math.ceil(self.doc_font_size * 0.35)
 		height = math.ceil(single_page_height + measurement_safety)
 		height = math.max(min_height, math.min(max_height, height))
 
-		if is_compact then
-			height = math.max(1, math.min(height, compact_cap))
+		if is_compact and compact_min_height then
+			height = math.max(compact_min_height, height)
 		end
 	else
 		height = math.max(1, math.min(max_height, height))
+
+		if is_compact and compact_min_height then
+			height = math.max(compact_min_height, height)
+		end
 	end
+
+	height = math.max(1, math.min(max_height, height))
 
 	if height ~= measure_height then
 		htmlwidget = self:makeHtmlWidget(content_width, height)
@@ -761,7 +914,6 @@ function DictionaryPreviewPopup:onLeftButton()
 	end
 	return true
 end
-
 
 function DictionaryPreviewPopup:onPrevDictionary()
 	if not self.result_count or self.result_count <= 1 then
@@ -818,14 +970,16 @@ function DictionaryPreviewPopup:onSwipeFollow(_arg, ges)
 		return self:onNextDictionary()
 	elseif ges.direction == "east" then
 		return self:onPrevDictionary()
-	elseif ges.direction == "south" then
+	elseif ges.direction == "south" and not self.anchor_top then
+		return self:onClosePreview()
+	elseif ges.direction == "north" and self.anchor_top then
 		return self:onClosePreview()
 	end
 
 	return false
 end
 
--- Plugin lifecycle -----------------------------------------------------------
+-- Plugin lifecycle ----------------------------------------------------------
 
 function DictionaryPreview:init()
 	self.enabled = self:isPreviewEnabled()
@@ -861,6 +1015,15 @@ function DictionaryPreview:addToMainMenu(menu_items)
 				end,
 			},
 			{
+				text = _("Floating preview"),
+				checked_func = function()
+					return self:isFloatingPreviewEnabled()
+				end,
+				callback = function()
+					self:setFloatingPreviewEnabled(not self:isFloatingPreviewEnabled())
+				end,
+			},
+			{
 				text = _("Left button action"),
 				sub_item_table_func = function()
 					return self:genLeftButtonActionMenu()
@@ -878,6 +1041,14 @@ end
 function DictionaryPreview:setPreviewEnabled(enabled)
 	self.enabled = enabled and true or false
 	G_reader_settings:saveSetting(SETTING_ENABLED, self.enabled)
+end
+
+function DictionaryPreview:isFloatingPreviewEnabled()
+	return G_reader_settings:readSetting(SETTING_FLOATING_PREVIEW) == true
+end
+
+function DictionaryPreview:setFloatingPreviewEnabled(enabled)
+	G_reader_settings:saveSetting(SETTING_FLOATING_PREVIEW, enabled and true or false)
 end
 
 function DictionaryPreview:getLeftButtonAction()
@@ -923,8 +1094,8 @@ function DictionaryPreview:getPluginIconFile(action_id)
 	return nil
 end
 
-function DictionaryPreview:getLeftButtonSpec()
-	local action_id = self:getLeftButtonAction()
+function DictionaryPreview:getLeftButtonSpec(action_id)
+	action_id = LEFT_ACTION_BY_ID[action_id] and action_id or self:getLeftButtonAction()
 	local action = LEFT_ACTION_BY_ID[action_id] or LEFT_ACTION_BY_ID[DEFAULT_LEFT_ACTION]
 
 	if action_id == LEFT_ACTION_SEARCH_BOOK then
@@ -936,9 +1107,6 @@ function DictionaryPreview:getLeftButtonSpec()
 		return { icon_file = plugin_icon }
 	end
 
-	-- Fallback intentionally uses gettext labels from KOReader's catalog.
-	-- This avoids showing an untranslated custom English/Portuguese string
-	-- when the optional SVG/PNG is not present in icons/.
 	return { text = action.label }
 end
 
@@ -983,7 +1151,7 @@ function DictionaryPreview:destroy()
 	end
 end
 
--- Dictionary interception ----------------------------------------------------
+-- Dictionary interception ---------------------------------------------------
 
 function DictionaryPreview:patchDictionary()
 	local dictionary = self.ui and self.ui.dictionary
@@ -1074,7 +1242,7 @@ function DictionaryPreview:showOriginalDictionaryPopup(dict_self, word, results,
 	return true
 end
 
--- Reader interactions --------------------------------------------------------
+-- Reader interactions -------------------------------------------------------
 
 function DictionaryPreview:clearOriginalHighlight(dict_self)
 	local highlight = dict_self and dict_self.highlight
@@ -1108,7 +1276,7 @@ function DictionaryPreview:clearSelection()
 end
 
 function DictionaryPreview:getInterfaceFontSize()
-	return Screen:scaleBySize(UI_FONT_SIZE)
+	return PREVIEW_FONT_SIZE
 end
 
 function DictionaryPreview:getSearchText(word, result)
@@ -1194,11 +1362,7 @@ function DictionaryPreview:showSearchDialog(search_text)
 	return true
 end
 
-
 function DictionaryPreview:getActiveHighlight(dict_self)
-	-- Depending on the KOReader path that opened the dictionary, the active
-	-- ReaderHighlight instance may be stored on ReaderDictionary or only on
-	-- the reader UI. Prefer an instance that still has a live selection.
 	local candidates = {}
 	if dict_self and dict_self.highlight then
 		table.insert(candidates, dict_self.highlight)
@@ -1217,9 +1381,10 @@ function DictionaryPreview:getActiveHighlight(dict_self)
 				return highlight
 			end
 
-			if not fallback
-				and (type(highlight.showHighlightPrompt) == "function"
-					or type(highlight.lookupWikipedia) == "function") then
+			if
+				not fallback
+				and (type(highlight.showHighlightPrompt) == "function" or type(highlight.lookupWikipedia) == "function")
+			then
 				fallback = highlight
 			end
 		end
@@ -1235,12 +1400,7 @@ function DictionaryPreview:rememberSelection(dict_self)
 		return nil
 	end
 
-	-- In the dictionary-on-single-word flow, KOReader may later clear the
-	-- live selection when the dictionary lookup UI is dismissed. Store a copy
-	-- now so the configurable Highlight action can restore it when pressed.
-	if not highlight.selected_text
-		and highlight.hold_pos
-		and type(highlight.highlightFromHoldPos) == "function" then
+	if not highlight.selected_text and highlight.hold_pos and type(highlight.highlightFromHoldPos) == "function" then
 		pcall(function()
 			highlight:highlightFromHoldPos()
 		end)
@@ -1276,15 +1436,10 @@ function DictionaryPreview:restoreSelection(dict_self)
 			highlight.selected_link = copyTable(snapshot.selected_link)
 		end
 
-		-- The original lookup may have been a single-word dictionary lookup.
-		-- For the highlight action we need to treat the restored selection as a
-		-- highlightable text selection, not as another dictionary lookup trigger.
 		highlight.is_word_selection = false
 	end
 
-	if not highlight.selected_text
-		and highlight.hold_pos
-		and type(highlight.highlightFromHoldPos) == "function" then
+	if not highlight.selected_text and highlight.hold_pos and type(highlight.highlightFromHoldPos) == "function" then
 		pcall(function()
 			highlight:highlightFromHoldPos()
 		end)
@@ -1309,9 +1464,7 @@ function DictionaryPreview:highlightSelection(dict_self, dict_close_callback)
 		return self:notify(_("No selection to highlight."))
 	end
 
-	if not highlight.selected_text
-		and highlight.hold_pos
-		and type(highlight.highlightFromHoldPos) == "function" then
+	if not highlight.selected_text and highlight.hold_pos and type(highlight.highlightFromHoldPos) == "function" then
 		pcall(function()
 			highlight:highlightFromHoldPos()
 		end)
@@ -1356,9 +1509,11 @@ function DictionaryPreview:lookupWikipedia(dict_self, search_text)
 	if highlight and type(highlight.lookupWikipedia) == "function" and self:hasHighlightSelection(highlight) then
 		UIManager:scheduleIn(0.05, function()
 			local ok, err = pcall(function()
-				if not highlight.selected_text
+				if
+					not highlight.selected_text
 					and highlight.hold_pos
-					and type(highlight.highlightFromHoldPos) == "function" then
+					and type(highlight.highlightFromHoldPos) == "function"
+				then
 					highlight:highlightFromHoldPos()
 				end
 				highlight:lookupWikipedia()
@@ -1386,8 +1541,6 @@ function DictionaryPreview:runLeftButtonAction(action, dict_self, search_text, d
 	self.current_popup = nil
 
 	if action == LEFT_ACTION_HIGHLIGHT then
-		-- Do not clear the selection before highlighting. ReaderHighlight needs
-		-- the original selected_text/hold_pos to create the annotation.
 		return self:highlightSelection(dict_self, dict_close_callback)
 	elseif action == LEFT_ACTION_WIKIPEDIA then
 		return self:lookupWikipedia(dict_self, search_text)
@@ -1402,7 +1555,7 @@ function DictionaryPreview:runLeftButtonAction(action, dict_self, search_text, d
 	return self:showSearchDialog(search_text)
 end
 
--- Preview construction -------------------------------------------------------
+-- Preview construction ------------------------------------------------------
 
 function DictionaryPreview:buildPreviewPayload(word, result, result_index, result_count)
 	result = result or {}
@@ -1430,9 +1583,10 @@ function DictionaryPreview:buildPreviewPayload(word, result, result_index, resul
 
 	return {
 		html_body = table.concat({
-			'<div class="dictionarypreview-header">',
+			'<div class="dictionarypreview-word">',
 			htmlEscape(shown_word),
-			" — ",
+			"</div>",
+			'<div class="dictionarypreview-meta">',
 			htmlEscape(dict_name),
 			"</div>",
 			'<div class="dictionarypreview-separator"></div>',
@@ -1457,24 +1611,20 @@ local function buildPreviewResults(results)
 		return preview_results
 	end
 
-	-- Ignore no-result placeholders when at least one dictionary has a real
-	-- definition. This keeps navigation focused only on usable dictionary hits.
 	for index, result in ipairs(results) do
 		if result and not result.no_result then
-			table.insert(preview_results, {
+			preview_results[#preview_results + 1] = {
 				result = result,
 				source_index = index,
-			})
+			}
 		end
 	end
 
-	-- When no dictionary matched, keep a single placeholder preview so the user
-	-- can still use the left action or open the original dictionary popup.
 	if #preview_results == 0 and results[1] then
-		table.insert(preview_results, {
+		preview_results[#preview_results + 1] = {
 			result = results[1],
 			source_index = 1,
-		})
+		}
 	end
 
 	return preview_results
@@ -1515,6 +1665,10 @@ end
 function DictionaryPreview:showPreview(dict_self, word, results, boxes, link, dict_close_callback)
 	local preview_results = buildPreviewResults(results)
 	local preview_count = #preview_results
+	local floating_preview = self:isFloatingPreviewEnabled()
+	local selection_bounds = floating_preview and getSelectionBounds(boxes) or nil
+	local left_button_action = self:getLeftButtonAction()
+	local left_button_spec = self:getLeftButtonSpec(left_button_action)
 
 	if preview_count <= 0 then
 		return true
@@ -1578,12 +1732,14 @@ function DictionaryPreview:showPreview(dict_self, word, results, boxes, link, di
 			doc_font_size = self:getInterfaceFontSize(),
 			dialog = dict_self and dict_self.dialog,
 			result_count = preview_count,
-			left_button = self:getLeftButtonSpec(),
+			left_button = left_button_spec,
+			floating = floating_preview,
+			selection_bounds = selection_bounds,
 			open_callback = function()
 				return openFullPopup(current_index)
 			end,
 			left_callback = function()
-				return self:runLeftButtonAction(self:getLeftButtonAction(), dict_self, search_text, dict_close_callback)
+				return self:runLeftButtonAction(left_button_action, dict_self, search_text, dict_close_callback)
 			end,
 			prev_callback = function()
 				return showResult(current_index - 1)
@@ -1602,7 +1758,6 @@ function DictionaryPreview:showPreview(dict_self, word, results, boxes, link, di
 	return showResult(1)
 end
 
--- Backwards-compatible alias for older local edits/references.
 DictionaryPreview.showFootnotePreview = DictionaryPreview.showPreview
 
 return DictionaryPreview
