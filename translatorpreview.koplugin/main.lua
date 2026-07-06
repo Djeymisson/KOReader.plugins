@@ -1284,7 +1284,7 @@ function TranslatorPreview:showPreviewPopup(data)
 	end
 
 	table.insert(actions, {
-		text = _("..."),
+		text = _("•••"),
 		callback = function()
 			return self:showOriginalTranslation(
 				data.translator,
