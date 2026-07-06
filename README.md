@@ -34,12 +34,6 @@ Example:
 koreader/plugins/plugin-name.koplugin/
 ```
 
-On some devices, especially Kindle, the path may look like this:
-
-```text
-/extensions/koreader/plugins/plugin-name.koplugin/
-```
-
 4. Restart KOReader.
 5. Read the plugin-specific README to learn where to find it in the interface and how to configure it.
 
