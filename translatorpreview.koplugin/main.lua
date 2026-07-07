@@ -53,6 +53,8 @@ local BUTTON_HEIGHT = Screen:scaleBySize(40)
 
 local BUTTON_SEPARATOR_WIDTH = math.max(1, Screen:scaleBySize(1))
 local HEADER_CONTENT_GAP = Screen:scaleBySize(6)
+local HEADER_SEPARATOR_HEIGHT = math.max(1, Screen:scaleBySize(1))
+local HEADER_SEPARATOR_GAP = Screen:scaleBySize(6)
 local LANGUAGE_FONT_SIZE = math.max(12, UI_FONT_SIZE - 3)
 local LANGUAGE_TEXT_FACE = Font:getFace("cfont", LANGUAGE_FONT_SIZE)
 local LANGUAGE_TEXT_PADDING_H = Screen:scaleBySize(4)
@@ -209,10 +211,6 @@ a {
     color: #777777;
     font-style: italic;
 }
-.translatorpreview-separator {
-    border-top: 1px solid #888;
-    margin: 0.35em 0 0.42em 0;
-}
 .translatorpreview-source-label {
     margin-top: 0.45em;
     margin-bottom: 0.12em;
@@ -313,7 +311,7 @@ local PreviewButton = InputContainer:extend({
 function PreviewButton:init()
 	local bordersize = 0
 	local padding_h = math.max(2, math.floor(Size.padding.button * 0.75))
-    local padding_v = math.max(1, math.floor(Size.padding.button * 0.55))
+	local padding_v = math.max(1, math.floor(Size.padding.button * 0.55))
 
 	local outer_w = self.width or Screen:scaleBySize(80)
 	local outer_h = self.height or Screen:scaleBySize(48)
@@ -461,6 +459,8 @@ function TranslatorPreviewPopup:init()
 	local header = self:makeHeader(content_width)
 	local header_height = header and self:getWidgetHeight(header, Screen:scaleBySize(32)) or 0
 	local header_gap = header and HEADER_CONTENT_GAP or 0
+	local header_separator_height = header and HEADER_SEPARATOR_HEIGHT or 0
+	local header_separator_gap = header and HEADER_SEPARATOR_GAP or 0
 	local buttons = self:makeButtons(content_width)
 	local buttons_height = self:getWidgetHeight(buttons, BUTTON_HEIGHT)
 
@@ -468,6 +468,8 @@ function TranslatorPreviewPopup:init()
 		+ padding_top
 		+ header_height
 		+ header_gap
+		+ header_separator_height
+		+ header_separator_gap
 		+ button_gap
 		+ buttons_height
 		+ padding_bottom
@@ -498,14 +500,35 @@ function TranslatorPreviewPopup:init()
 
 	table.insert(vertical_items, VerticalSpan:new({ width = padding_top }))
 
-    if header then
-        table.insert(vertical_items, HorizontalGroup:new({
-            HorizontalSpan:new({ width = CONTENT_PADDING_LEFT }),
-            header,
-            HorizontalSpan:new({ width = CONTENT_PADDING_RIGHT }),
-        }))
-        table.insert(vertical_items, VerticalSpan:new({ width = header_gap }))
-    end
+	if header then
+		table.insert(
+			vertical_items,
+			HorizontalGroup:new({
+				HorizontalSpan:new({ width = CONTENT_PADDING_LEFT }),
+				header,
+				HorizontalSpan:new({ width = CONTENT_PADDING_RIGHT }),
+			})
+		)
+
+		table.insert(vertical_items, VerticalSpan:new({ width = header_gap }))
+
+		table.insert(
+			vertical_items,
+			HorizontalGroup:new({
+				HorizontalSpan:new({ width = CONTENT_PADDING_LEFT }),
+				LineWidget:new({
+					background = Blitbuffer.COLOR_GRAY,
+					dimen = Geom:new({
+						w = content_width,
+						h = HEADER_SEPARATOR_HEIGHT,
+					}),
+				}),
+				HorizontalSpan:new({ width = CONTENT_PADDING_RIGHT }),
+			})
+		)
+
+		table.insert(vertical_items, VerticalSpan:new({ width = header_separator_gap }))
+	end
 
 	table.insert(
 		vertical_items,
@@ -593,16 +616,16 @@ function TranslatorPreviewPopup:shouldAnchorTop(card_height)
 end
 
 function TranslatorPreviewPopup:makeHeader(width)
-    if not self.language_text then
-        return nil
-    end
+	if not self.language_text then
+		return nil
+	end
 
-    return ClickableLanguageText:new({
-        text = self.language_text,
-        width = width,
-        show_parent = self,
-        callback = self.language_callback,
-    })
+	return ClickableLanguageText:new({
+		text = self.language_text,
+		width = width,
+		show_parent = self,
+		callback = self.language_callback,
+	})
 end
 
 function TranslatorPreviewPopup:makeButtons(width)
@@ -711,10 +734,10 @@ end
 -- Plugin lifecycle ----------------------------------------------------------
 
 function TranslatorPreview:init()
-    self.current_popup = nil
-    self.language_menu = nil
-    self.original_showTranslation = nil
-    self.opening_original_popup = false
+	self.current_popup = nil
+	self.language_menu = nil
+	self.original_showTranslation = nil
+	self.opening_original_popup = false
 
 	if self.ui and self.ui.menu then
 		self.ui.menu:registerToMainMenu(self)
@@ -790,7 +813,7 @@ function TranslatorPreview:addToMainMenu(menu_items)
 end
 
 function TranslatorPreview:destroy()
-    self:closeLanguageMenu()
+	self:closeLanguageMenu()
 	if self.current_popup then
 		UIManager:close(self.current_popup)
 		self.current_popup = nil
@@ -1128,140 +1151,139 @@ end
 -- Target language menu ------------------------------------------------------
 
 function TranslatorPreview:getTargetLanguageLabel(translator_self, lang)
-    lang = lang or translator_self:getTargetLanguage()
-    local name = translator_self:getLanguageName(lang, lang and lang:upper() or "?")
-    return name or tostring(lang or "?")
+	lang = lang or translator_self:getTargetLanguage()
+	local name = translator_self:getLanguageName(lang, lang and lang:upper() or "?")
+	return name or tostring(lang or "?")
 end
 
 function TranslatorPreview:closeLanguageMenu()
-    if self.language_menu then
-        pcall(function()
-            UIManager:close(self.language_menu)
-        end)
-        self.language_menu = nil
-    end
+	if self.language_menu then
+		pcall(function()
+			UIManager:close(self.language_menu)
+		end)
+		self.language_menu = nil
+	end
 end
 
 function TranslatorPreview:refreshTranslationWithTarget(data, target_lang)
-    self:closeLanguageMenu()
+	self:closeLanguageMenu()
 
-    if self.current_popup then
-        UIManager:close(self.current_popup)
-        self.current_popup = nil
-    end
+	if self.current_popup then
+		UIManager:close(self.current_popup)
+		self.current_popup = nil
+	end
 
-    G_reader_settings:saveSetting("translator_to_language", target_lang)
+	G_reader_settings:saveSetting("translator_to_language", target_lang)
 
-    return self:showTranslationPreview(
-        data.translator,
-        data.source_text,
-        data.detailed_view,
-        data.source_lang,
-        target_lang,
-        data.from_highlight,
-        data.index
-    )
+	return self:showTranslationPreview(
+		data.translator,
+		data.source_text,
+		data.detailed_view,
+		data.source_lang,
+		target_lang,
+		data.from_highlight,
+		data.index
+	)
 end
 
 function TranslatorPreview:getTargetLanguageMenuItems(data)
-    local translator_self = data.translator
-    local items = {}
+	local translator_self = data.translator
+	local items = {}
 
-    local ok, settings_menu = pcall(function()
-        return translator_self:genSettingsMenu()
-    end)
+	local ok, settings_menu = pcall(function()
+		return translator_self:genSettingsMenu()
+	end)
 
-    if ok and settings_menu and type(settings_menu.sub_item_table) == "table" then
-        local target_sub_items
+	if ok and settings_menu and type(settings_menu.sub_item_table) == "table" then
+		local target_sub_items
 
-        for i = #settings_menu.sub_item_table, 1, -1 do
-            local item = settings_menu.sub_item_table[i]
-            if type(item) == "table" and type(item.sub_item_table) == "table" then
-                target_sub_items = item.sub_item_table
-                break
-            end
-        end
+		for i = #settings_menu.sub_item_table, 1, -1 do
+			local item = settings_menu.sub_item_table[i]
+			if type(item) == "table" and type(item.sub_item_table) == "table" then
+				target_sub_items = item.sub_item_table
+				break
+			end
+		end
 
-        if target_sub_items then
-            for _, item in ipairs(target_sub_items) do
-                local menu_item = item
-                table.insert(items, {
-                    text = menu_item.text,
-                    text_func = menu_item.text_func,
-                    checked_func = menu_item.checked_func,
-                    enabled_func = menu_item.enabled_func,
-                    radio = menu_item.radio,
-                    separator = menu_item.separator,
-                    callback = function()
-                        if menu_item.callback then
-                            menu_item.callback()
-                        end
+		if target_sub_items then
+			for _, item in ipairs(target_sub_items) do
+				local menu_item = item
+				table.insert(items, {
+					text = menu_item.text,
+					text_func = menu_item.text_func,
+					checked_func = menu_item.checked_func,
+					enabled_func = menu_item.enabled_func,
+					radio = menu_item.radio,
+					separator = menu_item.separator,
+					callback = function()
+						if menu_item.callback then
+							menu_item.callback()
+						end
 
-                        local selected_lang = translator_self:getTargetLanguage()
-                        return self:refreshTranslationWithTarget(data, selected_lang)
-                    end,
-                })
-            end
-        end
-    end
+						local selected_lang = translator_self:getTargetLanguage()
+						return self:refreshTranslationWithTarget(data, selected_lang)
+					end,
+				})
+			end
+		end
+	end
 
-    if #items > 0 then
-        return items
-    end
+	if #items > 0 then
+		return items
+	end
 
-    for _, lang in ipairs(COMMON_TARGET_LANGUAGES) do
-        local lang_key = lang
-        table.insert(items, {
-            text = string.format("%s (%s)", self:getTargetLanguageLabel(translator_self, lang_key), lang_key),
-            checked_func = function()
-                return translator_self:getTargetLanguage() == lang_key
-            end,
-            radio = true,
-            callback = function()
-                return self:refreshTranslationWithTarget(data, lang_key)
-            end,
-        })
-    end
+	for _, lang in ipairs(COMMON_TARGET_LANGUAGES) do
+		local lang_key = lang
+		table.insert(items, {
+			text = string.format("%s (%s)", self:getTargetLanguageLabel(translator_self, lang_key), lang_key),
+			checked_func = function()
+				return translator_self:getTargetLanguage() == lang_key
+			end,
+			radio = true,
+			callback = function()
+				return self:refreshTranslationWithTarget(data, lang_key)
+			end,
+		})
+	end
 
-    return items
+	return items
 end
 
 function TranslatorPreview:showTargetLanguageMenu(data)
-    local Menu = require("ui/widget/menu")
-    self:closeLanguageMenu()
+	local Menu = require("ui/widget/menu")
+	self:closeLanguageMenu()
 
-    self.language_menu = Menu:new({
-        title = _("Translate to"),
-        item_table = self:getTargetLanguageMenuItems(data),
-        width = Screen:getWidth() - Screen:scaleBySize(80),
-        height = math.floor(Screen:getHeight() * 0.8),
-        show_parent = self.current_popup,
-    })
+	self.language_menu = Menu:new({
+		title = _("Translate to"),
+		item_table = self:getTargetLanguageMenuItems(data),
+		width = Screen:getWidth() - Screen:scaleBySize(80),
+		height = math.floor(Screen:getHeight() * 0.8),
+		show_parent = self.current_popup,
+	})
 
-    UIManager:show(self.language_menu)
-    return true
+	UIManager:show(self.language_menu)
+	return true
 end
 
 -- Preview construction ------------------------------------------------------
 
 function TranslatorPreview:buildPreviewPayload(data)
-    local parts = {
-        '<div class="translatorpreview-separator"></div>',
-        '<div class="translatorpreview-translation">' .. plainTextToHtml(data.text_main) .. "</div>",
-    }
+	local parts = {
+		'<div class="translatorpreview-translation">' .. plainTextToHtml(data.text_main) .. "</div>",
+	}
 
-    if self:showSourceText() then
-        table.insert(parts, '<div class="translatorpreview-source-label">' .. htmlEscape(_("Source")) .. "</div>")
-        table.insert(parts, '<div class="translatorpreview-source">' .. plainTextToHtml(data.source_text) .. "</div>")
-    end
+	if self:showSourceText() then
+		table.insert(parts, '<div class="translatorpreview-source-label">' .. htmlEscape(_("Source")) .. "</div>")
+		table.insert(parts, '<div class="translatorpreview-source">' .. plainTextToHtml(data.source_text) .. "</div>")
+	end
 
-    return table.concat(parts, "\n")
+	return table.concat(parts, "\n")
 end
 
 function TranslatorPreview:showPreviewPopup(data)
-    local source_name = self:getTargetLanguageLabel(data.translator, data.source_lang)
-    local target_name = self:getTargetLanguageLabel(data.translator, data.target_lang)
-    local language_text = string.format("%s → %s ▾", source_name, target_name)
+	local source_name = self:getTargetLanguageLabel(data.translator, data.source_lang)
+	local target_name = self:getTargetLanguageLabel(data.translator, data.target_lang)
+	local language_text = string.format("%s → %s ▾", source_name, target_name)
 	if self.current_popup then
 		UIManager:close(self.current_popup)
 		self.current_popup = nil
@@ -1303,22 +1325,22 @@ function TranslatorPreview:showPreviewPopup(data)
 	})
 
 	local popup = TranslatorPreviewPopup:new({
-        language_text = language_text,
-        language_callback = function()
-            return self:showTargetLanguageMenu(data)
-        end,
-        html_body = self:buildPreviewPayload(data),
-        css = FALLBACK_CSS,
-        doc_font_size = PREVIEW_FONT_SIZE,
-        dialog = self:getReaderDialog(),
-        floating = self:isFloatingPreviewEnabled(),
-        selection_bounds = self:isFloatingPreviewEnabled() and self:getSelectionBounds() or nil,
-        actions = actions,
-        close_preview_callback = function()
-            self.current_popup = nil
-            return self:closeHighlightIfNeeded(data.from_highlight)
-        end,
-    })
+		language_text = language_text,
+		language_callback = function()
+			return self:showTargetLanguageMenu(data)
+		end,
+		html_body = self:buildPreviewPayload(data),
+		css = FALLBACK_CSS,
+		doc_font_size = PREVIEW_FONT_SIZE,
+		dialog = self:getReaderDialog(),
+		floating = self:isFloatingPreviewEnabled(),
+		selection_bounds = self:isFloatingPreviewEnabled() and self:getSelectionBounds() or nil,
+		actions = actions,
+		close_preview_callback = function()
+			self.current_popup = nil
+			return self:closeHighlightIfNeeded(data.from_highlight)
+		end,
+	})
 
 	self.current_popup = popup
 	UIManager:show(popup)
