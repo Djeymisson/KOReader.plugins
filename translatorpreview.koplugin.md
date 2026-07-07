@@ -196,17 +196,7 @@ Settings saved in KOReader may remain until manually removed from KOReader's set
 
 ## Screenshots
 
-Add screenshots to your repository using a structure such as:
-
-```text
-assets/screenshots/translatorpreview.koplugin/
-```
-
-Suggested screenshots:
-
-```text
-assets/screenshots/translatorpreview.koplugin/footer_translation.png
-assets/screenshots/translatorpreview.koplugin/floating_translation.png
-assets/screenshots/translatorpreview.koplugin/language_menu.png
-assets/screenshots/translatorpreview.koplugin/menu_buttons.png
-```
+![floating_translation](assets/screenshots/translatorpreview.koplugin/floating_translation.png)
+![footer_translation](assets/screenshots/translatorpreview.koplugin/footer_translation.png)
+![language_menu](assets/screenshots/translatorpreview.koplugin/language_menu.png)
+![menu_buttons](assets/screenshots/translatorpreview.koplugin/menu_buttons.png)
