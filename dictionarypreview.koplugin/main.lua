@@ -36,7 +36,7 @@ local DictionaryPreview = WidgetContainer:extend({
 
 -- Constants -----------------------------------------------------------------
 
-local PLUGIN_VERSION = "v1.1.1"
+local PLUGIN_VERSION = "v1.1.2"
 
 local UI_FONT_FACE = "Noto Sans"
 local UI_FONT_SIZE = 20
@@ -1005,7 +1005,7 @@ end
 function DictionaryPreview:addToMainMenu(menu_items)
 	menu_items.dictionarypreview = {
 		text = _("Dictionary preview"),
-		sorting_hint = "setting",
+		sorting_hint = "tools",
 		sub_item_table = {
 			{
 				text = _("Enable dictionary preview"),

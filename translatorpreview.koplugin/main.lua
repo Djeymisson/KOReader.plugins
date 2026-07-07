@@ -34,7 +34,7 @@ local TranslatorPreview = WidgetContainer:extend({
 
 -- Constants -----------------------------------------------------------------
 
-local PLUGIN_VERSION = "v1.0.0"
+local PLUGIN_VERSION = "v1.0.1"
 
 local UI_FONT_FACE = "Noto Sans"
 local UI_FONT_SIZE = 20
@@ -722,7 +722,7 @@ end
 function TranslatorPreview:addToMainMenu(menu_items)
 	menu_items.translatorpreview = {
 		text = _("Translator preview"),
-		sorting_hint = "setting",
+		sorting_hint = "tools",
 		sub_item_table = {
 			{
 				text = _("Enable translator preview"),

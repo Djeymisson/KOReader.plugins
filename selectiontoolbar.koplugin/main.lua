@@ -15,7 +15,7 @@ local math_floor = math.floor
 local math_max = math.max
 local math_min = math.min
 
-local PLUGIN_VERSION = "v1.0.0"
+local PLUGIN_VERSION = "v1.0.1"
 local QR_MESSAGE_MODULE = "ui/widget/qrmessage"
 
 local BUTTON_ICON_SIZE = Screen:scaleBySize(22)
@@ -227,7 +227,7 @@ function SelectionToolbar:addToMainMenu(menu_items)
 
 	menu_items.selectiontoolbar = {
 		text = _("Selection toolbar"),
-		sorting_hint = "setting",
+		sorting_hint = "tools",
 		sub_item_table = {
 			{
 				text = _("Use compact selection toolbar"),

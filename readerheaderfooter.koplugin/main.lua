@@ -32,7 +32,7 @@ local _ = require("gettext")
 -- ============================================================================
 
 local PLUGIN_NAME = "reader_header_footer"
-local PLUGIN_VERSION = "v1.0.1"
+local PLUGIN_VERSION = "v1.0.2"
 
 local SETTINGS = {
 	enabled = "reader_header_footer_enabled",
@@ -378,7 +378,7 @@ end
 function ReaderHeaderFooter:addToMainMenu(menu_items)
 	menu_items.reader_header_footer = {
 		text = _("Header/footer indicators"),
-		sorting_hint = "setting",
+		sorting_hint = "tools",
 		sub_item_table = {
 			{
 				text_func = function()
