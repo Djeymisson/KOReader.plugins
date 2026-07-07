@@ -32,8 +32,6 @@ local TranslatorPreview = WidgetContainer:extend({
 	is_doc_only = true,
 })
 
--- Constants -----------------------------------------------------------------
-
 local PLUGIN_VERSION = "v1.0.1"
 
 local UI_FONT_FACE = "Noto Sans"
@@ -112,8 +110,6 @@ local SETTING_SHOW_SOURCE = "translatorpreview_show_source"
 local SETTING_SHOW_COPY_BUTTON = "translatorpreview_show_copy_button"
 local SETTING_SHOW_NOTE_BUTTON = "translatorpreview_show_note_button"
 
--- Helpers -------------------------------------------------------------------
-
 local function trim(text)
 	return tostring(text or ""):gsub("^%s+", ""):gsub("%s+$", "")
 end
@@ -179,8 +175,7 @@ local function estimateHtmlHeight(html, content_width, font_size, max_height)
 	return min_height
 end
 
-local function getBaseCss()
-	return [[
+local FALLBACK_CSS = [[
 @page {
     margin: 0;
     font-family: ']] .. UI_FONT_FACE .. [[';
@@ -200,17 +195,6 @@ ul, ol {
 a {
     color: black;
 }
-.translatorpreview-title {
-    font-size: 1.10em;
-    font-weight: bold;
-    line-height: 1.18;
-}
-.translatorpreview-meta {
-    margin-top: 0.08em;
-    font-size: 0.76em;
-    color: #777777;
-    font-style: italic;
-}
 .translatorpreview-source-label {
     margin-top: 0.45em;
     margin-bottom: 0.12em;
@@ -226,79 +210,21 @@ a {
     font-size: 1em;
 }
 ]]
-end
 
-local FALLBACK_CSS = getBaseCss()
+local function extractMainTranslation(result)
+	if not isResultValid(result and result[1]) then
+		return ""
+	end
 
-local function buildTranslationTexts(result, include_all)
-	local text_main = ""
-	local text_all_parts = {}
-
-	if isResultValid(result and result[1]) then
-		local source = {}
-		local translated = {}
-		local romanized = {}
-
-		for _, r in ipairs(result[1]) do
-			local t = type(r[1]) == "string" and r[1] or ""
-			table.insert(translated, t)
-
-			if include_all then
-				local s = type(r[2]) == "string" and r[2] or ""
-				table.insert(source, s)
-				if type(r[4]) == "string" then
-					table.insert(romanized, r[4])
-				end
-			end
-		end
-
-		text_main = trim(table.concat(translated, " "))
-
-		if include_all then
-			table.insert(text_all_parts, "▣ " .. trim(table.concat(source, " ")))
-			if #romanized > 0 then
-				table.insert(text_all_parts, trim(table.concat(romanized, " ")))
-			end
-			table.insert(text_all_parts, "● " .. text_main)
-		else
-			table.insert(text_all_parts, text_main)
+	local translated = {}
+	for _, r in ipairs(result[1]) do
+		if type(r[1]) == "string" and r[1] ~= "" then
+			translated[#translated + 1] = r[1]
 		end
 	end
 
-	if include_all then
-		if isResultValid(result and result[6]) then
-			table.insert(text_all_parts, "")
-			table.insert(text_all_parts, _("Alternate translations:"))
-			for _, r in ipairs(result[6]) do
-				if type(r[3]) == "table" then
-					local s = type(r[1]) == "string" and r[1]:gsub("\n", "") or ""
-					table.insert(text_all_parts, "▣ " .. s)
-					for _, rt in ipairs(r[3]) do
-						local t = type(rt[1]) == "string" and rt[1]:gsub("\n", "") or ""
-						table.insert(text_all_parts, "• " .. t)
-					end
-				end
-			end
-		end
-
-		if isResultValid(result and result[13]) then
-			table.insert(text_all_parts, "")
-			table.insert(text_all_parts, _("Definition:"))
-			for _, r in ipairs(result[13]) do
-				if r[2] and type(r[2]) == "table" then
-					table.insert(text_all_parts, "• " .. tostring(r[1] or ""))
-					for _, res in ipairs(r[2]) do
-						table.insert(text_all_parts, "  - " .. tostring(res[1] or ""))
-					end
-				end
-			end
-		end
-	end
-
-	return text_main, trim(table.concat(text_all_parts, "\n"))
+	return trim(table.concat(translated, " "))
 end
-
--- Buttons -------------------------------------------------------------------
 
 local PreviewButton = InputContainer:extend({
 	text = nil,
@@ -406,8 +332,6 @@ function ClickableLanguageText:onTapSelectLanguage()
 	end
 	return true
 end
-
--- Preview popup -------------------------------------------------------------
 
 local TranslatorPreviewPopup = InputContainer:extend({
 	language_text = nil,
@@ -731,13 +655,13 @@ function TranslatorPreviewPopup:onSwipeClose(_arg, ges)
 	return false
 end
 
--- Plugin lifecycle ----------------------------------------------------------
-
 function TranslatorPreview:init()
 	self.current_popup = nil
 	self.language_menu = nil
 	self.original_showTranslation = nil
 	self.opening_original_popup = false
+	self.reader_ui = nil
+	self.clipboard_available = Device:hasClipboard()
 
 	if self.ui and self.ui.menu then
 		self.ui.menu:registerToMainMenu(self)
@@ -812,12 +736,16 @@ function TranslatorPreview:addToMainMenu(menu_items)
 	}
 end
 
-function TranslatorPreview:destroy()
-	self:closeLanguageMenu()
+function TranslatorPreview:closeCurrentPopup()
 	if self.current_popup then
 		UIManager:close(self.current_popup)
 		self.current_popup = nil
 	end
+end
+
+function TranslatorPreview:destroy()
+	self:closeLanguageMenu()
+	self:closeCurrentPopup()
 
 	if Translator._translatorpreview_owner == self and self.original_showTranslation then
 		Translator.showTranslation = self.original_showTranslation
@@ -826,13 +754,12 @@ function TranslatorPreview:destroy()
 	end
 
 	self.original_showTranslation = nil
+	self.reader_ui = nil
 
 	if WidgetContainer.destroy then
 		WidgetContainer.destroy(self)
 	end
 end
-
--- Settings ------------------------------------------------------------------
 
 function TranslatorPreview:isPreviewEnabled()
 	return G_reader_settings:nilOrTrue(SETTING_ENABLED)
@@ -867,7 +794,11 @@ function TranslatorPreview:notify(message)
 	return true
 end
 
--- Translator interception ---------------------------------------------------
+function TranslatorPreview:showInfoMessage(message)
+	local InfoMessage = require("ui/widget/infomessage")
+	UIManager:show(InfoMessage:new({ text = message }))
+	return true
+end
 
 function TranslatorPreview:patchTranslator()
 	if Translator._translatorpreview_patched then
@@ -927,10 +858,7 @@ function TranslatorPreview:showOriginalTranslation(
 		return true
 	end
 
-	if self.current_popup then
-		UIManager:close(self.current_popup)
-		self.current_popup = nil
-	end
+	self:closeCurrentPopup()
 
 	self.opening_original_popup = true
 	local ok, err = pcall(function()
@@ -963,7 +891,7 @@ function TranslatorPreview:showTranslationPreview(
 	from_highlight,
 	index
 )
-	if Device:hasClipboard() then
+	if self.clipboard_available then
 		Device.input.setClipboardText(text)
 	end
 
@@ -1008,34 +936,26 @@ function TranslatorPreview:_showTranslationPreview(
 	end, _("Querying translation service…"))
 
 	if not completed then
-		local InfoMessage = require("ui/widget/infomessage")
-		UIManager:show(InfoMessage:new({ text = _("Translation interrupted.") }))
-		return
+		return self:showInfoMessage(_("Translation interrupted."))
 	end
 
 	if not result or type(result) ~= "table" then
-		local InfoMessage = require("ui/widget/infomessage")
-		UIManager:show(InfoMessage:new({ text = _("Translation failed.") }))
-		return
+		return self:showInfoMessage(_("Translation failed."))
 	end
 
 	if result[3] then
 		source_lang = result[3]
 	end
 
-	local text_main, text_all = buildTranslationTexts(result, true)
+	local text_main = extractMainTranslation(result)
 	if text_main == "" then
 		text_main = _("No translation found.")
-	end
-	if text_all == "" then
-		text_all = text_main
 	end
 
 	return self:showPreviewPopup({
 		translator = translator_self,
 		source_text = text,
 		text_main = text_main,
-		text_all = text_all,
 		source_lang = source_lang,
 		target_lang = target_lang,
 		detailed_view = detailed_view,
@@ -1044,14 +964,17 @@ function TranslatorPreview:_showTranslationPreview(
 	})
 end
 
--- Reader actions ------------------------------------------------------------
-
 function TranslatorPreview:getReaderUI()
+	if self.reader_ui then
+		return self.reader_ui
+	end
+
 	local ok, readerui = pcall(function()
 		return require("apps/reader/readerui").instance
 	end)
 
-	if ok then
+	if ok and readerui then
+		self.reader_ui = readerui
 		return readerui
 	end
 
@@ -1099,7 +1022,7 @@ function TranslatorPreview:getSelectionBounds()
 end
 
 function TranslatorPreview:copyMainTranslation(text_main)
-	if not Device:hasClipboard() then
+	if not self.clipboard_available then
 		return self:notify(_("Clipboard is not available."))
 	end
 
@@ -1115,10 +1038,7 @@ function TranslatorPreview:saveMainTranslationToNote(text_main, index)
 		return self:notify(_("No highlight available."))
 	end
 
-	if self.current_popup then
-		UIManager:close(self.current_popup)
-		self.current_popup = nil
-	end
+	self:closeCurrentPopup()
 
 	if highlight.highlight_dialog then
 		UIManager:close(highlight.highlight_dialog)
@@ -1148,8 +1068,6 @@ function TranslatorPreview:closeHighlightIfNeeded(from_highlight)
 	return true
 end
 
--- Target language menu ------------------------------------------------------
-
 function TranslatorPreview:getTargetLanguageLabel(translator_self, lang)
 	lang = lang or translator_self:getTargetLanguage()
 	local name = translator_self:getLanguageName(lang, lang and lang:upper() or "?")
@@ -1168,10 +1086,7 @@ end
 function TranslatorPreview:refreshTranslationWithTarget(data, target_lang)
 	self:closeLanguageMenu()
 
-	if self.current_popup then
-		UIManager:close(self.current_popup)
-		self.current_popup = nil
-	end
+	self:closeCurrentPopup()
 
 	G_reader_settings:saveSetting("translator_to_language", target_lang)
 
@@ -1265,8 +1180,6 @@ function TranslatorPreview:showTargetLanguageMenu(data)
 	return true
 end
 
--- Preview construction ------------------------------------------------------
-
 function TranslatorPreview:buildPreviewPayload(data)
 	local parts = {
 		'<div class="translatorpreview-translation">' .. plainTextToHtml(data.text_main) .. "</div>",
@@ -1284,14 +1197,11 @@ function TranslatorPreview:showPreviewPopup(data)
 	local source_name = self:getTargetLanguageLabel(data.translator, data.source_lang)
 	local target_name = self:getTargetLanguageLabel(data.translator, data.target_lang)
 	local language_text = string.format("%s → %s ▾", source_name, target_name)
-	if self.current_popup then
-		UIManager:close(self.current_popup)
-		self.current_popup = nil
-	end
+	self:closeCurrentPopup()
 
 	local actions = {}
 
-	if Device:hasClipboard() and self:showCopyButton() then
+	if self.clipboard_available and self:showCopyButton() then
 		table.insert(actions, {
 			text = _("Copy"),
 			callback = function()
