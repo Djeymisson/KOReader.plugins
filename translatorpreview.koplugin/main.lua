@@ -88,7 +88,10 @@ local COMMON_TARGET_LANGUAGES = {
 local PANEL_TOP_BORDER_SIZE = Size.line.thick
 local PANEL_PADDING_TOP = Screen:scaleBySize(8)
 local PANEL_PADDING_BOTTOM = Screen:scaleBySize(6)
-local TEXT_BUTTON_GAP = Screen:scaleBySize(6)
+local TEXT_BUTTON_GAP = Screen:scaleBySize(10)
+
+local HTML_BOTTOM_SAFETY = Screen:scaleBySize(6)
+
 local CONTENT_PADDING_LEFT = Screen:scaleBySize(16)
 local CONTENT_PADDING_RIGHT = Screen:scaleBySize(12)
 
@@ -99,7 +102,7 @@ local FLOATING_CARD_RADIUS = Screen:scaleBySize(14)
 local FLOATING_SELECTION_GAP = Screen:scaleBySize(8)
 local FLOATING_PADDING_TOP = Screen:scaleBySize(10)
 local FLOATING_PADDING_BOTTOM = Screen:scaleBySize(6)
-local FLOATING_TEXT_BUTTON_GAP = Screen:scaleBySize(6)
+local FLOATING_TEXT_BUTTON_GAP = Screen:scaleBySize(10)
 
 local SETTING_ENABLED = "translatorpreview_enabled"
 local SETTING_FLOATING_PREVIEW = "translatorpreview_floating_preview"
@@ -471,6 +474,7 @@ function TranslatorPreviewPopup:init()
 		+ 2 * card_border_size
 	local max_html_height = math.max(1, max_popup_height - fixed_height)
 	local html_height = estimateHtmlHeight(self.html_body, content_width, self.doc_font_size, max_html_height)
+	html_height = math.min(max_html_height, html_height + HTML_BOTTOM_SAFETY)
 
 	self.htmlwidget = ScrollHtmlWidget:new({
 		html_body = self.html_body,
