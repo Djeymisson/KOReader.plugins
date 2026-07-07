@@ -10,6 +10,7 @@ Each plugin is kept in its own `.koplugin/` folder and has a dedicated documenta
 |---|---|---|---|
 | Plain UI Custom | v1.0.0 | `plainui-custom.koplugin/` | [plainui-custom.koplugin.md](./plainui-custom.koplugin.md) |
 | Dictionary Preview | v1.1.1 | `dictionarypreview.koplugin/` | [dictionarypreview.koplugin.md](./dictionarypreview.koplugin.md) |
+| Translator Preview | v1.0.1 | `translatorpreview.koplugin/` | [translatorpreview.koplugin.md](./translatorpreview.koplugin.md) |
 | Reader Header Footer | v1.0.1 | `readerheaderfooter.koplugin/` | [readerheaderfooter.koplugin.md](./readerheaderfooter.koplugin.md) |
 | Selection Toolbar | v1.0.0 | `selectiontoolbar.koplugin/` | [selectiontoolbar.koplugin.md](./selectiontoolbar.koplugin.md) |
 
@@ -24,18 +25,37 @@ Some plugins may include additional folders, such as `modules/` or `icons/`. Che
 
 ## Installation
 
-1. Download or clone this repository.
-2. Choose the plugin you want to install.
-3. Copy the corresponding `.koplugin/` folder to KOReader's plugins directory.
+Each plugin version is distributed through a dedicated GitHub Release. The release asset contains the complete plugin folder compressed as a `.zip` file.
+
+For example, the release **Dictionary Preview v1.1.1** includes this asset:
+
+```text
+dictionarypreview.koplugin-v1.1.1.zip
+```
+
+To install a plugin:
+
+1. Open the GitHub Releases page for this repository.
+2. Choose the release for the plugin and version you want to install.
+3. Download the `.zip` asset for that release.
+4. Extract the archive. It should contain the plugin folder, for example:
+
+```text
+dictionarypreview.koplugin/
+```
+
+5. Copy the extracted `.koplugin/` folder to KOReader's plugins directory.
 
 Example:
 
 ```text
-koreader/plugins/plugin-name.koplugin/
+koreader/plugins/dictionarypreview.koplugin/
 ```
 
-4. Restart KOReader.
-5. Read the plugin-specific README to learn where to find it in the interface and how to configure it.
+6. Restart KOReader.
+7. Read the plugin-specific documentation to learn where to find it in the interface and how to configure it.
+
+The repository source can still be cloned for development, but release assets are the recommended installation method for regular use.
 
 ## Updating
 
