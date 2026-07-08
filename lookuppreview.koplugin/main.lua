@@ -2,6 +2,7 @@ local Device = require("device")
 local Blitbuffer = require("ffi/blitbuffer")
 local BottomContainer = require("ui/widget/container/bottomcontainer")
 local TopContainer = require("ui/widget/container/topcontainer")
+local LeftContainer = require("ui/widget/container/leftcontainer")
 local CenterContainer = require("ui/widget/container/centercontainer")
 local Font = require("ui/font")
 local TextWidget = require("ui/widget/textwidget")
@@ -38,11 +39,15 @@ local PLUGIN_VERSION = "v0.1.0"
 
 local UI_FONT_FACE = "Noto Sans"
 local UI_FONT_SIZE = 20
-local TITLE_FONT_SIZE = math.max(12, UI_FONT_SIZE - 3)
-local SUBTITLE_FONT_SIZE = math.max(10, UI_FONT_SIZE - 6)
+local TITLE_FONT_SIZE = math.max(11, UI_FONT_SIZE - 5)
+local SUBTITLE_FONT_SIZE = math.max(9, UI_FONT_SIZE - 8)
+local HEADER_MENU_FONT_SIZE = math.max(10, UI_FONT_SIZE - 7)
+local HEADER_BUTTON_FONT_SIZE = math.max(14, UI_FONT_SIZE - 3)
 local BODY_FONT_SIZE = Screen:scaleBySize(18)
 local TITLE_FACE = Font:getFace("cfont", TITLE_FONT_SIZE)
 local SUBTITLE_FACE = Font:getFace("cfont", SUBTITLE_FONT_SIZE)
+local HEADER_MENU_FACE = Font:getFace("cfont", HEADER_MENU_FONT_SIZE)
+local HEADER_BUTTON_FACE = Font:getFace("cfont", HEADER_BUTTON_FONT_SIZE)
 
 local CARD_WIDTH_RATIO = 0.92
 local CARD_HEIGHT_RATIO = 0.38
@@ -52,10 +57,19 @@ local CARD_EDGE_MARGIN = Screen:scaleBySize(10)
 local CARD_BORDER_SIZE = Size.border.thin
 local CARD_RADIUS = nil
 local CARD_PADDING_H = Screen:scaleBySize(14)
-local CARD_PADDING_TOP = Screen:scaleBySize(10)
+local CARD_PADDING_TOP = Screen:scaleBySize(6)
 local CARD_PADDING_BOTTOM = Screen:scaleBySize(8)
-local HEADER_GAP = Screen:scaleBySize(2)
-local HEADER_SEPARATOR_GAP = Screen:scaleBySize(5)
+local HEADER_GAP = Screen:scaleBySize(1)
+local HEADER_SEPARATOR_GAP = Screen:scaleBySize(2)
+local HEADER_MENU_WIDTH = Screen:scaleBySize(40)
+local HEADER_MENU_HEIGHT = Screen:scaleBySize(30)
+local HEADER_MENU_PADDING_H = Screen:scaleBySize(5)
+local HEADER_MENU_PADDING_V = Screen:scaleBySize(0)
+local HEADER_TITLE_MENU_GAP = Screen:scaleBySize(6)
+local PAGE_MENU_WIDTH = Screen:scaleBySize(220)
+local PAGE_MENU_ITEM_HEIGHT = Screen:scaleBySize(34)
+local PAGE_MENU_GAP = Screen:scaleBySize(8)
+local PAGE_MENU_PADDING_H = Screen:scaleBySize(12)
 local SCROLL_BAR_WIDTH = Screen:scaleBySize(6)
 local TEXT_SCROLL_SPAN = Screen:scaleBySize(8)
 local FLOATING_SELECTION_GAP = Screen:scaleBySize(8)
@@ -71,7 +85,7 @@ local PAGE_WIKIPEDIA = 3
 
 local PAGE_TITLES = {
     [PAGE_DICTIONARY] = _("Dictionary"),
-    [PAGE_TRANSLATION] = _("Translation"),
+    [PAGE_TRANSLATION] = _("Translate"),
     [PAGE_WIKIPEDIA] = _("Wikipedia"),
 }
 
@@ -383,6 +397,241 @@ local function getWidgetSize(widget)
     return Geom:new({ w = 0, h = 0 })
 end
 
+
+local HeaderPageButton = InputContainer:extend({
+    text = nil,
+    width = nil,
+    callback = nil,
+    show_parent = nil,
+})
+
+function HeaderPageButton:init()
+    local outer_w = self.width or HEADER_MENU_WIDTH
+    local label = TextWidget:new({
+        text = self.text or "",
+        face = HEADER_BUTTON_FACE,
+        bold = true,
+        max_width = math.max(1, outer_w - 2 * HEADER_MENU_PADDING_H),
+    })
+
+    self.frame = FrameContainer:new({
+        show_parent = self.show_parent,
+        bordersize = 0,
+        background = Blitbuffer.COLOR_WHITE,
+        padding_left = HEADER_MENU_PADDING_H,
+        padding_right = HEADER_MENU_PADDING_H,
+        padding_top = HEADER_MENU_PADDING_V,
+        padding_bottom = HEADER_MENU_PADDING_V,
+        CenterContainer:new({
+            dimen = Geom:new({
+                w = math.max(1, outer_w - 2 * HEADER_MENU_PADDING_H),
+                h = math.max(1, HEADER_MENU_HEIGHT - 2 * HEADER_MENU_PADDING_V),
+            }),
+            label,
+        }),
+    })
+
+    self.dimen = Geom:new({
+        x = 0,
+        y = 0,
+        w = outer_w,
+        h = HEADER_MENU_HEIGHT,
+    })
+    self[1] = self.frame
+
+    self.ges_events = {
+        TapHeaderPageMenu = {
+            GestureRange:new({
+                ges = "tap",
+                range = self.dimen,
+            }),
+        },
+    }
+end
+
+function HeaderPageButton:onTapHeaderPageMenu()
+    if self.callback then
+        return self.callback()
+    end
+    return true
+end
+
+local SimplePageMenu = InputContainer:extend({
+    parent_popup = nil,
+    active_index = PAGE_DICTIONARY,
+    anchor_dimen = nil,
+    visible_dimen = nil,
+    container = nil,
+})
+
+function SimplePageMenu:makeRow(page_index, width)
+    local is_active = page_index == self.active_index
+    local label = TextWidget:new({
+        text = (is_active and "• " or "  ") .. PAGE_TITLES[page_index],
+        face = HEADER_MENU_FACE,
+        bold = is_active,
+        max_width = math.max(1, width - 2 * PAGE_MENU_PADDING_H),
+    })
+
+    return LeftContainer:new({
+        allow_mirroring = false,
+        dimen = Geom:new({
+            w = width,
+            h = PAGE_MENU_ITEM_HEIGHT,
+        }),
+        HorizontalGroup:new({
+            HorizontalSpan:new({ width = PAGE_MENU_PADDING_H }),
+            label,
+        }),
+    })
+end
+
+function SimplePageMenu:init()
+    local screen_width = Screen:getWidth()
+    local screen_height = Screen:getHeight()
+    local parent = self.parent_popup
+    local parent_dimen = parent and parent.visible_dimen
+    local anchor = self.anchor_dimen
+    local border_size = Size.border.thin
+    local content_width = math.min(PAGE_MENU_WIDTH, screen_width - 2 * CARD_EDGE_MARGIN - 2 * border_size)
+
+    self.container = FrameContainer:new({
+        background = Blitbuffer.COLOR_WHITE,
+        bordersize = border_size,
+        color = Blitbuffer.COLOR_DARK_GRAY,
+        margin = 0,
+        padding = 0,
+        VerticalGroup:new({
+            self:makeRow(PAGE_DICTIONARY, content_width),
+            self:makeRow(PAGE_TRANSLATION, content_width),
+            self:makeRow(PAGE_WIKIPEDIA, content_width),
+        }),
+    })
+
+    local container_size = getWidgetSize(self.container)
+    local width = container_size.w and container_size.w > 0 and container_size.w or (content_width + 2 * border_size)
+    local height = container_size.h and container_size.h > 0 and container_size.h or (PAGE_MENU_ITEM_HEIGHT * 3 + 2 * border_size)
+    local x
+    local y
+
+    if anchor then
+        x = anchor.x + anchor.w - width
+    else
+        x = math.floor((screen_width - width) / 2)
+    end
+
+    local min_x = CARD_EDGE_MARGIN
+    local max_x = screen_width - width - CARD_EDGE_MARGIN
+    x = math.max(min_x, math.min(max_x, x))
+
+    if anchor then
+        -- Keep the selector over the active card instead of placing it above
+        -- the popup on top of the reader page.
+        y = anchor.y + anchor.h + PAGE_MENU_GAP
+    elseif parent_dimen then
+        y = parent_dimen.y + CARD_BORDER_SIZE + CARD_PADDING_TOP
+    else
+        y = math.floor((screen_height - height) / 2)
+    end
+
+    if parent_dimen then
+        local min_y = parent_dimen.y + CARD_BORDER_SIZE
+        local max_y = parent_dimen.y + parent_dimen.h - height - CARD_BORDER_SIZE
+        if max_y >= min_y then
+            y = math.max(min_y, math.min(max_y, y))
+        else
+            y = math.max(CARD_EDGE_MARGIN, math.min(screen_height - height - CARD_EDGE_MARGIN, y))
+        end
+    else
+        y = math.max(CARD_EDGE_MARGIN, math.min(screen_height - height - CARD_EDGE_MARGIN, y))
+    end
+
+    self.visible_dimen = Geom:new({ x = x, y = y, w = width, h = height })
+    self.dimen = Screen:getSize()
+
+    self[1] = TopContainer:new({
+        dimen = Screen:getSize(),
+        VerticalGroup:new({
+            VerticalSpan:new({ width = y }),
+            HorizontalGroup:new({
+                HorizontalSpan:new({ width = x }),
+                self.container,
+            }),
+        }),
+    })
+
+    if IS_TOUCH_DEVICE then
+        self.ges_events = {
+            TapPageMenu = {
+                GestureRange:new({
+                    ges = "tap",
+                    range = self.dimen,
+                }),
+            },
+        }
+    end
+
+    if HAS_KEYS then
+        self.key_events = {
+            Close = { { Device.input.group.Back } },
+        }
+    end
+end
+
+
+function SimplePageMenu:onShow()
+    UIManager:setDirty(self.parent_popup and self.parent_popup.dialog or self, function()
+        return "ui", self.visible_dimen or Screen:getSize()
+    end)
+end
+
+function SimplePageMenu:onCloseWidget()
+    UIManager:setDirty(self.parent_popup and self.parent_popup.dialog or self, function()
+        return "partial", self.visible_dimen or Screen:getSize()
+    end)
+end
+
+function SimplePageMenu:onClose()
+    if self.parent_popup then
+        self.parent_popup.page_menu = nil
+    end
+    UIManager:close(self)
+    return true
+end
+
+function SimplePageMenu:onTapPageMenu(_arg, ges)
+    if not ges or not ges.pos or not self.visible_dimen then
+        return false
+    end
+
+    if ges.pos:notIntersectWith(self.visible_dimen) then
+        if self.parent_popup then
+            self.parent_popup:closePageMenu()
+        else
+            UIManager:close(self)
+        end
+        return true
+    end
+
+    local relative_y = ges.pos.y - self.visible_dimen.y
+    local item_index = math.floor(relative_y / PAGE_MENU_ITEM_HEIGHT) + 1
+    local page_index = PAGE_DICTIONARY
+    if item_index == 2 then
+        page_index = PAGE_TRANSLATION
+    elseif item_index >= 3 then
+        page_index = PAGE_WIKIPEDIA
+    end
+
+    local parent = self.parent_popup
+    if parent then
+        parent:closePageMenu()
+        return parent.plugin:switchToPage(page_index)
+    end
+
+    UIManager:close(self)
+    return true
+end
+
 local CarouselRow = InputContainer:extend({
     popup = nil,
     active_index = PAGE_DICTIONARY,
@@ -485,6 +734,7 @@ local LookupPreviewPopup = InputContainer:extend({
     anchor_top = false,
     card_container = nil,
     visible_dimen = nil,
+    page_menu = nil,
 })
 
 function LookupPreviewPopup:shouldAnchorTop(row_height)
@@ -510,29 +760,70 @@ function LookupPreviewPopup:shouldAnchorTop(row_height)
 end
 
 function LookupPreviewPopup:makeHeader(payload, content_width)
-    local title = TextWidget:new({
-        text = payload.title or EMPTY_TEXT,
-        face = TITLE_FACE,
-        bold = true,
-        max_width = content_width,
+    local menu_button = HeaderPageButton:new({
+        text = "▾",
+        width = HEADER_MENU_WIDTH,
+        show_parent = self,
+        callback = function()
+            return self:showPageMenu()
+        end,
     })
 
-    local items = { title }
-    if payload.subtitle and payload.subtitle ~= "" then
-        items[#items + 1] = VerticalSpan:new({ width = HEADER_GAP })
-        items[#items + 1] = TextWidget:new({
-            text = payload.subtitle,
-            face = SUBTITLE_FACE,
-            max_width = content_width,
+    local menu_width = HEADER_MENU_WIDTH
+    local text_width = math.max(1, content_width - menu_width - HEADER_TITLE_MENU_GAP)
+
+    local function makeLeftText(text, face, bold)
+        local widget = TextWidget:new({
+            text = text or EMPTY_TEXT,
+            face = face,
+            bold = bold and true or false,
+            max_width = text_width,
+        })
+        local size = getWidgetSize(widget)
+        return LeftContainer:new({
+            allow_mirroring = false,
+            dimen = Geom:new({
+                w = text_width,
+                h = math.max(1, size.h or Screen:scaleBySize(14)),
+            }),
+            widget,
         })
     end
 
-    items[#items + 1] = VerticalSpan:new({ width = HEADER_SEPARATOR_GAP })
-    items[#items + 1] = LineWidget:new({
-        background = Blitbuffer.COLOR_GRAY,
-        dimen = Geom:new({ w = content_width, h = math.max(1, Screen:scaleBySize(1)) }),
-    })
-    items[#items + 1] = VerticalSpan:new({ width = HEADER_SEPARATOR_GAP })
+    local text_items = {
+        makeLeftText(payload.title or EMPTY_TEXT, TITLE_FACE, true),
+    }
+
+    if payload.subtitle and payload.subtitle ~= "" then
+        text_items[#text_items + 1] = VerticalSpan:new({ width = HEADER_GAP })
+        text_items[#text_items + 1] = makeLeftText(payload.subtitle, SUBTITLE_FACE, false)
+    end
+
+    local text_block = VerticalGroup:new(text_items)
+    local text_height = getWidgetSize(text_block).h or Screen:scaleBySize(24)
+    local menu_height = getWidgetSize(menu_button).h or HEADER_MENU_HEIGHT
+    local row_height = math.max(text_height, menu_height)
+
+    local items = {
+        HorizontalGroup:new({
+            LeftContainer:new({
+                allow_mirroring = false,
+                dimen = Geom:new({ w = text_width, h = row_height }),
+                text_block,
+            }),
+            HorizontalSpan:new({ width = HEADER_TITLE_MENU_GAP }),
+            CenterContainer:new({
+                dimen = Geom:new({ w = menu_width, h = row_height }),
+                menu_button,
+            }),
+        }),
+        VerticalSpan:new({ width = HEADER_SEPARATOR_GAP }),
+        LineWidget:new({
+            background = Blitbuffer.COLOR_GRAY,
+            dimen = Geom:new({ w = content_width, h = math.max(1, Screen:scaleBySize(1)) }),
+        }),
+        VerticalSpan:new({ width = HEADER_SEPARATOR_GAP }),
+    }
 
     return VerticalGroup:new(items)
 end
@@ -606,6 +897,8 @@ function LookupPreviewPopup:init()
     local card_height = math.floor(screen_height * CARD_HEIGHT_RATIO)
     local card_width = math.max(CARD_MIN_WIDTH, math.floor(screen_width * CARD_WIDTH_RATIO))
     card_width = math.min(card_width, screen_width - 2 * CARD_EDGE_MARGIN)
+    self.card_width = card_width
+    self.card_height = card_height
 
     if IS_TOUCH_DEVICE then
         local range = Geom:new({ x = 0, y = 0, w = screen_width, h = screen_height })
@@ -649,6 +942,47 @@ function LookupPreviewPopup:init()
     self.visible_dimen = Geom:new({ x = 0, y = y, w = screen_width, h = row_height })
 end
 
+
+function LookupPreviewPopup:closePageMenu()
+    if self.page_menu then
+        pcall(function()
+            UIManager:close(self.page_menu)
+        end)
+        self.page_menu = nil
+    end
+end
+function LookupPreviewPopup:getPageMenuAnchor()
+    local screen_width = Screen:getWidth()
+    local card_width = self.card_width or math.max(CARD_MIN_WIDTH, math.floor(screen_width * CARD_WIDTH_RATIO))
+    card_width = math.min(card_width, screen_width - 2 * CARD_EDGE_MARGIN)
+
+    local active_x = math.floor((screen_width - card_width) / 2)
+    local content_width = math.max(1, card_width - 2 * CARD_PADDING_H - 2 * CARD_BORDER_SIZE)
+    local x = active_x + CARD_BORDER_SIZE + CARD_PADDING_H + content_width - HEADER_MENU_WIDTH
+    local y = ((self.visible_dimen and self.visible_dimen.y) or CARD_EDGE_MARGIN)
+        + CARD_BORDER_SIZE
+        + CARD_PADDING_TOP
+
+    return Geom:new({
+        x = x,
+        y = y,
+        w = HEADER_MENU_WIDTH,
+        h = HEADER_MENU_HEIGHT,
+    })
+end
+
+
+function LookupPreviewPopup:showPageMenu()
+    self:closePageMenu()
+    self.page_menu = SimplePageMenu:new({
+        parent_popup = self,
+        active_index = self.active_index or PAGE_DICTIONARY,
+        anchor_dimen = self:getPageMenuAnchor(),
+    })
+    UIManager:show(self.page_menu)
+    return true
+end
+
 function LookupPreviewPopup:onShow()
     UIManager:setDirty(self.dialog or self, function()
         return "ui", self.visible_dimen or Screen:getSize()
@@ -662,6 +996,7 @@ function LookupPreviewPopup:onCloseWidget()
 end
 
 function LookupPreviewPopup:onClose()
+    self:closePageMenu()
     UIManager:close(self)
     if not self.skip_close_callback and self.plugin then
         return self.plugin:closePreview(false)
@@ -875,6 +1210,9 @@ end
 
 function LookupPreview:closeCurrentPopup(preserve_state)
     if self.current_popup then
+        if self.current_popup.closePageMenu then
+            self.current_popup:closePageMenu()
+        end
         self.current_popup.skip_close_callback = true
         pcall(function()
             UIManager:close(self.current_popup)
@@ -1096,16 +1434,16 @@ function LookupPreview:getPagePayload(state, index, is_active)
         end
         if state.translation_error then
             return {
-                title = _("Translation"),
+                title = _("Translate"),
                 subtitle = state.search_text or "",
                 html_body = plainTextToHtml(state.translation_error),
                 css = FALLBACK_CSS,
             }
         end
         if is_active then
-            return self:makeLoadingPayload(_("Translation"), _("Querying translation service…"))
+            return self:makeLoadingPayload(_("Translate"), _("Querying translation service…"))
         end
-        return self:makeLoadingPayload(_("Translation"), _("Swipe to open translation."))
+        return self:makeLoadingPayload(_("Translate"), _("Swipe to open translation."))
     end
 
     if index == PAGE_WIKIPEDIA then
@@ -1197,7 +1535,7 @@ function LookupPreview:loadTranslation(state)
         local source_name = self:getTranslatorLanguageLabel(translator, source_lang)
         local target_name = self:getTranslatorLanguageLabel(translator, target_lang)
         state.translation_payload = {
-            title = _("Translation"),
+            title = _("Translate"),
             subtitle = string.format("%s → %s", source_name, target_name),
             html_body = '<div class="lp-title">' .. plainTextToHtml(text_main) .. '</div><div class="lp-source">' .. plainTextToHtml(text) .. '</div>',
             css = FALLBACK_CSS,
