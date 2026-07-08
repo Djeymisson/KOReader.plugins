@@ -2,6 +2,8 @@ local Device = require("device")
 local Blitbuffer = require("ffi/blitbuffer")
 local BottomContainer = require("ui/widget/container/bottomcontainer")
 local TopContainer = require("ui/widget/container/topcontainer")
+local LeftContainer = require("ui/widget/container/leftcontainer")
+local RightContainer = require("ui/widget/container/rightcontainer")
 local CenterContainer = require("ui/widget/container/centercontainer")
 local Font = require("ui/font")
 local IconWidget = require("ui/widget/iconwidget")
@@ -13,6 +15,7 @@ local HorizontalGroup = require("ui/widget/horizontalgroup")
 local HorizontalSpan = require("ui/widget/horizontalspan")
 local InputContainer = require("ui/widget/container/inputcontainer")
 local LineWidget = require("ui/widget/linewidget")
+local OverlapGroup = require("ui/widget/overlapgroup")
 local ScrollHtmlWidget = require("ui/widget/scrollhtmlwidget")
 local Size = require("ui/size")
 local VerticalGroup = require("ui/widget/verticalgroup")
@@ -36,13 +39,41 @@ local DictionaryPreview = WidgetContainer:extend({
 
 -- Constants -----------------------------------------------------------------
 
-local PLUGIN_VERSION = "v1.1.2"
+local PLUGIN_VERSION = "v1.1.3"
 
 local UI_FONT_FACE = "Noto Sans"
 local UI_FONT_SIZE = 20
 local PREVIEW_FONT_SIZE = Screen:scaleBySize(UI_FONT_SIZE)
 local DEFAULT_HTML_FONT_SIZE = Screen:scaleBySize(18)
-local BUTTON_TEXT_FACE = Font:getFace("cfont", UI_FONT_SIZE)
+local function getUIFontFace(names, size, fallback_name)
+	if type(names) ~= "table" then
+		names = { names }
+	end
+
+	for _, name in ipairs(names) do
+		local ok, face = pcall(function()
+			return Font:getFace(name, size)
+		end)
+
+		if ok and face then
+			return face
+		end
+	end
+
+	return Font:getFace(fallback_name or "cfont", size)
+end
+
+local BUTTON_TEXT_FACE = getUIFontFace("cfont", UI_FONT_SIZE)
+local HEADER_WORD_FACE = getUIFontFace("cfont", math.max(10, UI_FONT_SIZE - 3))
+local HEADER_META_SIZE = math.max(10, UI_FONT_SIZE - 6)
+local HEADER_ITALIC_FACE = getUIFontFace({
+	"NotoSans-Italic.ttf",
+	"NotoSans-Italic",
+	"Noto Sans Italic",
+	"cfonti",
+}, HEADER_META_SIZE, "cfont")
+local HEADER_META_FACE = HEADER_ITALIC_FACE
+local HEADER_COUNT_FACE = HEADER_ITALIC_FACE
 local SCROLL_BAR_WIDTH = Screen:scaleBySize(6)
 local TEXT_SCROLL_SPAN = Screen:scaleBySize(8)
 
@@ -68,6 +99,11 @@ local FLOATING_SELECTION_GAP = Screen:scaleBySize(8)
 local FLOATING_PADDING_TOP = Screen:scaleBySize(10)
 local FLOATING_PADDING_BOTTOM = Screen:scaleBySize(6)
 local FLOATING_TEXT_BUTTON_GAP = Screen:scaleBySize(6)
+
+local HEADER_WORD_META_GAP = Screen:scaleBySize(0)
+local HEADER_SEPARATOR_GAP_TOP = Screen:scaleBySize(3)
+local HEADER_SEPARATOR_GAP_BOTTOM = Screen:scaleBySize(3)
+local HEADER_COUNT_GAP = Screen:scaleBySize(8)
 
 local COMPACT_MIN_HTML_HEIGHT = Screen:scaleBySize(112)
 local COMPACT_HEIGHT_SAFETY = Screen:scaleBySize(12)
@@ -314,21 +350,6 @@ ul, ol {
 a {
     color: black;
 }
-.dictionarypreview-word {
-    font-size: 1.18em;
-    font-weight: bold;
-    line-height: 1.15;
-}
-.dictionarypreview-meta {
-    margin-top: 0.08em;
-    font-size: 0.78em;
-    color: #777777;
-    font-style: italic;
-}
-.dictionarypreview-separator {
-    border-top: 1px solid #888;
-    margin: 0.35em 0 0.4em 0;
-}
 ]]
 end
 
@@ -362,21 +383,6 @@ ol, ul, menu {
 }
 a {
     color: black;
-}
-.dictionarypreview-word {
-    font-size: 1.18em;
-    font-weight: bold;
-    line-height: 1.15;
-}
-.dictionarypreview-meta {
-    margin-top: 0.08em;
-    font-size: 0.78em;
-    color: #777777;
-    font-style: italic;
-}
-.dictionarypreview-separator {
-    border-top: 1px solid #888;
-    margin: 0.35em 0 0.4em 0;
 }
 ]]
 
@@ -572,6 +578,9 @@ end
 -- Preview popup -------------------------------------------------------------
 
 local DictionaryPreviewPopup = InputContainer:extend({
+	preview_word = nil,
+	dict_name = nil,
+	count_label = nil,
 	html_body = nil,
 	css = nil,
 	html_resource_directory = nil,
@@ -588,6 +597,114 @@ local DictionaryPreviewPopup = InputContainer:extend({
 	selection_bounds = nil,
 	anchor_top = false,
 })
+
+function DictionaryPreviewPopup:getWidgetSize(widget)
+	local ok, size = pcall(function()
+		return widget:getSize()
+	end)
+
+	if ok and size then
+		return size
+	end
+
+	return Geom:new({ w = 0, h = 0 })
+end
+
+function DictionaryPreviewPopup:makeHeader(content_width)
+	local word = tostring(self.preview_word or "")
+	local dict_name = tostring(self.dict_name or "")
+	local count_label = tostring(self.count_label or "")
+	local full_dimen = function(height)
+		return Geom:new({
+			x = 0,
+			y = 0,
+			w = content_width,
+			h = math.max(1, height or 0),
+		})
+	end
+
+	local word_widget = TextWidget:new({
+		text = word,
+		face = HEADER_WORD_FACE,
+		bold = true,
+		max_width = content_width,
+	})
+
+	local word_size = self:getWidgetSize(word_widget)
+	local word_row = LeftContainer:new({
+		allow_mirroring = false,
+		dimen = full_dimen(word_size.h),
+		word_widget,
+	})
+
+	local count_widget
+	local count_width = 0
+	local count_height = 0
+
+	if count_label ~= "" then
+		count_widget = TextWidget:new({
+			text = count_label,
+			face = HEADER_COUNT_FACE,
+		})
+
+		local count_size = self:getWidgetSize(count_widget)
+		count_width = count_size.w or 0
+		count_height = count_size.h or 0
+	end
+
+	local dict_width = content_width
+	if count_widget then
+		dict_width = math.max(1, content_width - count_width - HEADER_COUNT_GAP)
+	end
+
+	local dict_widget = TextWidget:new({
+		text = dict_name,
+		face = HEADER_META_FACE,
+		max_width = dict_width,
+	})
+
+	local dict_size = self:getWidgetSize(dict_widget)
+	local meta_height = math.max(dict_size.h or 0, count_height)
+	local meta_dimen = full_dimen(meta_height)
+
+	local meta_items = {
+		LeftContainer:new({
+			allow_mirroring = false,
+			dimen = meta_dimen,
+			dict_widget,
+		}),
+	}
+
+	if count_widget then
+		meta_items[#meta_items + 1] = RightContainer:new({
+			allow_mirroring = false,
+			dimen = meta_dimen,
+			count_widget,
+		})
+	end
+
+	local meta_row = OverlapGroup:new({
+		dimen = meta_dimen,
+		unpack(meta_items),
+	})
+
+	local separator = LineWidget:new({
+		background = Blitbuffer.COLOR_GRAY,
+		dimen = Geom:new({
+			w = content_width,
+			h = math.max(1, Screen:scaleBySize(1)),
+		}),
+	})
+
+	return VerticalGroup:new({
+		word_row,
+		VerticalSpan:new({ width = HEADER_WORD_META_GAP }),
+		meta_row,
+		VerticalSpan:new({ width = HEADER_SEPARATOR_GAP_TOP }),
+		separator,
+		VerticalSpan:new({ width = HEADER_SEPARATOR_GAP_BOTTOM }),
+	})
+end
 
 function DictionaryPreviewPopup:init()
 	local screen_width = Screen:getWidth()
@@ -623,10 +740,13 @@ function DictionaryPreviewPopup:init()
 	end
 
 	local content_width = math.max(MIN_CONTENT_WIDTH, self.width - CONTENT_PADDING_LEFT - CONTENT_PADDING_RIGHT)
+	local header = self:makeHeader(content_width)
+	local header_height = self:getWidgetHeight(header, Screen:scaleBySize(52))
 	local buttons = self:makeButtons(content_width)
 	local buttons_height = self:getWidgetHeight(buttons, BUTTON_HEIGHT)
 	local fixed_height = top_border_size
 		+ padding_top
+		+ header_height
 		+ button_gap
 		+ buttons_height
 		+ padding_bottom
@@ -645,28 +765,28 @@ function DictionaryPreviewPopup:init()
 	local vertical_items = {}
 
 	if top_border_size > 0 then
-		table.insert(vertical_items, LineWidget:new({ dimen = Geom:new({ w = self.width, h = top_border_size }) }))
+		vertical_items[#vertical_items + 1] =
+			LineWidget:new({ dimen = Geom:new({ w = self.width, h = top_border_size }) })
 	end
 
-	table.insert(vertical_items, VerticalSpan:new({ width = padding_top }))
-	table.insert(
-		vertical_items,
-		HorizontalGroup:new({
-			HorizontalSpan:new({ width = CONTENT_PADDING_LEFT }),
-			self.htmlwidget,
-			HorizontalSpan:new({ width = CONTENT_PADDING_RIGHT }),
-		})
-	)
-	table.insert(vertical_items, VerticalSpan:new({ width = button_gap }))
-	table.insert(
-		vertical_items,
-		HorizontalGroup:new({
-			HorizontalSpan:new({ width = CONTENT_PADDING_LEFT }),
-			buttons,
-			HorizontalSpan:new({ width = CONTENT_PADDING_RIGHT }),
-		})
-	)
-	table.insert(vertical_items, VerticalSpan:new({ width = padding_bottom }))
+	vertical_items[#vertical_items + 1] = VerticalSpan:new({ width = padding_top })
+	vertical_items[#vertical_items + 1] = HorizontalGroup:new({
+		HorizontalSpan:new({ width = CONTENT_PADDING_LEFT }),
+		header,
+		HorizontalSpan:new({ width = CONTENT_PADDING_RIGHT }),
+	})
+	vertical_items[#vertical_items + 1] = HorizontalGroup:new({
+		HorizontalSpan:new({ width = CONTENT_PADDING_LEFT }),
+		self.htmlwidget,
+		HorizontalSpan:new({ width = CONTENT_PADDING_RIGHT }),
+	})
+	vertical_items[#vertical_items + 1] = VerticalSpan:new({ width = button_gap })
+	vertical_items[#vertical_items + 1] = HorizontalGroup:new({
+		HorizontalSpan:new({ width = CONTENT_PADDING_LEFT }),
+		buttons,
+		HorizontalSpan:new({ width = CONTENT_PADDING_RIGHT }),
+	})
+	vertical_items[#vertical_items + 1] = VerticalSpan:new({ width = padding_bottom })
 
 	self.container = FrameContainer:new({
 		background = Blitbuffer.COLOR_WHITE,
@@ -748,26 +868,26 @@ function DictionaryPreviewPopup:makeButtons(width)
 	}
 
 	if self.result_count and self.result_count > 1 then
-		table.insert(button_specs, {
+		button_specs[#button_specs + 1] = {
 			spec = { icon = ICON_PREVIOUS },
 			callback = function()
 				return self:onPrevDictionary()
 			end,
-		})
-		table.insert(button_specs, {
+		}
+		button_specs[#button_specs + 1] = {
 			spec = { icon = ICON_NEXT },
 			callback = function()
 				return self:onNextDictionary()
 			end,
-		})
+		}
 	end
 
-	table.insert(button_specs, {
+	button_specs[#button_specs + 1] = {
 		spec = { icon = ICON_DETAILS },
 		callback = function()
 			return self:onFollow()
 		end,
-	})
+	}
 
 	local button_count = #button_specs
 	local separator_count = math.max(0, button_count - 1)
@@ -803,25 +923,18 @@ function DictionaryPreviewPopup:makeButtons(width)
 	local widgets = {}
 	for index, item in ipairs(button_specs) do
 		if index > 1 then
-			table.insert(widgets, makeSeparator())
+			widgets[#widgets + 1] = makeSeparator()
 		end
 
-		table.insert(widgets, makeButton(item.spec, item.callback, index <= remainder and 1 or 0))
+		widgets[#widgets + 1] = makeButton(item.spec, item.callback, index <= remainder and 1 or 0)
 	end
 
 	return HorizontalGroup:new(widgets)
 end
 
 function DictionaryPreviewPopup:getWidgetHeight(widget, fallback)
-	local ok, size = pcall(function()
-		return widget:getSize()
-	end)
-
-	if ok and size and size.h then
-		return size.h
-	end
-
-	return fallback
+	local size = self:getWidgetSize(widget)
+	return size.h and size.h > 0 and size.h or fallback
 end
 
 function DictionaryPreviewPopup:makeHtmlWidget(content_width, height)
@@ -985,7 +1098,6 @@ end
 
 function DictionaryPreview:init()
 	self.enabled = self:isPreviewEnabled()
-	self.left_button_action = self:getLeftButtonAction()
 	self.current_popup = nil
 	self.original_showDict = nil
 	self.patched_dictionary = nil
@@ -1075,7 +1187,6 @@ function DictionaryPreview:setLeftButtonAction(action)
 	if not LEFT_ACTION_BY_ID[action] then
 		action = DEFAULT_LEFT_ACTION
 	end
-	self.left_button_action = action
 	G_reader_settings:saveSetting(SETTING_LEFT_ACTION, action)
 end
 
@@ -1126,7 +1237,7 @@ function DictionaryPreview:genLeftButtonActionMenu()
 	local items = {}
 
 	for _, action in ipairs(LEFT_ACTIONS) do
-		table.insert(items, {
+		items[#items + 1] = {
 			text = action.label,
 			radio = true,
 			checked_func = function()
@@ -1135,7 +1246,7 @@ function DictionaryPreview:genLeftButtonActionMenu()
 			callback = function()
 				self:setLeftButtonAction(action.id)
 			end,
-		})
+		}
 	end
 
 	return items
@@ -1287,10 +1398,6 @@ function DictionaryPreview:clearSelection()
 	end
 end
 
-function DictionaryPreview:getInterfaceFontSize()
-	return PREVIEW_FONT_SIZE
-end
-
 function DictionaryPreview:getSearchText(word, result)
 	result = result or {}
 	local text = word or result.word or ""
@@ -1377,13 +1484,13 @@ end
 function DictionaryPreview:getActiveHighlight(dict_self)
 	local candidates = {}
 	if dict_self and dict_self.highlight then
-		table.insert(candidates, dict_self.highlight)
+		candidates[#candidates + 1] = dict_self.highlight
 	end
 	if self.ui and self.ui.highlight then
-		table.insert(candidates, self.ui.highlight)
+		candidates[#candidates + 1] = self.ui.highlight
 	end
 	if dict_self and dict_self.ui and dict_self.ui.highlight then
-		table.insert(candidates, dict_self.ui.highlight)
+		candidates[#candidates + 1] = dict_self.ui.highlight
 	end
 
 	local fallback
@@ -1460,10 +1567,6 @@ function DictionaryPreview:restoreSelection(dict_self)
 	return highlight
 end
 
-function DictionaryPreview:hasHighlightSelection(highlight)
-	return highlight and (highlight.selected_text or highlight.hold_pos) ~= nil
-end
-
 function DictionaryPreview:notify(message)
 	UIManager:show(Notification:new({ text = message }))
 	return true
@@ -1518,7 +1621,11 @@ end
 function DictionaryPreview:lookupWikipedia(dict_self, search_text)
 	local highlight = self:restoreSelection(dict_self)
 
-	if highlight and type(highlight.lookupWikipedia) == "function" and self:hasHighlightSelection(highlight) then
+	if
+		highlight
+		and type(highlight.lookupWikipedia) == "function"
+		and (highlight.selected_text or highlight.hold_pos)
+	then
 		UIManager:scheduleIn(0.05, function()
 			local ok, err = pcall(function()
 				if
@@ -1589,31 +1696,19 @@ function DictionaryPreview:buildPreviewPayload(word, result, result_index, resul
 		css = FALLBACK_CSS
 	end
 
+	local count_label = ""
 	if not result.no_result and result_count and result_count > 1 then
-		dict_name = string.format("%s (%d/%d)", dict_name, result_index or 1, result_count)
+		count_label = string.format("%d/%d", result_index or 1, result_count)
 	end
 
 	return {
-		html_body = table.concat({
-			'<div class="dictionarypreview-word">',
-			htmlEscape(shown_word),
-			"</div>",
-			'<div class="dictionarypreview-meta">',
-			htmlEscape(dict_name),
-			"</div>",
-			'<div class="dictionarypreview-separator"></div>',
-			definition_html,
-		}, "\n"),
+		preview_word = shown_word,
+		dict_name = dict_name,
+		count_label = count_label,
+		html_body = definition_html,
 		css = css,
 		html_resource_directory = result.dictionary_resource_directory,
 	}
-end
-
-local function getResultCount(results)
-	if type(results) ~= "table" then
-		return 0
-	end
-	return #results
 end
 
 local function buildPreviewResults(results)
@@ -1659,17 +1754,21 @@ local function normalizeResultIndex(index, count)
 end
 
 local function reorderResultsFromIndex(results, index)
-	local count = getResultCount(results)
+	if type(results) ~= "table" then
+		return results
+	end
+
+	local count = #results
 	if count <= 1 or index == 1 then
 		return results
 	end
 
 	local reordered = {}
 	for i = index, count do
-		table.insert(reordered, results[i])
+		reordered[#reordered + 1] = results[i]
 	end
 	for i = 1, index - 1 do
-		table.insert(reordered, results[i])
+		reordered[#reordered + 1] = results[i]
 	end
 	return reordered
 end
@@ -1738,10 +1837,13 @@ function DictionaryPreview:showPreview(dict_self, word, results, boxes, link, di
 		closeCurrentPopup()
 
 		popup = DictionaryPreviewPopup:new({
+			preview_word = preview_payload.preview_word,
+			dict_name = preview_payload.dict_name,
+			count_label = preview_payload.count_label,
 			html_body = preview_payload.html_body,
 			css = preview_payload.css,
 			html_resource_directory = preview_payload.html_resource_directory,
-			doc_font_size = self:getInterfaceFontSize(),
+			doc_font_size = PREVIEW_FONT_SIZE,
 			dialog = dict_self and dict_self.dialog,
 			result_count = preview_count,
 			left_button = left_button_spec,
