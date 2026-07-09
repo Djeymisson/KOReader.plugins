@@ -55,6 +55,7 @@ local CARD_MIN_WIDTH = Screen:scaleBySize(220)
 local CARD_GAP = Screen:scaleBySize(8)
 local CARD_EDGE_MARGIN = Screen:scaleBySize(10)
 local CARD_BORDER_SIZE = Size.border.thin
+local CARD_BORDER_COLOR = Blitbuffer.COLOR_BLACK
 local CARD_RADIUS = nil
 local CARD_PADDING_H = Screen:scaleBySize(14)
 local CARD_PADDING_TOP = Screen:scaleBySize(6)
@@ -869,7 +870,7 @@ function LookupPreviewPopup:makeCard(payload, card_width, card_height)
     local card = FrameContainer:new({
         background = Blitbuffer.COLOR_WHITE,
         bordersize = CARD_BORDER_SIZE,
-        color = Blitbuffer.COLOR_DARK_GRAY,
+        color = CARD_BORDER_COLOR,
         radius = CARD_RADIUS,
         margin = 0,
         padding = 0,
