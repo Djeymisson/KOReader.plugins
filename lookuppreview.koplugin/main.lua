@@ -1,12 +1,18 @@
 local ctx = require("modules.context")
 
-require("modules.utils")(ctx)
-require("modules.widgets")(ctx)
-require("modules.core")(ctx)
-require("modules.dictionary")(ctx)
-require("modules.payload")(ctx)
-require("modules.translation")(ctx)
-require("modules.wikipedia")(ctx)
-require("modules.carousel")(ctx)
+local module_names = {
+    "modules.utils",
+    "modules.widgets",
+    "modules.core",
+    "modules.dictionary",
+    "modules.payload",
+    "modules.translation",
+    "modules.wikipedia",
+    "modules.carousel",
+}
+
+for _, module_name in ipairs(module_names) do
+    require(module_name)(ctx)
+end
 
 return ctx.LookupPreview
