@@ -2226,6 +2226,23 @@ function LookupPreview:getDictionaryMenuItems(state)
 	local preview_results = state and state.preview_results or {}
 	local active_index = state and (state.dictionary_index or 1) or 1
 
+	local function getFoundWord(result)
+		local found_word = result and result.word or ""
+		if type(found_word) == "table" then
+			found_word = found_word.text or found_word.word or ""
+		end
+
+		found_word = trim(found_word)
+		if found_word == "" then
+			found_word = self:getSearchText(state and state.word or "", result)
+		end
+		if found_word == "" and state then
+			found_word = trim(state.search_text or "")
+		end
+
+		return found_word
+	end
+
 	for index, entry in ipairs(preview_results) do
 		local result = entry and entry.result or {}
 		local dict_name = trim(result.dict or "")
@@ -2233,8 +2250,14 @@ function LookupPreview:getDictionaryMenuItems(state)
 			dict_name = string.format("%s %d", _("Dictionary"), index)
 		end
 
+		local found_word = getFoundWord(result)
+		local item_text = dict_name
+		if found_word ~= "" then
+			item_text = string.format("%s · %s", found_word, dict_name)
+		end
+
 		items[#items + 1] = {
-			text = dict_name,
+			text = item_text,
 			radio = true,
 			checked_func = function()
 				return (state and (state.dictionary_index or 1) or active_index) == index
