@@ -11,6 +11,7 @@ Each plugin is kept in its own `.koplugin/` folder and has a dedicated documenta
 | Plain UI Custom | v1.0.0 | `plainui-custom.koplugin/` | [plainui-custom.koplugin.md](./plainui-custom.koplugin.md) |
 | Dictionary Preview | v1.1.1 | `dictionarypreview.koplugin/` | [dictionarypreview.koplugin.md](./dictionarypreview.koplugin.md) |
 | Translator Preview | v1.0.1 | `translatorpreview.koplugin/` | [translatorpreview.koplugin.md](./translatorpreview.koplugin.md) |
+| Lookup Preview | v1.0.0 | `lookuppreview.koplugin/` | [lookuppreview.koplugin.md](./lookuppreview.koplugin.md) |
 | Reader Header Footer | v1.0.1 | `readerheaderfooter.koplugin/` | [readerheaderfooter.koplugin.md](./readerheaderfooter.koplugin.md) |
 | Selection Toolbar | v1.0.0 | `selectiontoolbar.koplugin/` | [selectiontoolbar.koplugin.md](./selectiontoolbar.koplugin.md) |
 

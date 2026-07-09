@@ -55,7 +55,7 @@ LookupPreview = WidgetContainer:extend({
 	is_doc_only = true,
 })
 
-PLUGIN_VERSION = "v0.1.0"
+PLUGIN_VERSION = "v1.0.0"
 
 -- Fonts ---------------------------------------------------------------------
 UI_FONT_FACE = "Noto Sans"
