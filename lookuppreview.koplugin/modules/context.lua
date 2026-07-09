@@ -104,6 +104,7 @@ CARD_EDGE_MARGIN = scaleBySize(10)
 CARD_BORDER_SIZE = math.max(Size.border.thin, scaleBySize(2))
 CARD_BORDER_COLOR = Blitbuffer.COLOR_BLACK
 CARD_RADIUS = nil
+CARD_ROUNDED_RADIUS = scaleBySize(14)
 
 CARD_SHADOW_ENABLED = false
 CARD_SHADOW_OFFSET = scaleBySize(3)
@@ -142,6 +143,7 @@ EMPTY_TEXT = "—"
 
 -- Settings ------------------------------------------------------------------
 SETTING_ENABLED = "lookuppreview_enabled"
+SETTING_CARD_ROUNDED = "lookuppreview_card_rounded"
 SETTING_WIKI_LANG = "lookuppreview_wikipedia_lang"
 SETTING_LEFT_ACTION = "lookuppreview_dictionary_left_action"
 SETTING_TRANSLATION_SHOW_SOURCE = "lookuppreview_translation_show_source"

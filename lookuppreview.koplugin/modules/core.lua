@@ -33,6 +33,11 @@ return function(ctx)
 		return LEFT_ACTION_BY_ID[action] and action or DEFAULT_LEFT_ACTION
 	end
 
+	local function applyCardStyleMode(plugin, rounded)
+		plugin:setRoundedCards(rounded)
+		return plugin:refreshVisibleCards()
+	end
+
 	function LookupPreview:init()
 		self.current_popup = nil
 		self.current_state = nil
@@ -74,6 +79,34 @@ return function(ctx)
 					callback = function()
 						self:setPreviewEnabled(not self:isPreviewEnabled())
 					end,
+				},
+				{
+					text_func = function()
+						local mode = self:useRoundedCards() and _("Rounded") or _("Square")
+						return string.format("%s: %s", _("Card corners"), mode)
+					end,
+					sub_item_table = {
+						{
+							text = _("Square"),
+							radio = true,
+							checked_func = function()
+								return not self:useRoundedCards()
+							end,
+							callback = function()
+								return applyCardStyleMode(self, false)
+							end,
+						},
+						{
+							text = _("Rounded"),
+							radio = true,
+							checked_func = function()
+								return self:useRoundedCards()
+							end,
+							callback = function()
+								return applyCardStyleMode(self, true)
+							end,
+						},
+					},
 				},
 				{
 					text_func = function()
@@ -157,6 +190,31 @@ return function(ctx)
 
 	function LookupPreview:setPreviewEnabled(enabled)
 		G_reader_settings:saveSetting(SETTING_ENABLED, enabled and true or false)
+	end
+
+	function LookupPreview:useRoundedCards()
+		return G_reader_settings:readSetting(SETTING_CARD_ROUNDED) == true
+	end
+
+	function LookupPreview:setRoundedCards(enabled)
+		G_reader_settings:saveSetting(SETTING_CARD_ROUNDED, enabled and true or false)
+	end
+
+	function LookupPreview:getCardRadius()
+		return self:useRoundedCards() and CARD_ROUNDED_RADIUS or CARD_RADIUS
+	end
+
+	function LookupPreview:refreshVisibleCards()
+		local popup = self.current_popup
+		if popup and popup.rebuildVisibleCards then
+			return popup:rebuildVisibleCards()
+		end
+
+		if self.current_state then
+			return self:showCarousel(self.current_state, self.current_state.active_index)
+		end
+
+		return true
 	end
 
 	function LookupPreview:showTranslationSourceText()
