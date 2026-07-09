@@ -2085,7 +2085,7 @@ function LookupPreview:buildDictionaryPayload(word, result, result_index, result
 
 	local subtitle = dict_name
 	if count_label ~= "" then
-		subtitle = string.format("%s · %s", dict_name, count_label)
+		subtitle = string.format("%s · %s ▾", dict_name, count_label)
 	end
 
 	return {
@@ -2181,6 +2181,58 @@ function LookupPreview:switchDictionaryResult(index)
 	return self:showCarousel(state, PAGE_DICTIONARY, true)
 end
 
+function LookupPreview:getDictionaryMenuItems(state)
+	local items = {}
+	local preview_results = state and state.preview_results or {}
+	local active_index = state and (state.dictionary_index or 1) or 1
+
+	for index, entry in ipairs(preview_results) do
+		local result = entry and entry.result or {}
+		local dict_name = trim(result.dict or "")
+		if dict_name == "" then
+			dict_name = string.format("%s %d", _("Dictionary"), index)
+		end
+
+		items[#items + 1] = {
+			text = dict_name,
+			radio = true,
+			checked_func = function()
+				return (state and (state.dictionary_index or 1) or active_index) == index
+			end,
+			callback = function()
+				self:closeLanguageMenu()
+				return self:switchDictionaryResult(index)
+			end,
+		}
+	end
+
+	if #items == 0 then
+		items[1] = {
+			text = _("No definition found."),
+			enabled_func = function()
+				return false
+			end,
+		}
+	end
+
+	return items
+end
+
+function LookupPreview:showDictionaryMenu(state)
+	local Menu = require("ui/widget/menu")
+	self:closeLanguageMenu()
+
+	self.language_menu = Menu:new({
+		title = _("Dictionary"),
+		item_table = self:getDictionaryMenuItems(state),
+		width = Screen:getWidth() - Screen:scaleBySize(80),
+		height = math.floor(Screen:getHeight() * 0.8),
+	})
+
+	UIManager:show(self.language_menu)
+	return true
+end
+
 function LookupPreview:openOriginalDictionaryFromState(state)
 	state = state or self.current_state
 	if not state then
@@ -2224,6 +2276,11 @@ function LookupPreview:getPagePayload(state, index, is_active)
 		local payload = state.dictionary_payload or self:makeLoadingPayload(_("Dictionary"), _("No definition found."))
 		if is_active then
 			payload = copyTable(payload)
+			if state.preview_count and state.preview_count > 1 then
+				payload.subtitle_callback = function()
+					return self:showDictionaryMenu(state)
+				end
+			end
 			payload.dictionary_buttons =
 				self:buildDictionaryButtons(state, state.dictionary_search_text or state.search_text or "")
 		end
