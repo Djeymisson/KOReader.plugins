@@ -1005,7 +1005,7 @@ end
 
 function LookupPreviewPopup:makeHeader(payload, content_width)
 	local menu_button = HeaderPageButton:new({
-		text = "▾",
+		text = "☰",
 		width = HEADER_MENU_WIDTH,
 		show_parent = self,
 		callback = function()
@@ -2763,6 +2763,58 @@ function LookupPreview:buildWikipediaResults(pages)
 	return results
 end
 
+function LookupPreview:getWikipediaArticleMenuItems(state)
+	local items = {}
+	local pages = state and state.wikipedia_pages or {}
+	local active_index = state and (state.wikipedia_index or 1) or 1
+
+	for index, entry in ipairs(pages) do
+		local page = entry and entry.page or {}
+		local title = trim(page.title or "")
+		if title == "" then
+			title = string.format("%s %d", _("Article"), index)
+		end
+
+		items[#items + 1] = {
+			text = title,
+			radio = true,
+			checked_func = function()
+				return (state and (state.wikipedia_index or 1) or active_index) == index
+			end,
+			callback = function()
+				self:closeLanguageMenu()
+				return self:switchWikipediaResult(index)
+			end,
+		}
+	end
+
+	if #items == 0 then
+		items[1] = {
+			text = _("No Wikipedia article found."),
+			enabled_func = function()
+				return false
+			end,
+		}
+	end
+
+	return items
+end
+
+function LookupPreview:showWikipediaArticleMenu(state)
+	local Menu = require("ui/widget/menu")
+	self:closeLanguageMenu()
+
+	self.language_menu = Menu:new({
+		title = _("Wikipedia"),
+		item_table = self:getWikipediaArticleMenuItems(state),
+		width = Screen:getWidth() - Screen:scaleBySize(80),
+		height = math.floor(Screen:getHeight() * 0.8),
+	})
+
+	UIManager:show(self.language_menu)
+	return true
+end
+
 function LookupPreview:buildWikipediaPayload(state, page, page_index, page_count, is_full_article)
 	state = state or self.current_state or {}
 	page = page or {}
@@ -2788,7 +2840,7 @@ function LookupPreview:buildWikipediaPayload(state, page, page_index, page_count
 		title = _("Wikipedia"),
 		subtitle = subtitle,
 		subtitle_callback = function()
-			return self:showWikipediaLanguageMenu(state)
+			return self:showWikipediaArticleMenu(state)
 		end,
 		html_body = '<div class="lp-title">' .. plainTextToHtml(title) .. "</div>" .. plainTextToHtml(extract),
 		css = FALLBACK_CSS,
@@ -2834,23 +2886,31 @@ function LookupPreview:buildWikipediaButtons(state)
 
 	button_specs[#button_specs + 1] = {
 		spec = { text = C_("Wikipedia", "Full article") },
-		weight = 2.2,
+		weight = 1.75,
 		callback = function()
 			return self:openFullWikipediaArticleFromState(state)
+		end,
+	}
+
+	button_specs[#button_specs + 1] = {
+		spec = { text = tostring(state.wikipedia_lang or self:getWikipediaLang()):upper() },
+		weight = 0.9,
+		callback = function()
+			return self:showWikipediaLanguageMenu(state)
 		end,
 	}
 
 	if count > 1 then
 		button_specs[#button_specs + 1] = {
 			spec = { icon = ICON_PREVIOUS },
-			weight = 0.65,
+			weight = 0.85,
 			callback = function()
 				return self:switchWikipediaResult((state.wikipedia_index or 1) - 1)
 			end,
 		}
 		button_specs[#button_specs + 1] = {
 			spec = { icon = ICON_NEXT },
-			weight = 0.65,
+			weight = 0.85,
 			callback = function()
 				return self:switchWikipediaResult((state.wikipedia_index or 1) + 1)
 			end,
@@ -2859,7 +2919,7 @@ function LookupPreview:buildWikipediaButtons(state)
 
 	button_specs[#button_specs + 1] = {
 		spec = { icon = ICON_DETAILS },
-		weight = 0.65,
+		weight = 0.85,
 		callback = function()
 			return self:openOriginalWikipediaFromState(state)
 		end,
