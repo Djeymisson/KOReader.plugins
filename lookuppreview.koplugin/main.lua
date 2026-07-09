@@ -5,6 +5,7 @@ local TopContainer = require("ui/widget/container/topcontainer")
 local LeftContainer = require("ui/widget/container/leftcontainer")
 local CenterContainer = require("ui/widget/container/centercontainer")
 local Font = require("ui/font")
+local IconWidget = require("ui/widget/iconwidget")
 local TextWidget = require("ui/widget/textwidget")
 local FrameContainer = require("ui/widget/container/framecontainer")
 local Geom = require("ui/geometry")
@@ -44,10 +45,36 @@ local SUBTITLE_FONT_SIZE = math.max(14, UI_FONT_SIZE - 3)
 local HEADER_MENU_FONT_SIZE = math.max(14, UI_FONT_SIZE - 4)
 local HEADER_BUTTON_FONT_SIZE = math.max(18, UI_FONT_SIZE)
 local BODY_FONT_SIZE = Screen:scaleBySize(18)
+
+local function getUIFontFace(names, size, fallback_name)
+    if type(names) ~= "table" then
+        names = { names }
+    end
+
+    for _, name in ipairs(names) do
+        local ok, face = pcall(function()
+            return Font:getFace(name, size)
+        end)
+
+        if ok and face then
+            return face
+        end
+    end
+
+    return Font:getFace(fallback_name or "cfont", size)
+end
+
 local TITLE_FACE = Font:getFace("cfont", TITLE_FONT_SIZE)
-local SUBTITLE_FACE = Font:getFace("cfont", SUBTITLE_FONT_SIZE)
+local SUBTITLE_FACE = getUIFontFace({
+    "NotoSans-Italic.ttf",
+    "NotoSans-Italic",
+    "Noto Sans Italic",
+    "cfonti",
+}, SUBTITLE_FONT_SIZE, "cfont")
 local HEADER_MENU_FACE = Font:getFace("cfont", HEADER_MENU_FONT_SIZE)
 local HEADER_BUTTON_FACE = Font:getFace("cfont", HEADER_BUTTON_FONT_SIZE)
+local DICTIONARY_BUTTON_FONT_SIZE = math.max(13, UI_FONT_SIZE - 5)
+local DICTIONARY_BUTTON_FACE = Font:getFace("cfont", DICTIONARY_BUTTON_FONT_SIZE)
 
 local CARD_WIDTH_RATIO = 0.92
 local CARD_HEIGHT_RATIO = 0.38
@@ -67,6 +94,10 @@ local HEADER_MENU_HEIGHT = Screen:scaleBySize(30)
 local HEADER_MENU_PADDING_H = Screen:scaleBySize(5)
 local HEADER_MENU_PADDING_V = Screen:scaleBySize(0)
 local HEADER_TITLE_MENU_GAP = Screen:scaleBySize(6)
+local DICTIONARY_BUTTON_HEIGHT = Screen:scaleBySize(30)
+local DICTIONARY_ICON_SIZE = Screen:scaleBySize(20)
+local DICTIONARY_BUTTON_GAP = Screen:scaleBySize(4)
+local DICTIONARY_BUTTON_SEPARATOR_WIDTH = math.max(1, Screen:scaleBySize(1))
 local PAGE_MENU_WIDTH = Screen:scaleBySize(220)
 local PAGE_MENU_ITEM_HEIGHT = Screen:scaleBySize(34)
 local PAGE_MENU_GAP = Screen:scaleBySize(8)
@@ -79,6 +110,31 @@ local EMPTY_TEXT = "—"
 
 local SETTING_ENABLED = "lookuppreview_enabled"
 local SETTING_WIKI_LANG = "lookuppreview_wikipedia_lang"
+local SETTING_LEFT_ACTION = "lookuppreview_dictionary_left_action"
+
+local LEFT_ACTION_HIGHLIGHT = "highlight"
+local LEFT_ACTION_SEARCH_BOOK = "search_book"
+local DEFAULT_LEFT_ACTION = LEFT_ACTION_SEARCH_BOOK
+
+local LEFT_ACTIONS = {
+    { id = LEFT_ACTION_HIGHLIGHT, label = _("Highlight") },
+    { id = LEFT_ACTION_SEARCH_BOOK, label = _("Fulltext search") },
+}
+
+local LEFT_ACTION_BY_ID = {}
+for _, action in ipairs(LEFT_ACTIONS) do
+    LEFT_ACTION_BY_ID[action.id] = action
+end
+
+local PLUGIN_ICON_EXTENSIONS = { ".svg", ".png" }
+local PLUGIN_LEFT_ICON_CANDIDATES = {
+    [LEFT_ACTION_HIGHLIGHT] = { "highlight", "lookuppreview.highlight", "dictionarypreview.highlight" },
+}
+
+local ICON_SEARCH = "appbar.search"
+local ICON_PREVIOUS = "chevron.left"
+local ICON_NEXT = "chevron.right"
+local ICON_DETAILS = "chevron.up"
 
 local PAGE_DICTIONARY = 1
 local PAGE_TRANSLATION = 2
@@ -152,6 +208,20 @@ local dictionary_class_styles = {
 
 local function trim(text)
     return tostring(text or ""):gsub("^%s+", ""):gsub("%s+$", "")
+end
+
+local function fileExists(path)
+    if not path or path == "" then
+        return false
+    end
+
+    local file = io.open(path, "rb")
+    if file then
+        file:close()
+        return true
+    end
+
+    return false
 end
 
 local function htmlEscape(text)
@@ -451,6 +521,84 @@ function HeaderPageButton:init()
 end
 
 function HeaderPageButton:onTapHeaderPageMenu()
+    if self.callback then
+        return self.callback()
+    end
+    return true
+end
+
+local DictionaryCardButton = InputContainer:extend({
+    text = nil,
+    icon = nil,
+    icon_file = nil,
+    width = nil,
+    height = DICTIONARY_BUTTON_HEIGHT,
+    icon_width = DICTIONARY_ICON_SIZE,
+    icon_height = DICTIONARY_ICON_SIZE,
+    callback = nil,
+    show_parent = nil,
+})
+
+function DictionaryCardButton:init()
+    local outer_w = self.width or Screen:scaleBySize(64)
+    local outer_h = self.height or DICTIONARY_BUTTON_HEIGHT
+    local padding_h = math.max(1, math.floor(Size.padding.button * 0.55))
+    local padding_v = math.max(0, math.floor(Size.padding.button * 0.25))
+    local inner_w = math.max(1, outer_w - 2 * padding_h)
+    local inner_h = math.max(1, outer_h - 2 * padding_v)
+    local label
+
+    if self.icon_file then
+        label = IconWidget:new({
+            file = self.icon_file,
+            width = self.icon_width,
+            height = self.icon_height,
+            alpha = true,
+            is_icon = true,
+        })
+    elseif self.icon then
+        label = IconWidget:new({
+            icon = self.icon,
+            width = self.icon_width,
+            height = self.icon_height,
+            alpha = true,
+        })
+    else
+        label = TextWidget:new({
+            text = self.text or "",
+            face = DICTIONARY_BUTTON_FACE,
+            bold = true,
+            max_width = inner_w,
+        })
+    end
+
+    self.frame = FrameContainer:new({
+        show_parent = self.show_parent,
+        bordersize = 0,
+        background = Blitbuffer.COLOR_WHITE,
+        padding_left = padding_h,
+        padding_right = padding_h,
+        padding_top = padding_v,
+        padding_bottom = padding_v,
+        CenterContainer:new({
+            dimen = Geom:new({ w = inner_w, h = inner_h }),
+            label,
+        }),
+    })
+
+    self.dimen = Geom:new({ x = 0, y = 0, w = outer_w, h = outer_h })
+    self[1] = self.frame
+    self.ges_events = {
+        TapDictionaryButton = {
+            GestureRange:new({
+                ges = "tap",
+                range = self.dimen,
+            }),
+        },
+    }
+end
+
+function DictionaryCardButton:onTapDictionaryButton()
     if self.callback then
         return self.callback()
     end
@@ -829,13 +977,62 @@ function LookupPreviewPopup:makeHeader(payload, content_width)
     return VerticalGroup:new(items)
 end
 
+function LookupPreviewPopup:makeDictionaryButtons(payload, content_width)
+    local button_specs = payload and payload.dictionary_buttons
+    if type(button_specs) ~= "table" or #button_specs == 0 then
+        return nil
+    end
+
+    local separator_count = math.max(0, #button_specs - 1)
+    local available_width = math.max(1, content_width - DICTIONARY_BUTTON_SEPARATOR_WIDTH * separator_count)
+    local button_width = math.floor(available_width / #button_specs)
+    local remainder = available_width - (button_width * #button_specs)
+
+    local widgets = {}
+    for index, item in ipairs(button_specs) do
+        if index > 1 then
+            widgets[#widgets + 1] = LineWidget:new({
+                background = Blitbuffer.COLOR_GRAY,
+                dimen = Geom:new({
+                    w = DICTIONARY_BUTTON_SEPARATOR_WIDTH,
+                    h = DICTIONARY_BUTTON_HEIGHT,
+                }),
+            })
+        end
+
+        local spec = item.spec or {}
+        widgets[#widgets + 1] = DictionaryCardButton:new({
+            text = spec.text,
+            icon = spec.icon,
+            icon_file = spec.icon_file,
+            width = button_width + (index <= remainder and 1 or 0),
+            height = DICTIONARY_BUTTON_HEIGHT,
+            icon_width = DICTIONARY_ICON_SIZE,
+            icon_height = DICTIONARY_ICON_SIZE,
+            show_parent = self,
+            callback = item.callback,
+        })
+    end
+
+    return HorizontalGroup:new(widgets)
+end
+
 function LookupPreviewPopup:makeCard(payload, card_width, card_height)
     local content_width = math.max(1, card_width - 2 * CARD_PADDING_H - 2 * CARD_BORDER_SIZE)
     local header = self:makeHeader(payload, content_width)
     local header_height = getWidgetSize(header).h or Screen:scaleBySize(46)
+    local dictionary_buttons = self:makeDictionaryButtons(payload, content_width)
+    local dictionary_buttons_height = dictionary_buttons and (getWidgetSize(dictionary_buttons).h or DICTIONARY_BUTTON_HEIGHT) or 0
+    local dictionary_buttons_gap = dictionary_buttons and DICTIONARY_BUTTON_GAP or 0
     local html_height = math.max(
         MIN_HTML_HEIGHT,
-        card_height - header_height - CARD_PADDING_TOP - CARD_PADDING_BOTTOM - 2 * CARD_BORDER_SIZE
+        card_height
+            - header_height
+            - dictionary_buttons_height
+            - dictionary_buttons_gap
+            - CARD_PADDING_TOP
+            - CARD_PADDING_BOTTOM
+            - 2 * CARD_BORDER_SIZE
     )
 
     local html_widget = ScrollHtmlWidget:new({
@@ -852,7 +1049,7 @@ function LookupPreviewPopup:makeCard(payload, card_width, card_height)
         highlight_text_selection = false,
     })
 
-    local content = VerticalGroup:new({
+    local content_items = {
         VerticalSpan:new({ width = CARD_PADDING_TOP }),
         HorizontalGroup:new({
             HorizontalSpan:new({ width = CARD_PADDING_H }),
@@ -864,8 +1061,20 @@ function LookupPreviewPopup:makeCard(payload, card_width, card_height)
             html_widget,
             HorizontalSpan:new({ width = CARD_PADDING_H }),
         }),
-        VerticalSpan:new({ width = CARD_PADDING_BOTTOM }),
-    })
+    }
+
+    if dictionary_buttons then
+        content_items[#content_items + 1] = VerticalSpan:new({ width = dictionary_buttons_gap })
+        content_items[#content_items + 1] = HorizontalGroup:new({
+            HorizontalSpan:new({ width = CARD_PADDING_H }),
+            dictionary_buttons,
+            HorizontalSpan:new({ width = CARD_PADDING_H }),
+        })
+    end
+
+    content_items[#content_items + 1] = VerticalSpan:new({ width = CARD_PADDING_BOTTOM })
+
+    local content = VerticalGroup:new(content_items)
 
     local card = FrameContainer:new({
         background = Blitbuffer.COLOR_WHITE,
@@ -1045,6 +1254,7 @@ function LookupPreview:init()
     self.native_dict_popup_active = false
     self.native_dict_popup_count = 0
     self.selection_snapshot = nil
+    self.plugin_icon_cache = {}
 
     if self.ui and self.ui.menu then
         self.ui.menu:registerToMainMenu(self)
@@ -1105,6 +1315,81 @@ function LookupPreview:getWikipediaLang()
     return lang
 end
 
+function LookupPreview:getLeftButtonAction()
+    local action = G_reader_settings:readSetting(SETTING_LEFT_ACTION) or DEFAULT_LEFT_ACTION
+    if not LEFT_ACTION_BY_ID[action] then
+        action = DEFAULT_LEFT_ACTION
+    end
+    return action
+end
+
+function LookupPreview:setLeftButtonAction(action)
+    if not LEFT_ACTION_BY_ID[action] then
+        action = DEFAULT_LEFT_ACTION
+    end
+    G_reader_settings:saveSetting(SETTING_LEFT_ACTION, action)
+end
+
+function LookupPreview:getPluginIconFile(action_id)
+    self.plugin_icon_cache = self.plugin_icon_cache or {}
+    if self.plugin_icon_cache[action_id] ~= nil then
+        return self.plugin_icon_cache[action_id] or nil
+    end
+
+    local candidates = PLUGIN_LEFT_ICON_CANDIDATES[action_id]
+    if not candidates or not self.path or self.path == "" then
+        self.plugin_icon_cache[action_id] = false
+        return nil
+    end
+
+    local icons_dir = self.path .. "/icons"
+    for _, basename in ipairs(candidates) do
+        for _, ext in ipairs(PLUGIN_ICON_EXTENSIONS) do
+            local path = icons_dir .. "/" .. basename .. ext
+            if fileExists(path) then
+                self.plugin_icon_cache[action_id] = path
+                return path
+            end
+        end
+    end
+
+    self.plugin_icon_cache[action_id] = false
+    return nil
+end
+
+function LookupPreview:getLeftButtonSpec(action_id)
+    action_id = LEFT_ACTION_BY_ID[action_id] and action_id or self:getLeftButtonAction()
+    local action = LEFT_ACTION_BY_ID[action_id] or LEFT_ACTION_BY_ID[DEFAULT_LEFT_ACTION]
+
+    if action_id == LEFT_ACTION_SEARCH_BOOK then
+        return { icon = ICON_SEARCH }
+    end
+
+    local plugin_icon = self:getPluginIconFile(action_id)
+    if plugin_icon then
+        return { icon_file = plugin_icon }
+    end
+
+    return { text = action.label }
+end
+
+function LookupPreview:genLeftButtonActionMenu()
+    local items = {}
+    for _, action in ipairs(LEFT_ACTIONS) do
+        items[#items + 1] = {
+            text = action.label,
+            radio = true,
+            checked_func = function()
+                return self:getLeftButtonAction() == action.id
+            end,
+            callback = function()
+                self:setLeftButtonAction(action.id)
+            end,
+        }
+    end
+    return items
+end
+
 function LookupPreview:notify(message)
     UIManager:show(Notification:new({ text = message }))
     return true
@@ -1122,6 +1407,7 @@ function LookupPreview:destroy()
     self.patched_dictionary = nil
     self.selection_snapshot = nil
     self.current_state = nil
+    self.plugin_icon_cache = nil
     self:resetNativeDictionaryPopupGuard()
 
     if WidgetContainer.destroy then
@@ -1271,7 +1557,7 @@ function LookupPreview:getActiveHighlight(dict_self)
             if highlight.selected_text or highlight.hold_pos then
                 return highlight
             end
-            if not fallback and (type(highlight.lookupWikipedia) == "function" or type(highlight.clear) == "function") then
+            if not fallback and (type(highlight.showHighlightPrompt) == "function" or type(highlight.lookupWikipedia) == "function" or type(highlight.clear) == "function") then
                 fallback = highlight
             end
         end
@@ -1350,6 +1636,197 @@ function LookupPreview:getSearchText(word, result)
     return trim(text)
 end
 
+function LookupPreview:showSearchDialog(search_text)
+    search_text = trim(search_text)
+    if search_text == "" then
+        return true
+    end
+
+    local function openSearchInput()
+        if self.ui and self.ui.search and type(self.ui.search.onShowFulltextSearchInput) == "function" then
+            local ok, err = pcall(function()
+                self.ui.search:onShowFulltextSearchInput(search_text)
+            end)
+            if ok then
+                return true
+            end
+            logger.warn("LookupPreview: direct search input failed:", err)
+        end
+
+        if self.ui and self.ui.handleEvent then
+            local ok, err = pcall(function()
+                self.ui:handleEvent(Event:new("ShowFulltextSearchInput", search_text))
+            end)
+            if ok then
+                return true
+            end
+            logger.warn("LookupPreview: search input event failed:", err)
+        end
+
+        if self.ui and self.ui.search and type(self.ui.search.searchText) == "function" then
+            local ok, err = pcall(function()
+                self.ui.search:searchText(search_text)
+            end)
+            if ok then
+                return true
+            end
+            logger.warn("LookupPreview: direct search execution failed:", err)
+        end
+
+        if self.ui and self.ui.handleEvent then
+            local ok, err = pcall(function()
+                self.ui:handleEvent(Event:new("ShowSearchDialog", search_text, 0, false, true))
+            end)
+            if not ok then
+                logger.warn("LookupPreview: search dialog fallback failed:", err)
+            end
+        end
+
+        return true
+    end
+
+    local ok = pcall(function()
+        UIManager:scheduleIn(0.05, openSearchInput)
+    end)
+
+    if not ok then
+        openSearchInput()
+    end
+
+    return true
+end
+
+function LookupPreview:highlightSelection(dict_self, dict_close_callback)
+    local highlight = self:restoreSelection(dict_self)
+
+    if not highlight then
+        return self:notify(_("No selection to highlight."))
+    end
+
+    if not highlight.selected_text and highlight.hold_pos and type(highlight.highlightFromHoldPos) == "function" then
+        pcall(function()
+            highlight:highlightFromHoldPos()
+        end)
+    end
+
+    if not (highlight.selected_text and highlight.selected_text.pos0 and highlight.selected_text.pos1) then
+        return self:notify(_("No selection to highlight."))
+    end
+
+    UIManager:scheduleIn(0.05, function()
+        local ok, err = pcall(function()
+            if type(highlight.showHighlightPrompt) == "function" then
+                highlight:showHighlightPrompt(function(...)
+                    self.selection_snapshot = nil
+                    if dict_close_callback then
+                        pcall(dict_close_callback, ...)
+                    end
+                end)
+            elseif type(highlight.saveHighlight) == "function" then
+                local index = highlight:saveHighlight(true)
+                if type(highlight.clear) == "function" then
+                    highlight:clear()
+                end
+                self.selection_snapshot = nil
+                if dict_close_callback then
+                    pcall(dict_close_callback, index)
+                end
+            end
+        end)
+
+        if not ok then
+            logger.warn("LookupPreview: highlight action failed:", err)
+        end
+    end)
+
+    return true
+end
+
+function LookupPreview:lookupWikipedia(dict_self, search_text)
+    local highlight = self:restoreSelection(dict_self)
+
+    if highlight and type(highlight.lookupWikipedia) == "function" and (highlight.selected_text or highlight.hold_pos) then
+        UIManager:scheduleIn(0.05, function()
+            local ok, err = pcall(function()
+                if not highlight.selected_text and highlight.hold_pos and type(highlight.highlightFromHoldPos) == "function" then
+                    highlight:highlightFromHoldPos()
+                end
+                highlight:lookupWikipedia()
+                self.selection_snapshot = nil
+            end)
+
+            if not ok then
+                logger.warn("LookupPreview: Wikipedia action failed:", err)
+            end
+        end)
+        return true
+    end
+
+    search_text = trim(search_text)
+    if search_text ~= "" and self.ui and self.ui.handleEvent then
+        self.ui:handleEvent(Event:new("LookupWikipedia", search_text))
+        return true
+    end
+
+    return self:notify(_("No selection to look up."))
+end
+
+function LookupPreview:runLeftButtonAction(action, state, search_text)
+    if not state then
+        return true
+    end
+
+    action = LEFT_ACTION_BY_ID[action] and action or DEFAULT_LEFT_ACTION
+    self:closeCurrentPopup(true)
+    self.current_state = nil
+
+    if action == LEFT_ACTION_HIGHLIGHT then
+        return self:highlightSelection(state.dict_self, state.dict_close_callback)
+    end
+
+    self.selection_snapshot = nil
+    self:clearOriginalHighlight(state.dict_self)
+    self:clearSelection()
+    if state.dict_close_callback then
+        pcall(state.dict_close_callback)
+    end
+    return self:showSearchDialog(search_text)
+end
+
+local function normalizeResultIndex(index, count)
+    if not count or count <= 0 then
+        return 1
+    end
+
+    index = tonumber(index) or 1
+    if index < 1 then
+        return count
+    elseif index > count then
+        return 1
+    end
+    return index
+end
+
+local function reorderResultsFromIndex(results, index)
+    if type(results) ~= "table" then
+        return results
+    end
+
+    local count = #results
+    if count <= 1 or index == 1 then
+        return results
+    end
+
+    local reordered = {}
+    for i = index, count do
+        reordered[#reordered + 1] = results[i]
+    end
+    for i = 1, index - 1 do
+        reordered[#reordered + 1] = results[i]
+    end
+    return reordered
+end
+
 local function buildPreviewResults(results)
     local preview_results = {}
     if type(results) ~= "table" then
@@ -1402,12 +1879,120 @@ function LookupPreview:buildDictionaryPayload(word, result, result_index, result
     end
 
     return {
+        page_type = PAGE_DICTIONARY,
         title = tostring(shown_word or _("Dictionary")),
         subtitle = subtitle,
         html_body = definition_html,
         css = css,
         html_resource_directory = result.dictionary_resource_directory,
     }
+end
+
+function LookupPreview:buildDictionaryButtons(state, search_text)
+    if not state then
+        return nil
+    end
+
+    search_text = search_text or state.dictionary_search_text or state.search_text or ""
+
+    local button_specs = {
+        {
+            spec = self:getLeftButtonSpec(LEFT_ACTION_HIGHLIGHT),
+            callback = function()
+                self:closeCurrentPopup(true)
+                self.current_state = nil
+                return self:highlightSelection(state.dict_self, state.dict_close_callback)
+            end,
+        },
+        {
+            spec = self:getLeftButtonSpec(LEFT_ACTION_SEARCH_BOOK),
+            callback = function()
+                self:closeCurrentPopup(true)
+                self.current_state = nil
+                self.selection_snapshot = nil
+                self:clearOriginalHighlight(state.dict_self)
+                self:clearSelection()
+                if state.dict_close_callback then
+                    pcall(state.dict_close_callback)
+                end
+                return self:showSearchDialog(search_text)
+            end,
+        },
+    }
+
+    if state.preview_count and state.preview_count > 1 then
+        button_specs[#button_specs + 1] = {
+            spec = { icon = ICON_PREVIOUS },
+            callback = function()
+                return self:switchDictionaryResult((state.dictionary_index or 1) - 1)
+            end,
+        }
+        button_specs[#button_specs + 1] = {
+            spec = { icon = ICON_NEXT },
+            callback = function()
+                return self:switchDictionaryResult((state.dictionary_index or 1) + 1)
+            end,
+        }
+    end
+
+    button_specs[#button_specs + 1] = {
+        spec = { icon = ICON_DETAILS },
+        callback = function()
+            return self:openOriginalDictionaryFromState(state)
+        end,
+    }
+
+    return button_specs
+end
+
+function LookupPreview:updateDictionaryPayload(state, index)
+    if not state then
+        return nil
+    end
+
+    local preview_count = state.preview_count or #(state.preview_results or {})
+    state.dictionary_index = normalizeResultIndex(index or state.dictionary_index or 1, preview_count)
+
+    local preview_entry = state.preview_results and state.preview_results[state.dictionary_index] or nil
+    local result = preview_entry and preview_entry.result or (state.results and state.results[1]) or {}
+
+    state.dictionary_search_text = self:getSearchText(state.word, result)
+    state.dictionary_payload = self:buildDictionaryPayload(state.word, result, state.dictionary_index, preview_count)
+    return state.dictionary_payload
+end
+
+function LookupPreview:switchDictionaryResult(index)
+    local state = self.current_state
+    if not state then
+        return true
+    end
+
+    self:updateDictionaryPayload(state, index)
+    return self:showCarousel(state, PAGE_DICTIONARY, true)
+end
+
+function LookupPreview:openOriginalDictionaryFromState(state)
+    state = state or self.current_state
+    if not state then
+        return true
+    end
+
+    local preview_count = state.preview_count or #(state.preview_results or {})
+    local preview_index = normalizeResultIndex(state.dictionary_index or 1, preview_count)
+    local preview_entry = state.preview_results and state.preview_results[preview_index] or nil
+    local source_index = preview_entry and preview_entry.source_index or 1
+    local selected_results = reorderResultsFromIndex(state.results, source_index)
+
+    self:closeCurrentPopup(true)
+    self.current_state = nil
+    return self:showOriginalDictionaryPopup(
+        state.dict_self,
+        state.word,
+        selected_results,
+        state.boxes,
+        state.link,
+        state.dict_close_callback
+    )
 end
 
 function LookupPreview:makeLoadingPayload(title, message)
@@ -1426,7 +2011,12 @@ function LookupPreview:getPagePayload(state, index, is_active)
     end
 
     if index == PAGE_DICTIONARY then
-        return state.dictionary_payload or self:makeLoadingPayload(_("Dictionary"), _("No definition found."))
+        local payload = state.dictionary_payload or self:makeLoadingPayload(_("Dictionary"), _("No definition found."))
+        if is_active then
+            payload = copyTable(payload)
+            payload.dictionary_buttons = self:buildDictionaryButtons(state, state.dictionary_search_text or state.search_text or "")
+        end
+        return payload
     end
 
     if index == PAGE_TRANSLATION then
@@ -1725,15 +2315,19 @@ function LookupPreview:showPreview(dict_self, word, results, boxes, link, dict_c
         dict_self = dict_self,
         word = word,
         results = results,
+        preview_results = preview_results,
         boxes = boxes,
         link = link,
         dict_close_callback = dict_close_callback,
         preview_count = #preview_results,
+        dictionary_index = 1,
         search_text = search_text,
+        dictionary_search_text = search_text,
         selection_bounds = getSelectionBounds(boxes),
         dialog = dict_self and dict_self.dialog,
-        dictionary_payload = self:buildDictionaryPayload(word, first_result, 1, #preview_results),
     }
+
+    state.dictionary_payload = self:buildDictionaryPayload(word, first_result, 1, #preview_results)
 
     return self:showCarousel(state, PAGE_DICTIONARY, false)
 end
