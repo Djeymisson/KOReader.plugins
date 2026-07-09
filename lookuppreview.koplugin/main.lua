@@ -88,6 +88,9 @@ local CARD_GAP = Screen:scaleBySize(8)
 local CARD_EDGE_MARGIN = Screen:scaleBySize(10)
 local CARD_BORDER_SIZE = math.max(Size.border.thin, Screen:scaleBySize(2))
 local CARD_BORDER_COLOR = Blitbuffer.COLOR_BLACK
+local CARD_SHADOW_ENABLED = false
+local CARD_SHADOW_OFFSET = Screen:scaleBySize(3)
+local CARD_SHADOW_COLOR = Blitbuffer.COLOR_DARK_GRAY
 local CARD_RADIUS = nil
 local CARD_PADDING_H = Screen:scaleBySize(14)
 local CARD_PADDING_TOP = Screen:scaleBySize(6)
@@ -886,6 +889,7 @@ local CarouselRow = InputContainer:extend({
 	active_card = nil,
 	active_container = nil,
 	positions = nil,
+	shadow_widgets = nil,
 })
 
 function CarouselRow:init()
@@ -895,6 +899,7 @@ function CarouselRow:init()
 	self.active_index = self.active_index or PAGE_DICTIONARY
 	self.dimen = Geom:new({ x = 0, y = 0, w = self.screen_width, h = self.card_height })
 	self.cards = {}
+	self.shadow_widgets = {}
 
 	local popup = self.popup
 	if popup then
@@ -903,6 +908,13 @@ function CarouselRow:init()
 				local payload = popup.plugin:getPagePayload(popup.state, index, index == self.active_index)
 				local card = popup:makeCard(payload, self.card_width, self.card_height)
 				self.cards[index] = card
+
+				if CARD_SHADOW_ENABLED and CARD_SHADOW_OFFSET > 0 then
+					self.shadow_widgets[index] = LineWidget:new({
+						background = CARD_SHADOW_COLOR,
+						dimen = Geom:new({ w = self.card_width, h = self.card_height }),
+					})
+				end
 
 				if index == self.active_index then
 					self.active_card = card
@@ -933,6 +945,30 @@ function CarouselRow:getSize()
 	return self.dimen
 end
 
+function CarouselRow:paintCardShadow(bb, base_x, base_y, index)
+	if not CARD_SHADOW_ENABLED or CARD_SHADOW_OFFSET <= 0 then
+		return
+	end
+
+	local shadow = self.shadow_widgets and self.shadow_widgets[index]
+	local card_x = self.positions and self.positions[index]
+	if not shadow or not card_x then
+		return
+	end
+
+	local x = (base_x or 0) + card_x + CARD_SHADOW_OFFSET
+	local y = (base_y or 0) + CARD_SHADOW_OFFSET
+
+	if shadow.dimen then
+		shadow.dimen.x = x
+		shadow.dimen.y = y
+		shadow.dimen.w = self.card_width
+		shadow.dimen.h = self.card_height
+	end
+
+	shadow:paintTo(bb, x, y)
+end
+
 function CarouselRow:paintCard(bb, base_x, base_y, index)
 	local card = self.cards and self.cards[index]
 	local card_x = self.positions and self.positions[index]
@@ -942,6 +978,8 @@ function CarouselRow:paintCard(bb, base_x, base_y, index)
 
 	local x = (base_x or 0) + card_x
 	local y = base_y or 0
+
+	self:paintCardShadow(bb, base_x, base_y, index)
 
 	if card.dimen then
 		card.dimen.x = x
@@ -964,6 +1002,7 @@ function CarouselRow:paintTo(bb, x, y)
 	self:paintCard(bb, x, y, self.active_index + 1)
 
 	if self.active_container then
+		self:paintCardShadow(bb, x, y, self.active_index)
 		self.active_container:paintTo(bb, x, y)
 	else
 		self:paintCard(bb, x, y, self.active_index)
@@ -1279,7 +1318,8 @@ function LookupPreviewPopup:init()
 		})
 	end
 
-	self.visible_dimen = Geom:new({ x = 0, y = y, w = screen_width, h = row_height })
+	local visible_height = row_height + (CARD_SHADOW_ENABLED and CARD_SHADOW_OFFSET or 0)
+	self.visible_dimen = Geom:new({ x = 0, y = y, w = screen_width, h = visible_height })
 end
 
 function LookupPreviewPopup:closePageMenu()
