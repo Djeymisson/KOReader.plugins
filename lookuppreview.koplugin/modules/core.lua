@@ -76,7 +76,9 @@ return function(ctx)
 					end,
 				},
 				{
-					text = string.format("%s: %s", _("Wikipedia language"), self:getWikipediaLang()),
+					text_func = function()
+						return string.format("%s: %s", _("Wikipedia language"), self:getWikipediaLang())
+					end,
 					sub_item_table_func = function()
 						return self:getWikipediaLanguageMenuItems(self.current_state)
 					end,
@@ -84,6 +86,14 @@ return function(ctx)
 				{
 					text = _("Translation"),
 					sub_item_table = {
+						{
+							text_func = function()
+								return string.format("%s: %s", _("Target language"), self:getTranslationTargetLang())
+							end,
+							sub_item_table_func = function()
+								return self:getTargetLanguageMenuItems(self.current_state)
+							end,
+						},
 						{
 							text = _("Show source text"),
 							checked_func = function()

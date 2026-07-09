@@ -6,15 +6,26 @@ return function(ctx)
 	local MENU_HEIGHT_RATIO = 0.8
 	local TRANSLATION_RELOAD_DELAY = 0.05
 
+	local function normalizeLanguageCode(lang, fallback)
+		lang = tostring(lang or fallback or "en"):lower()
+		return lang ~= "" and lang or (fallback or "en")
+	end
+
+	local function getSavedTargetLanguage()
+		return normalizeLanguageCode(
+			G_reader_settings:readSetting("translator_to_language")
+				or (Translator.getTargetLanguage and Translator:getTargetLanguage())
+				or "en",
+			"en"
+		)
+	end
+
 	local function getTargetLanguage(state)
-		return state.translation_target_lang
-			or (Translator.getTargetLanguage and Translator:getTargetLanguage())
-			or G_reader_settings:readSetting("translator_to_language")
-			or "en"
+		return normalizeLanguageCode((state and state.translation_target_lang) or getSavedTargetLanguage(), "en")
 	end
 
 	local function getSourceLanguage(state)
-		return state.translation_source_lang
+		return (state and state.translation_source_lang)
 			or (Translator.getSourceLanguage and Translator:getSourceLanguage())
 			or G_reader_settings:readSetting("translator_from_language")
 			or "auto"
@@ -104,15 +115,17 @@ return function(ctx)
 		self.language_menu = nil
 	end
 
+	function LookupPreview:getTranslationTargetLang()
+		return getSavedTargetLanguage()
+	end
+
 	function LookupPreview:buildTranslationPayload(state)
 		state = state or self.current_state or {}
 
 		local text_main = state.translation_text_main or _("No translation found.")
 		local source_text = state.translation_source_text or state.search_text or ""
 		local source_lang = state.translation_source_lang or "auto"
-		local target_lang = state.translation_target_lang
-			or G_reader_settings:readSetting("translator_to_language")
-			or "en"
+		local target_lang = getTargetLanguage(state)
 		local source_name = self:getTranslatorLanguageLabel(Translator, source_lang)
 		local target_name = self:getTranslatorLanguageLabel(Translator, target_lang)
 		local parts = {
@@ -260,7 +273,7 @@ return function(ctx)
 			items[#items + 1] = {
 				text = string.format("%s (%s)", self:getTranslatorLanguageLabel(Translator, lang_key), lang_key),
 				checked_func = function()
-					return Translator:getTargetLanguage() == lang_key
+					return self:getTranslationTargetLang() == lang_key
 				end,
 				radio = true,
 				callback = function()
@@ -273,10 +286,6 @@ return function(ctx)
 	end
 
 	function LookupPreview:showTargetLanguageMenu(state)
-		if not state then
-			return true
-		end
-
 		local Menu = require("ui/widget/menu")
 		local width, height = getMenuDimensions()
 		self:closeLanguageMenu()
@@ -294,14 +303,14 @@ return function(ctx)
 
 	function LookupPreview:refreshTranslationWithTarget(state, target_lang)
 		self:closeLanguageMenu()
+		target_lang = normalizeLanguageCode(target_lang, "en")
+		G_reader_settings:saveSetting("translator_to_language", target_lang)
 
 		if not state or state ~= self.current_state then
 			return true
 		end
 
-		G_reader_settings:saveSetting("translator_to_language", target_lang)
 		resetTranslationState(state, target_lang)
-
 		self:showCarousel(state, PAGE_TRANSLATION, true)
 		scheduleTranslationReload(self, state)
 		return true
