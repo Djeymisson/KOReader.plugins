@@ -1416,6 +1416,10 @@ function LookupPreview:init()
 	self.current_state = nil
 	self.original_showDict = nil
 	self.patched_dictionary = nil
+	self.patched_highlight = nil
+	self.original_highlight_lookupDict = nil
+	self.original_highlight_translate = nil
+	self.original_highlight_lookupWikipedia = nil
 	self.opening_original_popup = false
 	self.native_dict_popup_active = false
 	self.native_dict_popup_count = 0
@@ -1429,6 +1433,7 @@ function LookupPreview:init()
 	end
 
 	self:patchDictionary()
+	self:patchHighlightActions()
 end
 
 function LookupPreview:addToMainMenu(menu_items)
@@ -1632,6 +1637,19 @@ function LookupPreview:destroy()
 	self:closeLanguageMenu()
 	self:closeCurrentPopup(true)
 
+	if self.patched_highlight and self.patched_highlight._lookuppreview_highlight_patched == self then
+		if self.original_highlight_lookupDict then
+			self.patched_highlight.lookupDict = self.original_highlight_lookupDict
+		end
+		if self.original_highlight_translate then
+			self.patched_highlight.translate = self.original_highlight_translate
+		end
+		if self.original_highlight_lookupWikipedia then
+			self.patched_highlight.lookupWikipedia = self.original_highlight_lookupWikipedia
+		end
+		self.patched_highlight._lookuppreview_highlight_patched = nil
+	end
+
 	if self.patched_dictionary and self.original_showDict and self.patched_dictionary._lookuppreview_patched then
 		self.patched_dictionary.showDict = self.original_showDict
 		self.patched_dictionary._lookuppreview_patched = nil
@@ -1639,6 +1657,10 @@ function LookupPreview:destroy()
 
 	self.original_showDict = nil
 	self.patched_dictionary = nil
+	self.patched_highlight = nil
+	self.original_highlight_lookupDict = nil
+	self.original_highlight_translate = nil
+	self.original_highlight_lookupWikipedia = nil
 	self.selection_snapshot = nil
 	self.current_state = nil
 	self.plugin_icon_cache = nil
@@ -1684,6 +1706,224 @@ function LookupPreview:patchDictionary()
 	end
 
 	dictionary._lookuppreview_patched = true
+end
+
+
+function LookupPreview:patchHighlightActions()
+	local highlight = self.ui and self.ui.highlight
+	if not highlight then
+		logger.warn("LookupPreview: ReaderHighlight not available.")
+		return
+	end
+	if highlight._lookuppreview_highlight_patched then
+		return
+	end
+
+	self.patched_highlight = highlight
+	self.original_highlight_lookupDict = highlight.lookupDict
+	self.original_highlight_translate = highlight.translate
+	self.original_highlight_lookupWikipedia = highlight.lookupWikipedia
+
+	local plugin = self
+
+	if self.original_highlight_lookupDict then
+		highlight.lookupDict = function(highlight_self, ...)
+			if plugin:isPreviewEnabled() and not plugin.opening_original_popup then
+				plugin:rememberSelection(highlight_self)
+			end
+			return plugin.original_highlight_lookupDict(highlight_self, ...)
+		end
+	end
+
+	if self.original_highlight_translate then
+		highlight.translate = function(highlight_self, ...)
+			if not plugin:isPreviewEnabled() or plugin.opening_original_popup then
+				return plugin.original_highlight_translate(highlight_self, ...)
+			end
+
+			if plugin:showSelectionPreviewFromHighlight(highlight_self, PAGE_TRANSLATION) then
+				return true
+			end
+
+			return plugin.original_highlight_translate(highlight_self, ...)
+		end
+	end
+
+	if self.original_highlight_lookupWikipedia then
+		highlight.lookupWikipedia = function(highlight_self, ...)
+			if not plugin:isPreviewEnabled() or plugin.opening_original_popup then
+				return plugin.original_highlight_lookupWikipedia(highlight_self, ...)
+			end
+
+			if plugin:showSelectionPreviewFromHighlight(highlight_self, PAGE_WIKIPEDIA) then
+				return true
+			end
+
+			return plugin.original_highlight_lookupWikipedia(highlight_self, ...)
+		end
+	end
+
+	highlight._lookuppreview_highlight_patched = self
+end
+
+function LookupPreview:getHighlightSelectionText(highlight)
+	local selected_text = highlight and highlight.selected_text
+	local text = ""
+
+	if type(selected_text) == "table" then
+		text = selected_text.text or selected_text.word or ""
+	elseif type(selected_text) == "string" then
+		text = selected_text
+	end
+
+	if text == "" and highlight and type(highlight.getSelectedText) == "function" then
+		local ok, selected = pcall(function()
+			return highlight:getSelectedText()
+		end)
+		if ok and selected then
+			text = selected
+		end
+	end
+
+	if util and util.cleanupSelectedText then
+		local ok, cleaned = pcall(function()
+			return util.cleanupSelectedText(text)
+		end)
+		if ok and cleaned then
+			text = cleaned
+		end
+	end
+
+	return trim(text)
+end
+
+function LookupPreview:getHighlightSelectionBounds(highlight)
+	if not highlight then
+		return nil
+	end
+
+	local screen_height = Screen:getHeight()
+	local top
+	local bottom
+
+	local function addY(y)
+		y = tonumber(y)
+		if not y or y < 0 or y > screen_height then
+			return
+		end
+		top = top and math.min(top, y) or y
+		bottom = bottom and math.max(bottom, y) or y
+	end
+
+	local function addPosition(pos)
+		if type(pos) ~= "table" then
+			return
+		end
+		addY(pos.y)
+	end
+
+	local function addBox(box)
+		if type(box) ~= "table" then
+			return
+		end
+		if box.rect then
+			box = box.rect
+		end
+		local y = tonumber(box.y)
+		local h = tonumber(box.h)
+		if y and h then
+			addY(y)
+			addY(y + h)
+		end
+	end
+
+	addPosition(highlight.hold_pos)
+
+	local selected_text = highlight.selected_text
+	if type(selected_text) == "table" then
+		addPosition(selected_text.pos0)
+		addPosition(selected_text.pos1)
+		if type(selected_text.boxes) == "table" then
+			for _, box in ipairs(selected_text.boxes) do
+				addBox(box)
+			end
+		end
+	end
+
+	if top and bottom then
+		return { top = top, bottom = bottom }
+	end
+
+	return nil
+end
+
+function LookupPreview:buildSelectionStateFromHighlight(highlight)
+	local text = self:getHighlightSelectionText(highlight)
+	if text == "" then
+		return nil
+	end
+
+	self:rememberSelection(highlight)
+
+	local state = {
+		dict_self = nil,
+		highlight_self = highlight,
+		word = text,
+		results = {
+			{
+				word = text,
+				no_result = true,
+			},
+		},
+		preview_results = {},
+		boxes = nil,
+		link = nil,
+		preview_count = 0,
+		dictionary_index = 1,
+		search_text = text,
+		dictionary_search_text = text,
+		translation_source_text = text,
+		selection_bounds = self:getHighlightSelectionBounds(highlight),
+		dialog = highlight and highlight.dialog or (self.ui and self.ui.highlight and self.ui.highlight.dialog),
+	}
+
+	state.dict_close_callback = function()
+		if highlight and type(highlight.clear) == "function" then
+			pcall(function()
+				highlight:clear()
+			end)
+		end
+	end
+
+	state.dictionary_payload = self:buildDictionaryPayload(text, state.results[1], 1, 0)
+	return state
+end
+
+function LookupPreview:showSelectionPreviewFromHighlight(highlight, active_index)
+	local state = self:buildSelectionStateFromHighlight(highlight)
+	if not state then
+		return false
+	end
+
+	if highlight and type(highlight.onClose) == "function" then
+		pcall(function()
+			highlight:onClose(true)
+		end)
+	end
+
+	self:showCarousel(state, active_index or PAGE_DICTIONARY, false)
+
+	if active_index == PAGE_TRANSLATION then
+		UIManager:scheduleIn(0.05, function()
+			self:loadTranslation(state)
+		end)
+	elseif active_index == PAGE_WIKIPEDIA then
+		UIManager:scheduleIn(0.05, function()
+			self:loadWikipedia(state)
+		end)
+	end
+
+	return true
 end
 
 function LookupPreview:beginNativeDictionaryPopup(dict_close_callback)
@@ -2388,7 +2628,7 @@ function LookupPreview:getPagePayload(state, index, is_active)
 			return payload
 		end
 		if state.wikipedia_error then
-			return {
+			local payload = {
 				page_type = PAGE_WIKIPEDIA,
 				title = _("Wikipedia"),
 				subtitle = state.search_text or "",
@@ -2398,6 +2638,10 @@ function LookupPreview:getPagePayload(state, index, is_active)
 				html_body = plainTextToHtml(state.wikipedia_error),
 				css = FALLBACK_CSS,
 			}
+			if is_active then
+				payload.card_buttons = self:buildWikipediaLanguageButton(state)
+			end
+			return payload
 		end
 		if is_active then
 			local payload = self:makeLoadingPayload(_("Wikipedia"), _("Querying Wikipedia…"))
@@ -2405,6 +2649,7 @@ function LookupPreview:getPagePayload(state, index, is_active)
 			payload.subtitle_callback = function()
 				return self:showWikipediaLanguageMenu(state)
 			end
+			payload.card_buttons = self:buildWikipediaLanguageButton(state)
 			return payload
 		end
 		local payload = self:makeLoadingPayload(_("Wikipedia"), _("Swipe to open Wikipedia."))
@@ -2994,6 +3239,19 @@ function LookupPreview:switchWikipediaResult(index)
 
 	self:updateWikipediaPayload(state, index)
 	return self:showCarousel(state, PAGE_WIKIPEDIA, true)
+end
+
+function LookupPreview:buildWikipediaLanguageButton(state)
+	state = state or self.current_state
+	return {
+		{
+			spec = { text = tostring((state and state.wikipedia_lang) or self:getWikipediaLang()):upper() },
+			weight = 1,
+			callback = function()
+				return self:showWikipediaLanguageMenu(state)
+			end,
+		},
+	}
 end
 
 function LookupPreview:buildWikipediaButtons(state)
