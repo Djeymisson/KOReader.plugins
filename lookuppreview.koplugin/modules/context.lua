@@ -1,8 +1,12 @@
--- Lookup Preview shared context.
--- Auto-split from the original main.lua; keep this file beside main.lua.
+-- Shared module context for Lookup Preview.
+--
+-- The other modules are loaded with this table as their environment, so this
+-- file intentionally exposes KOReader dependencies, constants, and shared
+-- helpers as fields on ctx.
 local ctx = setmetatable({}, { __index = _G })
 setfenv(1, ctx)
 
+-- KOReader dependencies -----------------------------------------------------
 Device = require("device")
 Blitbuffer = require("ffi/blitbuffer")
 BottomContainer = require("ui/widget/container/bottomcontainer")
@@ -30,15 +34,22 @@ Event = require("ui/event")
 Translator = require("ui/translator")
 util = require("util")
 logger = require("logger")
+
 _ = require("gettext")
 C_ = _.pgettext or function(_context, text)
 	return _(text)
 end
 
+-- Device shortcuts ----------------------------------------------------------
 Screen = Device.screen
 IS_TOUCH_DEVICE = Device:isTouchDevice()
 HAS_KEYS = Device:hasKeys()
 
+local function scaleBySize(size)
+	return Screen:scaleBySize(size)
+end
+
+-- Plugin object -------------------------------------------------------------
 LookupPreview = WidgetContainer:extend({
 	name = "lookuppreview",
 	is_doc_only = true,
@@ -46,13 +57,15 @@ LookupPreview = WidgetContainer:extend({
 
 PLUGIN_VERSION = "v0.1.0"
 
+-- Fonts ---------------------------------------------------------------------
 UI_FONT_FACE = "Noto Sans"
 UI_FONT_SIZE = 20
 TITLE_FONT_SIZE = math.max(16, UI_FONT_SIZE - 1)
 SUBTITLE_FONT_SIZE = math.max(14, UI_FONT_SIZE - 3)
 HEADER_MENU_FONT_SIZE = math.max(14, UI_FONT_SIZE - 4)
 HEADER_BUTTON_FONT_SIZE = math.max(18, UI_FONT_SIZE)
-BODY_FONT_SIZE = Screen:scaleBySize(18)
+BODY_FONT_SIZE = scaleBySize(18)
+DICTIONARY_BUTTON_FONT_SIZE = math.max(13, UI_FONT_SIZE - 5)
 
 function getUIFontFace(names, size, fallback_name)
 	if type(names) ~= "table" then
@@ -63,7 +76,6 @@ function getUIFontFace(names, size, fallback_name)
 		local ok, face = pcall(function()
 			return Font:getFace(name, size)
 		end)
-
 		if ok and face then
 			return face
 		end
@@ -81,49 +93,54 @@ SUBTITLE_FACE = getUIFontFace({
 }, SUBTITLE_FONT_SIZE, "cfont")
 HEADER_MENU_FACE = Font:getFace("cfont", HEADER_MENU_FONT_SIZE)
 HEADER_BUTTON_FACE = Font:getFace("cfont", HEADER_BUTTON_FONT_SIZE)
-DICTIONARY_BUTTON_FONT_SIZE = math.max(13, UI_FONT_SIZE - 5)
 DICTIONARY_BUTTON_FACE = Font:getFace("cfont", DICTIONARY_BUTTON_FONT_SIZE)
-TRANSLATION_BUTTON_FONT_SIZE = math.max(13, UI_FONT_SIZE - 5)
-TRANSLATION_BUTTON_FACE = Font:getFace("cfont", TRANSLATION_BUTTON_FONT_SIZE)
 
+-- Layout --------------------------------------------------------------------
 CARD_WIDTH_RATIO = 0.92
 CARD_HEIGHT_RATIO = 0.38
-CARD_MIN_WIDTH = Screen:scaleBySize(220)
-CARD_GAP = Screen:scaleBySize(8)
-CARD_EDGE_MARGIN = Screen:scaleBySize(10)
-CARD_BORDER_SIZE = math.max(Size.border.thin, Screen:scaleBySize(2))
+CARD_MIN_WIDTH = scaleBySize(220)
+CARD_GAP = scaleBySize(8)
+CARD_EDGE_MARGIN = scaleBySize(10)
+CARD_BORDER_SIZE = math.max(Size.border.thin, scaleBySize(2))
 CARD_BORDER_COLOR = Blitbuffer.COLOR_BLACK
-CARD_SHADOW_ENABLED = false
-CARD_SHADOW_OFFSET = Screen:scaleBySize(3)
-CARD_SHADOW_COLOR = Blitbuffer.COLOR_DARK_GRAY
 CARD_RADIUS = nil
-CARD_PADDING_H = Screen:scaleBySize(14)
-CARD_PADDING_TOP = Screen:scaleBySize(6)
-CARD_PADDING_BOTTOM = Screen:scaleBySize(8)
-HEADER_GAP = Screen:scaleBySize(2)
-HEADER_SEPARATOR_GAP = Screen:scaleBySize(3)
-HEADER_MENU_WIDTH = Screen:scaleBySize(40)
-HEADER_MENU_HEIGHT = Screen:scaleBySize(30)
-HEADER_MENU_PADDING_H = Screen:scaleBySize(5)
-HEADER_MENU_PADDING_V = Screen:scaleBySize(0)
-HEADER_TITLE_MENU_GAP = Screen:scaleBySize(6)
-DICTIONARY_BUTTON_HEIGHT = Screen:scaleBySize(30)
-DICTIONARY_ICON_SIZE = Screen:scaleBySize(20)
-DICTIONARY_BUTTON_GAP = Screen:scaleBySize(4)
-DICTIONARY_BUTTON_SEPARATOR_WIDTH = math.max(1, Screen:scaleBySize(1))
-TRANSLATION_BUTTON_HEIGHT = Screen:scaleBySize(30)
-TRANSLATION_BUTTON_GAP = Screen:scaleBySize(4)
-TRANSLATION_BUTTON_SEPARATOR_WIDTH = math.max(1, Screen:scaleBySize(1))
-PAGE_MENU_WIDTH = Screen:scaleBySize(220)
-PAGE_MENU_ITEM_HEIGHT = Screen:scaleBySize(34)
-PAGE_MENU_GAP = Screen:scaleBySize(8)
-PAGE_MENU_PADDING_H = Screen:scaleBySize(12)
-SCROLL_BAR_WIDTH = Screen:scaleBySize(6)
-TEXT_SCROLL_SPAN = Screen:scaleBySize(8)
-FLOATING_SELECTION_GAP = Screen:scaleBySize(8)
-MIN_HTML_HEIGHT = Screen:scaleBySize(72)
+
+CARD_SHADOW_ENABLED = false
+CARD_SHADOW_OFFSET = scaleBySize(3)
+CARD_SHADOW_COLOR = Blitbuffer.COLOR_DARK_GRAY
+
+CARD_PADDING_H = scaleBySize(14)
+CARD_PADDING_TOP = scaleBySize(6)
+CARD_PADDING_BOTTOM = scaleBySize(8)
+
+HEADER_GAP = scaleBySize(2)
+HEADER_SEPARATOR_GAP = scaleBySize(3)
+HEADER_MENU_WIDTH = scaleBySize(40)
+HEADER_MENU_HEIGHT = scaleBySize(30)
+HEADER_MENU_PADDING_H = scaleBySize(5)
+HEADER_MENU_PADDING_V = scaleBySize(0)
+HEADER_TITLE_MENU_GAP = scaleBySize(6)
+
+DICTIONARY_BUTTON_HEIGHT = scaleBySize(30)
+DICTIONARY_ICON_SIZE = scaleBySize(20)
+DICTIONARY_BUTTON_GAP = scaleBySize(4)
+DICTIONARY_BUTTON_SEPARATOR_WIDTH = math.max(1, scaleBySize(1))
+
+TRANSLATION_BUTTON_HEIGHT = scaleBySize(30)
+TRANSLATION_BUTTON_GAP = scaleBySize(4)
+
+PAGE_MENU_WIDTH = scaleBySize(220)
+PAGE_MENU_ITEM_HEIGHT = scaleBySize(34)
+PAGE_MENU_GAP = scaleBySize(8)
+PAGE_MENU_PADDING_H = scaleBySize(12)
+
+SCROLL_BAR_WIDTH = scaleBySize(6)
+TEXT_SCROLL_SPAN = scaleBySize(8)
+FLOATING_SELECTION_GAP = scaleBySize(8)
+MIN_HTML_HEIGHT = scaleBySize(72)
 EMPTY_TEXT = "—"
 
+-- Settings ------------------------------------------------------------------
 SETTING_ENABLED = "lookuppreview_enabled"
 SETTING_WIKI_LANG = "lookuppreview_wikipedia_lang"
 SETTING_LEFT_ACTION = "lookuppreview_dictionary_left_action"
@@ -131,6 +148,7 @@ SETTING_TRANSLATION_SHOW_SOURCE = "lookuppreview_translation_show_source"
 SETTING_TRANSLATION_SHOW_COPY_BUTTON = "lookuppreview_translation_show_copy_button"
 SETTING_TRANSLATION_SHOW_NOTE_BUTTON = "lookuppreview_translation_show_note_button"
 
+-- Actions and icons ---------------------------------------------------------
 LEFT_ACTION_HIGHLIGHT = "highlight"
 LEFT_ACTION_SEARCH_BOOK = "search_book"
 DEFAULT_LEFT_ACTION = LEFT_ACTION_SEARCH_BOOK
@@ -155,6 +173,18 @@ ICON_PREVIOUS = "chevron.left"
 ICON_NEXT = "chevron.right"
 ICON_DETAILS = "chevron.up"
 
+-- Pages ---------------------------------------------------------------------
+PAGE_DICTIONARY = 1
+PAGE_TRANSLATION = 2
+PAGE_WIKIPEDIA = 3
+
+PAGE_TITLES = {
+	[PAGE_DICTIONARY] = _("Dictionary"),
+	[PAGE_TRANSLATION] = _("Translate"),
+	[PAGE_WIKIPEDIA] = _("Wikipedia"),
+}
+
+-- Languages -----------------------------------------------------------------
 COMMON_TARGET_LANGUAGES = {
 	"en",
 	"pt",
@@ -182,16 +212,7 @@ COMMON_TARGET_LANGUAGES = {
 	"vi",
 }
 
-PAGE_DICTIONARY = 1
-PAGE_TRANSLATION = 2
-PAGE_WIKIPEDIA = 3
-
-PAGE_TITLES = {
-	[PAGE_DICTIONARY] = _("Dictionary"),
-	[PAGE_TRANSLATION] = _("Translate"),
-	[PAGE_WIKIPEDIA] = _("Wikipedia"),
-}
-
+-- Shared CSS ----------------------------------------------------------------
 FALLBACK_CSS = [[
 @page {
     margin: 0;
@@ -238,6 +259,7 @@ a {
 }
 ]]
 
+-- Dictionary HTML normalization --------------------------------------------
 CLASS_STYLE_CACHE = {}
 dictionary_class_styles = {
 	hw = "font-size:1.15em; font-weight:bold;",
@@ -261,6 +283,5 @@ dictionary_class_styles = {
 	et = "display:block; margin-top:0.5em; font-size:0.92em;",
 	xr = "font-style:italic;",
 }
-
 
 return ctx
