@@ -2,10 +2,11 @@
 Reader Header/Footer plugin for KOReader.
 
 Shows small reader indicators in the document margins:
-- Top right: Wi-Fi, clock, battery.
-- Top left: alternating chapter title / author + title.
-- Bottom left: pages left in chapter or book, configurable from plugin menu.
-- Bottom right: document read percentage.
+- Top right: optional Wi-Fi, clock and battery indicators, or chapter information when empty.
+- Top left: primary author + book title when right-side device indicators are disabled.
+- Header: hidden at chapter starts only when device indicators are disabled.
+- Bottom left: optional pages left in chapter or book.
+- Bottom right: optional document read percentage.
 
 The plugin avoids full-screen refreshes by invalidating only the top/bottom
 indicator regions, and defers refreshes while KOReader menus/dialogs are open.
@@ -32,11 +33,17 @@ local _ = require("gettext")
 -- ============================================================================
 
 local PLUGIN_NAME = "reader_header_footer"
-local PLUGIN_VERSION = "v1.0.2"
+local PLUGIN_VERSION = "v1.0.7"
 
 local SETTINGS = {
 	enabled = "reader_header_footer_enabled",
 	font_size = "reader_header_footer_font_size",
+	show_wifi = "reader_header_footer_show_wifi",
+	show_clock = "reader_header_footer_show_clock",
+	show_battery_status = "reader_header_footer_show_battery_status",
+	show_battery_percentage = "reader_header_footer_show_battery_percentage",
+	show_footer_left = "reader_header_footer_show_footer_left",
+	show_read_percentage = "reader_header_footer_show_read_percentage",
 	follow_document_margins = "reader_header_footer_follow_document_margins",
 	custom_left_margin = "reader_header_footer_custom_left_margin",
 	custom_right_margin = "reader_header_footer_custom_right_margin",
@@ -87,6 +94,12 @@ local ReaderHeaderFooter = WidgetContainer:extend({
 	-- Persistent settings loaded at init().
 	enabled = true,
 	font_size = FONT.default_size,
+	show_wifi = true,
+	show_clock = true,
+	show_battery_status = true,
+	show_battery_percentage = true,
+	show_footer_left = true,
+	show_read_percentage = true,
 	follow_document_margins = INDICATOR_MARGINS.default_follow_document,
 	custom_left_margin = INDICATOR_MARGINS.default_left,
 	custom_right_margin = INDICATOR_MARGINS.default_right,
@@ -156,6 +169,34 @@ function ReaderHeaderFooter:isEnabled()
 	return self.enabled ~= false
 end
 
+function ReaderHeaderFooter:showsWifi()
+	return self.show_wifi ~= false
+end
+
+function ReaderHeaderFooter:showsClock()
+	return self.show_clock ~= false
+end
+
+function ReaderHeaderFooter:showsBatteryStatus()
+	return self.show_battery_status ~= false
+end
+
+function ReaderHeaderFooter:showsBatteryPercentage()
+	return self.show_battery_percentage ~= false
+end
+
+function ReaderHeaderFooter:showsFooterLeft()
+	return self.show_footer_left ~= false
+end
+
+function ReaderHeaderFooter:showsReadPercentage()
+	return self.show_read_percentage ~= false
+end
+
+function ReaderHeaderFooter:hasRightTopIndicatorsEnabled()
+	return self:showsWifi() or self:showsClock() or self:showsBatteryStatus()
+end
+
 function ReaderHeaderFooter:hasReaderContext()
 	return self.ui and self.ui.document and self.ui.view and self.ui.view.dialog
 end
@@ -175,6 +216,24 @@ function ReaderHeaderFooter:loadSettings()
 	local saved_font_size = G_reader_settings:readSetting(SETTINGS.font_size)
 	self.font_size = self:normalizeFontSize(saved_font_size or FONT.default_size)
 	self.refresh_region_font_size = self.font_size
+
+	local saved_show_wifi = G_reader_settings:readSetting(SETTINGS.show_wifi)
+	self.show_wifi = saved_show_wifi ~= false
+
+	local saved_show_clock = G_reader_settings:readSetting(SETTINGS.show_clock)
+	self.show_clock = saved_show_clock ~= false
+
+	local saved_show_battery_status = G_reader_settings:readSetting(SETTINGS.show_battery_status)
+	self.show_battery_status = saved_show_battery_status ~= false
+
+	local saved_show_battery_percentage = G_reader_settings:readSetting(SETTINGS.show_battery_percentage)
+	self.show_battery_percentage = saved_show_battery_percentage ~= false
+
+	local saved_show_footer_left = G_reader_settings:readSetting(SETTINGS.show_footer_left)
+	self.show_footer_left = saved_show_footer_left ~= false
+
+	local saved_show_read_percentage = G_reader_settings:readSetting(SETTINGS.show_read_percentage)
+	self.show_read_percentage = saved_show_read_percentage ~= false
 
 	local saved_follow_document_margins = G_reader_settings:readSetting(SETTINGS.follow_document_margins)
 	self.follow_document_margins = saved_follow_document_margins ~= false
@@ -232,6 +291,99 @@ end
 function ReaderHeaderFooter:resetFontSize()
 	self:setFontSize(FONT.default_size)
 	G_reader_settings:delSetting(SETTINGS.font_size)
+end
+
+function ReaderHeaderFooter:setShowWifi(enabled)
+	local new_value = enabled == true
+
+	if self.show_wifi == new_value then
+		return
+	end
+
+	self.show_wifi = new_value
+	G_reader_settings:saveSetting(SETTINGS.show_wifi, self.show_wifi)
+end
+
+function ReaderHeaderFooter:toggleShowWifi()
+	self:setShowWifi(not self:showsWifi())
+end
+
+function ReaderHeaderFooter:setShowClock(enabled)
+	local new_value = enabled == true
+
+	if self.show_clock == new_value then
+		return
+	end
+
+	self.show_clock = new_value
+	G_reader_settings:saveSetting(SETTINGS.show_clock, self.show_clock)
+	self:refreshIndicatorWatchers()
+end
+
+function ReaderHeaderFooter:toggleShowClock()
+	self:setShowClock(not self:showsClock())
+end
+
+function ReaderHeaderFooter:setShowBatteryStatus(enabled)
+	local new_value = enabled == true
+
+	if self.show_battery_status == new_value then
+		return
+	end
+
+	self.show_battery_status = new_value
+	G_reader_settings:saveSetting(SETTINGS.show_battery_status, self.show_battery_status)
+	self:refreshIndicatorWatchers()
+end
+
+function ReaderHeaderFooter:toggleShowBatteryStatus()
+	self:setShowBatteryStatus(not self:showsBatteryStatus())
+end
+
+function ReaderHeaderFooter:setShowBatteryPercentage(enabled)
+	local new_value = enabled == true
+
+	if self.show_battery_percentage == new_value then
+		return
+	end
+
+	self.show_battery_percentage = new_value
+	G_reader_settings:saveSetting(SETTINGS.show_battery_percentage, self.show_battery_percentage)
+	self:refreshIndicatorWatchers()
+end
+
+function ReaderHeaderFooter:toggleShowBatteryPercentage()
+	self:setShowBatteryPercentage(not self:showsBatteryPercentage())
+end
+
+function ReaderHeaderFooter:setShowFooterLeft(enabled)
+	local new_value = enabled == true
+
+	if self.show_footer_left == new_value then
+		return
+	end
+
+	self.show_footer_left = new_value
+	G_reader_settings:saveSetting(SETTINGS.show_footer_left, self.show_footer_left)
+end
+
+function ReaderHeaderFooter:toggleShowFooterLeft()
+	self:setShowFooterLeft(not self:showsFooterLeft())
+end
+
+function ReaderHeaderFooter:setShowReadPercentage(enabled)
+	local new_value = enabled == true
+
+	if self.show_read_percentage == new_value then
+		return
+	end
+
+	self.show_read_percentage = new_value
+	G_reader_settings:saveSetting(SETTINGS.show_read_percentage, self.show_read_percentage)
+end
+
+function ReaderHeaderFooter:toggleShowReadPercentage()
+	self:setShowReadPercentage(not self:showsReadPercentage())
 end
 
 function ReaderHeaderFooter:normalizeIndicatorMargin(value)
@@ -313,11 +465,9 @@ function ReaderHeaderFooter:setEnabled(enabled)
 
 	if self:isEnabled() then
 		self:rememberCurrentIndicatorState()
-		self:startClockWatcher()
-		self:startBatteryWatcher()
+		self:refreshIndicatorWatchers()
 	else
-		self:stopClockWatcher()
-		self:stopBatteryWatcher()
+		self:stopIndicatorWatchers()
 		self:stopDeferredRefreshCheck()
 	end
 
@@ -399,6 +549,169 @@ function ReaderHeaderFooter:addToMainMenu(menu_items)
 			},
 
 			{
+				text = _("Displayed items"),
+
+				-- Keep submenu visible, but disabled when the plugin is off.
+				enabled_func = function()
+					return self:isEnabled()
+				end,
+
+				sub_item_table = {
+					{
+						text = _("Wi-Fi status"),
+
+						checked_func = function()
+							return self:showsWifi()
+						end,
+
+						callback = function(touchmenu_instance)
+							if not self:isEnabled() then
+								return
+							end
+
+							self:toggleShowWifi()
+
+							if touchmenu_instance and touchmenu_instance.updateItems then
+								touchmenu_instance:updateItems()
+							end
+
+							UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
+								self:requestTopIndicatorRefresh()
+							end)
+						end,
+					},
+
+					{
+						text = _("Clock"),
+
+						checked_func = function()
+							return self:showsClock()
+						end,
+
+						callback = function(touchmenu_instance)
+							if not self:isEnabled() then
+								return
+							end
+
+							self:toggleShowClock()
+
+							if touchmenu_instance and touchmenu_instance.updateItems then
+								touchmenu_instance:updateItems()
+							end
+
+							UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
+								self:requestTopIndicatorRefresh()
+							end)
+						end,
+					},
+
+					{
+						text = _("Battery status"),
+
+						enabled_func = function()
+							return self:isEnabled() and Device:hasBattery()
+						end,
+
+						checked_func = function()
+							return self:showsBatteryStatus()
+						end,
+
+						callback = function(touchmenu_instance)
+							if not self:isEnabled() or not Device:hasBattery() then
+								return
+							end
+
+							self:toggleShowBatteryStatus()
+
+							if touchmenu_instance and touchmenu_instance.updateItems then
+								touchmenu_instance:updateItems()
+							end
+
+							UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
+								self:requestTopIndicatorRefresh()
+							end)
+						end,
+					},
+
+					{
+						text = _("Battery percentage"),
+
+						enabled_func = function()
+							return self:isEnabled() and Device:hasBattery() and self:showsBatteryStatus()
+						end,
+
+						checked_func = function()
+							return self:showsBatteryPercentage()
+						end,
+
+						callback = function(touchmenu_instance)
+							if not self:isEnabled() or not Device:hasBattery() or not self:showsBatteryStatus() then
+								return
+							end
+
+							self:toggleShowBatteryPercentage()
+
+							if touchmenu_instance and touchmenu_instance.updateItems then
+								touchmenu_instance:updateItems()
+							end
+
+							UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
+								self:requestTopIndicatorRefresh()
+							end)
+						end,
+					},
+
+					{
+						text = _("Bottom-left pages left"),
+
+						checked_func = function()
+							return self:showsFooterLeft()
+						end,
+
+						callback = function(touchmenu_instance)
+							if not self:isEnabled() then
+								return
+							end
+
+							self:toggleShowFooterLeft()
+
+							if touchmenu_instance and touchmenu_instance.updateItems then
+								touchmenu_instance:updateItems()
+							end
+
+							UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
+								self:requestBottomIndicatorRefresh()
+							end)
+						end,
+					},
+
+					{
+						text = _("Reading percentage"),
+
+						checked_func = function()
+							return self:showsReadPercentage()
+						end,
+
+						callback = function(touchmenu_instance)
+							if not self:isEnabled() then
+								return
+							end
+
+							self:toggleShowReadPercentage()
+
+							if touchmenu_instance and touchmenu_instance.updateItems then
+								touchmenu_instance:updateItems()
+							end
+
+							UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
+								self:requestBottomIndicatorRefresh()
+							end)
+						end,
+					},
+				},
+			},
+
+			{
 				text_func = function()
 					if self.footer_left_mode == "book" then
 						return _("Bottom-left info: pages left in book")
@@ -407,13 +720,13 @@ function ReaderHeaderFooter:addToMainMenu(menu_items)
 					return _("Bottom-left info: pages left in chapter")
 				end,
 
-				-- Keep visible but disabled when the plugin is off.
+				-- Keep visible but disabled when the bottom-left footer is hidden.
 				enabled_func = function()
-					return self:isEnabled()
+					return self:isEnabled() and self:showsFooterLeft()
 				end,
 
 				callback = function(touchmenu_instance)
-					if not self:isEnabled() then
+					if not self:isEnabled() or not self:showsFooterLeft() then
 						return
 					end
 
@@ -687,6 +1000,10 @@ function ReaderHeaderFooter:isReaderWindowOnTop()
 	return UIManager:getTopmostVisibleWidget() == reader_widget
 end
 
+function ReaderHeaderFooter:hasDeferredIndicatorRefresh()
+	return self.deferred_top_refresh or self.deferred_bottom_refresh
+end
+
 function ReaderHeaderFooter:deferIndicatorRefresh(which)
 	if which == "top" then
 		self.deferred_top_refresh = true
@@ -701,12 +1018,16 @@ function ReaderHeaderFooter:deferIndicatorRefresh(which)
 end
 
 function ReaderHeaderFooter:scheduleDeferredRefreshCheck()
-	if self.deferred_refresh_fn then
+	if self.deferred_refresh_fn or not self:hasDeferredIndicatorRefresh() then
 		return
 	end
 
 	self.deferred_refresh_fn = function()
 		self.deferred_refresh_fn = nil
+
+		if not self:hasDeferredIndicatorRefresh() then
+			return
+		end
 
 		if not self.ui or not self.ui.document then
 			self.deferred_top_refresh = false
@@ -864,15 +1185,42 @@ function ReaderHeaderFooter:rememberCurrentIndicatorState()
 	self.last_charging = power.charging
 end
 
+function ReaderHeaderFooter:shouldWatchClock()
+	return self:isEnabled() and self:showsClock()
+end
+
+function ReaderHeaderFooter:shouldWatchBattery()
+	return self:isEnabled() and Device:hasBattery() and self:showsBatteryStatus()
+end
+
+function ReaderHeaderFooter:refreshIndicatorWatchers()
+	if self:shouldWatchClock() then
+		self:startClockWatcher()
+	else
+		self:stopClockWatcher()
+	end
+
+	if self:shouldWatchBattery() then
+		self:startBatteryWatcher()
+	else
+		self:stopBatteryWatcher()
+	end
+end
+
+function ReaderHeaderFooter:stopIndicatorWatchers()
+	self:stopClockWatcher()
+	self:stopBatteryWatcher()
+end
+
 function ReaderHeaderFooter:startClockWatcher()
-	if self.clock_refresh_fn then
+	if self.clock_refresh_fn or not self:shouldWatchClock() then
 		return
 	end
 
 	self.clock_refresh_fn = function()
 		self.clock_refresh_fn = nil
 
-		if not self.ui or not self.ui.document or not self:isEnabled() then
+		if not self.ui or not self.ui.document or not self:shouldWatchClock() then
 			return
 		end
 
@@ -898,14 +1246,14 @@ function ReaderHeaderFooter:stopClockWatcher()
 end
 
 function ReaderHeaderFooter:startBatteryWatcher()
-	if self.battery_check_fn then
+	if self.battery_check_fn or not self:shouldWatchBattery() then
 		return
 	end
 
 	self.battery_check_fn = function()
 		self.battery_check_fn = nil
 
-		if not self.ui or not self.ui.document or not self:isEnabled() then
+		if not self.ui or not self.ui.document or not self:shouldWatchBattery() then
 			return
 		end
 
@@ -931,7 +1279,7 @@ function ReaderHeaderFooter:stopBatteryWatcher()
 end
 
 function ReaderHeaderFooter:onNetworkConnected()
-	if not self:isEnabled() then
+	if not self:isEnabled() or not self:showsWifi() then
 		return
 	end
 
@@ -943,7 +1291,7 @@ function ReaderHeaderFooter:onNetworkConnected()
 end
 
 function ReaderHeaderFooter:onNetworkDisconnected()
-	if not self:isEnabled() then
+	if not self:isEnabled() or not self:showsWifi() then
 		return
 	end
 
@@ -955,7 +1303,7 @@ function ReaderHeaderFooter:onNetworkDisconnected()
 end
 
 function ReaderHeaderFooter:onCharging()
-	if not self:isEnabled() then
+	if not self:isEnabled() or not self:showsBatteryStatus() then
 		return
 	end
 
@@ -967,7 +1315,7 @@ function ReaderHeaderFooter:onCharging()
 end
 
 function ReaderHeaderFooter:onNotCharging()
-	if not self:isEnabled() then
+	if not self:isEnabled() or not self:showsBatteryStatus() then
 		return
 	end
 
@@ -1009,22 +1357,22 @@ function ReaderHeaderFooter:onReaderReady()
 
 	self:rememberCurrentIndicatorState()
 
-	if self:isEnabled() then
-		self:startClockWatcher()
-		self:startBatteryWatcher()
-	end
+	self:refreshIndicatorWatchers()
 end
 
 function ReaderHeaderFooter:onCloseDocument()
-	self:stopClockWatcher()
-	self:stopBatteryWatcher()
+	self:stopIndicatorWatchers()
+	self:stopDeferredRefreshCheck()
+end
+
+function ReaderHeaderFooter:onSuspend()
+	self:stopIndicatorWatchers()
 	self:stopDeferredRefreshCheck()
 end
 
 function ReaderHeaderFooter:onResume()
 	if not self:isEnabled() then
-		self:stopClockWatcher()
-		self:stopBatteryWatcher()
+		self:stopIndicatorWatchers()
 		self:stopDeferredRefreshCheck()
 		return
 	end
@@ -1039,17 +1387,22 @@ function ReaderHeaderFooter:onResume()
 	self.last_battery_level = power.level
 	self.last_charging = power.charging
 
+	local battery_changed = old_battery ~= self.last_battery_level or old_charging ~= self.last_charging
+
 	if
-		old_wifi ~= self.last_wifi_on
-		or old_battery ~= self.last_battery_level
-		or old_charging ~= self.last_charging
+		(not self:hasRightTopIndicatorsEnabled())
+		or (self:showsWifi() and old_wifi ~= self.last_wifi_on)
+		or self:showsClock()
+		or (self:showsBatteryStatus() and battery_changed)
 	then
 		self:requestTopIndicatorRefresh()
 	end
 
-	self:startClockWatcher()
-	self:startBatteryWatcher()
-	self:scheduleDeferredRefreshCheck()
+	self:refreshIndicatorWatchers()
+
+	if self:hasDeferredIndicatorRefresh() then
+		self:scheduleDeferredRefreshCheck()
+	end
 end
 
 function ReaderHeaderFooter:onPageUpdate(pageno)
@@ -1133,10 +1486,42 @@ end
 
 function ReaderHeaderFooter:getAuthor()
 	if self.ui and self.ui.doc_props then
-		return self.ui.doc_props.authors or self.ui.doc_props.author or _("Unknown")
+		local authors = self.ui.doc_props.authors or self.ui.doc_props.author
+
+		if type(authors) == "table" then
+			return table.concat(authors, ", ")
+		end
+
+		return authors or _("Unknown")
 	end
 
 	return _("Unknown")
+end
+
+function ReaderHeaderFooter:getPrimaryAuthor()
+	local author = self:getAuthor()
+
+	if not author or author == "" or author == _("Unknown") then
+		return ""
+	end
+
+	-- KOReader metadata may expose multiple authors as a comma/semicolon list.
+	-- The fallback header only needs the primary author to stay compact.
+	local primary = author:match("^%s*([^,;&]+)") or author
+	primary = primary:gsub("%s+$", "")
+
+	return primary
+end
+
+function ReaderHeaderFooter:getBookTitleWithPrimaryAuthor()
+	local title = self:getTitle()
+	local author = self:getPrimaryAuthor()
+
+	if author == "" then
+		return title
+	end
+
+	return string.format("%s - %s", author, title)
 end
 
 function ReaderHeaderFooter:getChapterTitle(pageno)
@@ -1147,6 +1532,44 @@ function ReaderHeaderFooter:getChapterTitle(pageno)
 	return safe_call(function()
 		return self.ui.toc:getTocTitleByPage(pageno)
 	end, "") or ""
+end
+
+function ReaderHeaderFooter:getChapterSubtitle(pageno)
+	if not self.ui or not self.ui.toc then
+		return ""
+	end
+
+	local subtitle = safe_call(function()
+		if self.ui.toc.getTocSubtitleByPage then
+			return self.ui.toc:getTocSubtitleByPage(pageno)
+		end
+	end, "") or ""
+
+	if subtitle ~= "" then
+		return subtitle
+	end
+
+	return safe_call(function()
+		if self.ui.toc.getTocSubTitleByPage then
+			return self.ui.toc:getTocSubTitleByPage(pageno)
+		end
+	end, "") or ""
+end
+
+function ReaderHeaderFooter:getChapterSubtitleStatus()
+	local pageno = self:getCurrentPage()
+	local title = self:getChapterTitle(pageno)
+	local subtitle = self:getChapterSubtitle(pageno)
+
+	if title == "" then
+		return subtitle
+	end
+
+	if subtitle == "" or subtitle == title then
+		return title
+	end
+
+	return string.format("%s - %s", title, subtitle)
 end
 
 function ReaderHeaderFooter:isChapterStart(pageno)
@@ -1228,7 +1651,7 @@ end
 -- ============================================================================
 
 function ReaderHeaderFooter:getBatteryText()
-	if not Device:hasBattery() then
+	if not self:showsBatteryStatus() or not Device:hasBattery() then
 		return ""
 	end
 
@@ -1257,23 +1680,52 @@ function ReaderHeaderFooter:getBatteryText()
 		return powerd:getBatterySymbol(charged, charging, level)
 	end, "")
 
-	return string.format("%s %d%%", icon, level)
+	if self:showsBatteryPercentage() then
+		return string.format("%s %d%%", icon, level)
+	end
+
+	return icon
 end
 
 function ReaderHeaderFooter:getRightTopStatus()
-	local wifi_icon = self:getWifiState() and " • " or ""
-	local time = os.date("%H:%M")
-	local battery = self:getBatteryText()
+	local pageno = self:getCurrentPage()
 
-	if battery == "" then
-		return string.format("%s%s", wifi_icon, time)
+	if not self:hasRightTopIndicatorsEnabled() then
+		if self:isChapterStart(pageno) then
+			return ""
+		end
+
+		return self:getChapterSubtitleStatus()
 	end
 
-	return string.format("%s%s • %s", wifi_icon, time, battery)
+	local items = {}
+
+	if self:showsWifi() and self:getWifiState() then
+		table.insert(items, "")
+	end
+
+	if self:showsClock() then
+		table.insert(items, os.date("%H:%M"))
+	end
+
+	local battery = self:getBatteryText()
+	if battery ~= "" then
+		table.insert(items, battery)
+	end
+
+	return table.concat(items, " • ")
 end
 
 function ReaderHeaderFooter:getLeftTopStatus()
 	local pageno = self:getCurrentPage()
+
+	if not self:hasRightTopIndicatorsEnabled() then
+		if self:isChapterStart(pageno) then
+			return ""
+		end
+
+		return self:getBookTitleWithPrimaryAuthor()
+	end
 
 	if self:isChapterStart(pageno) then
 		return ""
@@ -1441,21 +1893,38 @@ function ReaderHeaderFooter:paintTo(bb, x, y)
 
 	local left_bound, right_bound = self:getContentHorizontalBounds()
 	local usable_w = right_bound - left_bound
+	local gap = Screen:scaleBySize(LAYOUT.left_right_gap)
 
-	-- Top right: Wi-Fi, clock, battery.
+	-- Top left/right: indicators, or book metadata + chapter when no right-side device indicator is enabled.
 	local rt_text = self:getRightTopStatus()
-	local rt_size = self:getTextSize(rt_text)
-	local rt_x = right_bound - rt_size.w
-	local rt_y = top_pad
-
-	self:clearTextArea(bb, rt_x, rt_y, rt_size.w, line_h)
-	self:drawText(bb, rt_x, rt_y, rt_text)
-
-	-- Top left: chapter / author-title, hidden at chapter start.
 	local lt_text = self:getLeftTopStatus()
+	local rt_size = { w = 0, h = line_h }
+
+	if rt_text ~= "" then
+		local max_right_w = usable_w
+
+		-- When the right side falls back to chapter information, reserve room
+		-- for book metadata on the left if it is visible.
+		if not self:hasRightTopIndicatorsEnabled() and lt_text ~= "" then
+			max_right_w = math.max(40, math.floor(usable_w * 0.5))
+		end
+
+		rt_text = self:fitTextToWidth(rt_text, max_right_w)
+		rt_size = self:getTextSize(rt_text)
+
+		local rt_x = right_bound - rt_size.w
+		local rt_y = top_pad
+
+		self:clearTextArea(bb, rt_x, rt_y, rt_size.w, line_h)
+		self:drawText(bb, rt_x, rt_y, rt_text)
+	end
+
 	if lt_text ~= "" then
-		local gap = Screen:scaleBySize(LAYOUT.left_right_gap)
-		local max_left_w = math.max(40, usable_w - rt_size.w - gap)
+		local max_left_w = usable_w
+
+		if rt_size.w > 0 then
+			max_left_w = math.max(40, usable_w - rt_size.w - gap)
+		end
 
 		lt_text = self:fitTextToWidth(lt_text, max_left_w)
 		local lt_size = self:getTextSize(lt_text)
@@ -1464,24 +1933,34 @@ function ReaderHeaderFooter:paintTo(bb, x, y)
 		self:drawText(bb, left_bound, top_pad, lt_text)
 	end
 
-	-- Bottom left: pages left in chapter or book, configurable from plugin menu.
-	local lb_text = self:getLeftBottomStatus()
-	lb_text = self:fitTextToWidth(lb_text, math.floor(usable_w * 0.6))
-
-	local lb_size = self:getTextSize(lb_text)
 	local lb_y = screen_h - line_h - bottom_pad
+	local rb_size = { w = 0, h = line_h }
 
-	self:clearTextArea(bb, left_bound, lb_y, lb_size.w, line_h)
-	self:drawText(bb, left_bound, lb_y, lb_text)
+	-- Bottom right: optional read percentage.
+	if self:showsReadPercentage() then
+		local rb_text = string.format("%d%%", math.floor(self:getPercentageRead()))
+		rb_size = self:getTextSize(rb_text)
+		local rb_x = right_bound - rb_size.w
 
-	-- Bottom right: read percentage.
-	local rb_text = string.format("%d%%", math.floor(self:getPercentageRead()))
-	local rb_size = self:getTextSize(rb_text)
-	local rb_x = right_bound - rb_size.w
-	local rb_y = lb_y
+		self:clearTextArea(bb, rb_x, lb_y, rb_size.w, line_h)
+		self:drawText(bb, rb_x, lb_y, rb_text)
+	end
 
-	self:clearTextArea(bb, rb_x, rb_y, rb_size.w, line_h)
-	self:drawText(bb, rb_x, rb_y, rb_text)
+	-- Bottom left: optional pages left in chapter or book.
+	if self:showsFooterLeft() then
+		local lb_text = self:getLeftBottomStatus()
+		local max_left_w = usable_w
+
+		if rb_size.w > 0 then
+			max_left_w = math.max(40, usable_w - rb_size.w - gap)
+		end
+
+		lb_text = self:fitTextToWidth(lb_text, max_left_w)
+		local lb_size = self:getTextSize(lb_text)
+
+		self:clearTextArea(bb, left_bound, lb_y, lb_size.w, line_h)
+		self:drawText(bb, left_bound, lb_y, lb_text)
+	end
 end
 
 return ReaderHeaderFooter
