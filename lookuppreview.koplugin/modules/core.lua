@@ -52,6 +52,19 @@ return function(ctx)
 		return plugin:refreshVisibleCards()
 	end
 
+	local function applyDictionaryHtmlMode(plugin, mode)
+		plugin:setDictionaryHtmlMode(mode)
+		local state = plugin.current_state
+		if state then
+			state.dictionary_payload = nil
+			state.dictionary_payload_cache = nil
+			if plugin.updateDictionaryPayload then
+				plugin:updateDictionaryPayload(state, state.dictionary_index)
+			end
+		end
+		return plugin:refreshVisibleCards()
+	end
+
 	function LookupPreview:init()
 		self.current_popup = nil
 		self.current_state = nil
@@ -174,6 +187,34 @@ return function(ctx)
 							end,
 							callback = function()
 								return applyOnlineCardLoadMode(self, ONLINE_CARD_LOAD_MANUAL_ONLY)
+							end,
+						},
+					},
+				},
+				{
+					text_func = function()
+						local mode = self:useFastRawDictionaryHtml() and _("Fast / Raw") or _("Formatted")
+						return string.format("%s: %s", _("Dictionary HTML"), mode)
+					end,
+					sub_item_table = {
+						{
+							text = _("Formatted"),
+							radio = true,
+							checked_func = function()
+								return not self:useFastRawDictionaryHtml()
+							end,
+							callback = function()
+								return applyDictionaryHtmlMode(self, DICTIONARY_HTML_FORMATTED)
+							end,
+						},
+						{
+							text = _("Fast / Raw"),
+							radio = true,
+							checked_func = function()
+								return self:useFastRawDictionaryHtml()
+							end,
+							callback = function()
+								return applyDictionaryHtmlMode(self, DICTIONARY_HTML_FAST_RAW)
 							end,
 						},
 					},
@@ -314,6 +355,29 @@ return function(ctx)
 			mode = ONLINE_CARD_LOAD_AUTOMATIC
 		end
 		G_reader_settings:saveSetting(SETTING_ONLINE_CARD_LOAD_MODE, mode)
+	end
+
+	function LookupPreview:getDictionaryHtmlMode()
+		local mode = G_reader_settings:readSetting(SETTING_DICTIONARY_HTML_MODE) or DEFAULT_DICTIONARY_HTML_MODE
+		if mode == DICTIONARY_HTML_FAST_RAW or mode == "raw" then
+			return DICTIONARY_HTML_FAST_RAW
+		end
+		return DICTIONARY_HTML_FORMATTED
+	end
+
+	function LookupPreview:useFastRawDictionaryHtml()
+		return self:getDictionaryHtmlMode() == DICTIONARY_HTML_FAST_RAW
+	end
+
+	function LookupPreview:useRawDictionaryHtml()
+		return self:useFastRawDictionaryHtml()
+	end
+
+	function LookupPreview:setDictionaryHtmlMode(mode)
+		if mode ~= DICTIONARY_HTML_FAST_RAW then
+			mode = DICTIONARY_HTML_FORMATTED
+		end
+		G_reader_settings:saveSetting(SETTING_DICTIONARY_HTML_MODE, mode)
 	end
 
 	function LookupPreview:refreshVisibleCards()

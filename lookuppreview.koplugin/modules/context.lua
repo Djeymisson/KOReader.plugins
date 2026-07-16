@@ -113,6 +113,10 @@ DEFAULT_SIDE_PREVIEW_MODE = SIDE_PREVIEW_FULL_CARDS
 ONLINE_CARD_LOAD_AUTOMATIC = "automatic"
 ONLINE_CARD_LOAD_MANUAL_ONLY = "manual_only"
 DEFAULT_ONLINE_CARD_LOAD_MODE = ONLINE_CARD_LOAD_AUTOMATIC
+
+DICTIONARY_HTML_FORMATTED = "formatted"
+DICTIONARY_HTML_FAST_RAW = "fast_raw"
+DEFAULT_DICTIONARY_HTML_MODE = DICTIONARY_HTML_FORMATTED
 SIDE_TAB_HEIGHT = scaleBySize(28)
 SIDE_TAB_GAP = scaleBySize(0)
 SIDE_TAB_PADDING_H = scaleBySize(8)
@@ -159,6 +163,7 @@ SETTING_ENABLED = "lookuppreview_enabled"
 SETTING_CARD_ROUNDED = "lookuppreview_card_rounded"
 SETTING_SIDE_PREVIEW_MODE = "lookuppreview_side_preview_mode"
 SETTING_ONLINE_CARD_LOAD_MODE = "lookuppreview_online_card_load_mode"
+SETTING_DICTIONARY_HTML_MODE = "lookuppreview_dictionary_html_mode"
 SETTING_WIKI_LANG = "lookuppreview_wikipedia_lang"
 SETTING_LEFT_ACTION = "lookuppreview_dictionary_left_action"
 SETTING_TRANSLATION_SHOW_SOURCE = "lookuppreview_translation_show_source"
@@ -273,6 +278,21 @@ a {
 }
 .lp-translation {
     font-size: 1em;
+}
+]]
+
+FAST_RAW_DICTIONARY_CSS = [[
+@page {
+    margin: 0;
+}
+body {
+    margin: 0;
+    padding: 0;
+    line-height: 1.3;
+    font-family: ']] .. UI_FONT_FACE .. [[';
+}
+a {
+    color: black;
 }
 ]]
 

@@ -74,9 +74,46 @@ return function(ctx)
 		return preview_results
 	end
 
-	local function buildDefinition(result)
+	local function getDictionaryHtmlModeForCache(self)
+		return self:useFastRawDictionaryHtml() and DICTIONARY_HTML_FAST_RAW or DICTIONARY_HTML_FORMATTED
+	end
+
+	local function getCacheKey(self)
+		local mode = getDictionaryHtmlModeForCache(self)
+		if mode == DICTIONARY_HTML_FAST_RAW then
+			return mode
+		end
+
+		local justify = G_reader_settings:nilOrTrue("dict_justify") and "1" or "0"
+		return mode .. "|" .. justify
+	end
+
+	local function buildFastRawDefinition(result)
+		local definition = tostring(result and result.definition or "")
+		if definition == "" then
+			return "<p>" .. htmlEscape(_("No definition.")) .. "</p>"
+		end
+		if looksLikeHtml(definition) then
+			return definition
+		end
+		return plainTextToHtml(definition)
+	end
+
+	local function getFastRawCss(result)
+		local css = FAST_RAW_DICTIONARY_CSS
+		if result and result.css and result.css ~= "" then
+			css = css .. "\n" .. result.css
+		end
+		return css
+	end
+
+	local function buildDefinitionUncached(self, result)
 		if result.no_result then
 			return "<p>" .. htmlEscape(_("No definition found.")) .. "</p>", FALLBACK_CSS
+		end
+
+		if self:useFastRawDictionaryHtml() then
+			return buildFastRawDefinition(result), getFastRawCss(result)
 		end
 
 		if hasDictionaryCss(result) then
@@ -84,6 +121,33 @@ return function(ctx)
 		end
 
 		return normalizeDictionaryPreviewHtml(result.definition), FALLBACK_CSS
+	end
+
+	local function buildDefinition(self, result)
+		result = result or {}
+		if result.no_result then
+			return buildDefinitionUncached(self, result)
+		end
+
+		local cache_key = getCacheKey(self)
+		local definition = tostring(result.definition or "")
+		local css_source = tostring(result.css or "")
+		local cache = result._lookuppreview_definition_cache
+		local cached = cache and cache[cache_key]
+		if cached and cached.definition == definition and cached.css_source == css_source then
+			return cached.html, cached.css
+		end
+
+		local html, css = buildDefinitionUncached(self, result)
+		cache = cache or {}
+		cache[cache_key] = {
+			definition = definition,
+			css_source = css_source,
+			html = html,
+			css = css,
+		}
+		result._lookuppreview_definition_cache = cache
+		return html, css
 	end
 
 	local function buildSubtitle(dict_name, result_index, result_count, no_result)
@@ -109,7 +173,7 @@ return function(ctx)
 
 		local shown_word = result.word or word or _("Dictionary")
 		local dict_name = result.no_result and _("Dictionary") or (result.dict or _("Dictionary"))
-		local definition_html, css = buildDefinition(result)
+		local definition_html, css = buildDefinition(self, result)
 
 		return {
 			page_type = PAGE_DICTIONARY,
