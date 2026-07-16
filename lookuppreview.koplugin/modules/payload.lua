@@ -50,6 +50,12 @@ return function(ctx)
 		return addDictionaryRuntimeFields(plugin, payload, state)
 	end
 
+	local function manualTranslationPayload(plugin, state, label, message)
+		local payload = plugin:makeLoadingPayload(_("Translate"), message, PAGE_TRANSLATION)
+		payload.card_buttons = plugin:buildTranslationManualLoadButtons(state, label)
+		return payload
+	end
+
 	local function getTranslationPayload(plugin, state, is_active)
 		if state.translation_payload then
 			if not is_active then
@@ -62,10 +68,22 @@ return function(ctx)
 		end
 
 		if state.translation_error then
-			return textPayload(_("Translate"), state.search_text, state.translation_error, PAGE_TRANSLATION)
+			local payload = textPayload(_("Translate"), state.search_text, state.translation_error, PAGE_TRANSLATION)
+			if is_active then
+				payload.card_buttons = plugin:buildTranslationManualLoadButtons(state, _("Retry"))
+			end
+			return payload
 		end
 
 		if is_active then
+			if plugin:useManualOnlineCardLoading() then
+				return manualTranslationPayload(
+					plugin,
+					state,
+					_("Load"),
+					_("Tap Load to query the translation service.")
+				)
+			end
 			return plugin:makeLoadingPayload(_("Translate"), _("Querying translation service…"), PAGE_TRANSLATION)
 		end
 
@@ -76,6 +94,13 @@ return function(ctx)
 		return function()
 			return plugin:showWikipediaLanguageMenu(state)
 		end
+	end
+
+	local function manualWikipediaPayload(plugin, state, label, message)
+		local payload = plugin:makeLoadingPayload(_("Wikipedia"), message, PAGE_WIKIPEDIA)
+		payload.subtitle_callback = getWikipediaLanguageCallback(plugin, state)
+		payload.card_buttons = plugin:buildWikipediaManualLoadButtons(state, label)
+		return payload
 	end
 
 	local function addWikipediaLanguageButton(plugin, payload, state)
@@ -104,12 +129,16 @@ return function(ctx)
 			)
 
 			if is_active then
-				addWikipediaLanguageButton(plugin, payload, state)
+				payload.card_buttons = plugin:buildWikipediaManualLoadButtons(state, _("Retry"))
 			end
 			return payload
 		end
 
 		if is_active then
+			if plugin:useManualOnlineCardLoading() then
+				return manualWikipediaPayload(plugin, state, _("Load"), _("Tap Load to query Wikipedia."))
+			end
+
 			local payload = plugin:makeLoadingPayload(_("Wikipedia"), _("Querying Wikipedia…"), PAGE_WIKIPEDIA)
 			payload.subtitle_callback = getWikipediaLanguageCallback(plugin, state)
 			return addWikipediaLanguageButton(plugin, payload, state)

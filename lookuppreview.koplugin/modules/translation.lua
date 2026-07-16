@@ -41,6 +41,10 @@ return function(ctx)
 	end
 
 	local function scheduleTranslationReload(plugin, state)
+		if not plugin:useAutomaticOnlineCardLoading() then
+			return
+		end
+
 		UIManager:scheduleIn(TRANSLATION_RELOAD_DELAY, function()
 			plugin:loadTranslation(state)
 		end)
@@ -180,6 +184,30 @@ return function(ctx)
 		}
 
 		return buttons
+	end
+
+	function LookupPreview:buildTranslationManualLoadButtons(state, label)
+		return {
+			{
+				spec = { text = label or _("Load") },
+				callback = function()
+					return self:requestTranslationLoad(state)
+				end,
+			},
+		}
+	end
+
+	function LookupPreview:requestTranslationLoad(state)
+		state = state or self.current_state
+		if not state or state ~= self.current_state then
+			return true
+		end
+
+		state.translation_payload = nil
+		state.translation_error = nil
+		state.translation_loading = nil
+		state.translation_text_main = nil
+		return self:loadTranslation(state, true)
 	end
 
 	function LookupPreview:copyMainTranslation(text_main)
@@ -329,9 +357,12 @@ return function(ctx)
 		return tostring(lang or "?")
 	end
 
-	function LookupPreview:loadTranslation(state)
+	function LookupPreview:loadTranslation(state, force)
 		if not state or state ~= self.current_state then
 			return true
+		end
+		if not force and self:useManualOnlineCardLoading() then
+			return self:refreshCurrentPage(PAGE_TRANSLATION)
 		end
 		if state.translation_loading or state.translation_payload or state.translation_error then
 			return true

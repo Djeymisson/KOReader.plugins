@@ -139,9 +139,11 @@ return function(ctx)
 
 		resetWikipediaSearchState(state, lang)
 		self:showCarousel(state, PAGE_WIKIPEDIA, true)
-		UIManager:scheduleIn(0.05, function()
-			self:loadWikipedia(state)
-		end)
+		if self:useAutomaticOnlineCardLoading() then
+			UIManager:scheduleIn(0.05, function()
+				self:loadWikipedia(state)
+			end)
+		end
 		return true
 	end
 
@@ -283,6 +285,42 @@ return function(ctx)
 				end,
 			},
 		}
+	end
+
+	function LookupPreview:buildWikipediaManualLoadButtons(state, label)
+		state = state or self.current_state
+		return {
+			{
+				spec = { text = label or _("Load") },
+				weight = 1.6,
+				callback = function()
+					return self:requestWikipediaLoad(state)
+				end,
+			},
+			{
+				spec = { text = tostring((state and state.wikipedia_lang) or self:getWikipediaLang()):upper() },
+				weight = 0.8,
+				callback = function()
+					return self:showWikipediaLanguageMenu(state)
+				end,
+			},
+		}
+	end
+
+	function LookupPreview:requestWikipediaLoad(state)
+		state = state or self.current_state
+		if not state or state ~= self.current_state then
+			return true
+		end
+
+		state.wikipedia_payload = nil
+		state.wikipedia_error = nil
+		state.wikipedia_loading = nil
+		state.wikipedia_full_loading = nil
+		state.wikipedia_pages = nil
+		state.wikipedia_count = nil
+		state.wikipedia_index = 1
+		return self:loadWikipedia(state, true)
 	end
 
 	function LookupPreview:buildWikipediaButtons(state)
@@ -490,11 +528,17 @@ return function(ctx)
 		return getBestPage(pages)
 	end
 
-	function LookupPreview:loadWikipedia(state)
+	function LookupPreview:loadWikipedia(state, force)
 		if state ~= self.current_state then
 			return true
 		end
-		if not state or state.wikipedia_loading or state.wikipedia_payload or state.wikipedia_error then
+		if not state then
+			return true
+		end
+		if not force and self:useManualOnlineCardLoading() then
+			return self:refreshCurrentPage(PAGE_WIKIPEDIA)
+		end
+		if state.wikipedia_loading or state.wikipedia_payload or state.wikipedia_error then
 			return true
 		end
 

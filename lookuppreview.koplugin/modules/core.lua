@@ -10,6 +10,10 @@ return function(ctx)
 	end
 
 	local function schedulePreviewLoad(plugin, state, page_index)
+		if not plugin:useAutomaticOnlineCardLoading() then
+			return
+		end
+
 		if page_index == PAGE_TRANSLATION then
 			UIManager:scheduleIn(0.05, function()
 				plugin:loadTranslation(state)
@@ -40,6 +44,11 @@ return function(ctx)
 
 	local function applySidePreviewMode(plugin, mode)
 		plugin:setSidePreviewMode(mode)
+		return plugin:refreshVisibleCards()
+	end
+
+	local function applyOnlineCardLoadMode(plugin, mode)
+		plugin:setOnlineCardLoadMode(mode)
 		return plugin:refreshVisibleCards()
 	end
 
@@ -137,6 +146,34 @@ return function(ctx)
 							end,
 							callback = function()
 								return applySidePreviewMode(self, SIDE_PREVIEW_TABS)
+							end,
+						},
+					},
+				},
+				{
+					text_func = function()
+						local mode = self:useManualOnlineCardLoading() and _("Manual only") or _("Automatic")
+						return string.format("%s: %s", _("Online card loading"), mode)
+					end,
+					sub_item_table = {
+						{
+							text = _("Automatic"),
+							radio = true,
+							checked_func = function()
+								return self:useAutomaticOnlineCardLoading()
+							end,
+							callback = function()
+								return applyOnlineCardLoadMode(self, ONLINE_CARD_LOAD_AUTOMATIC)
+							end,
+						},
+						{
+							text = _("Manual only"),
+							radio = true,
+							checked_func = function()
+								return self:useManualOnlineCardLoading()
+							end,
+							callback = function()
+								return applyOnlineCardLoadMode(self, ONLINE_CARD_LOAD_MANUAL_ONLY)
 							end,
 						},
 					},
@@ -254,6 +291,29 @@ return function(ctx)
 			mode = SIDE_PREVIEW_FULL_CARDS
 		end
 		G_reader_settings:saveSetting(SETTING_SIDE_PREVIEW_MODE, mode)
+	end
+
+	function LookupPreview:getOnlineCardLoadMode()
+		local mode = G_reader_settings:readSetting(SETTING_ONLINE_CARD_LOAD_MODE) or DEFAULT_ONLINE_CARD_LOAD_MODE
+		if mode == ONLINE_CARD_LOAD_MANUAL_ONLY then
+			return ONLINE_CARD_LOAD_MANUAL_ONLY
+		end
+		return ONLINE_CARD_LOAD_AUTOMATIC
+	end
+
+	function LookupPreview:useAutomaticOnlineCardLoading()
+		return self:getOnlineCardLoadMode() == ONLINE_CARD_LOAD_AUTOMATIC
+	end
+
+	function LookupPreview:useManualOnlineCardLoading()
+		return self:getOnlineCardLoadMode() == ONLINE_CARD_LOAD_MANUAL_ONLY
+	end
+
+	function LookupPreview:setOnlineCardLoadMode(mode)
+		if mode ~= ONLINE_CARD_LOAD_MANUAL_ONLY then
+			mode = ONLINE_CARD_LOAD_AUTOMATIC
+		end
+		G_reader_settings:saveSetting(SETTING_ONLINE_CARD_LOAD_MODE, mode)
 	end
 
 	function LookupPreview:refreshVisibleCards()
