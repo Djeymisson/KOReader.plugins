@@ -106,6 +106,15 @@ CARD_BORDER_COLOR = Blitbuffer.COLOR_BLACK
 CARD_RADIUS = nil
 CARD_ROUNDED_RADIUS = scaleBySize(14)
 
+SIDE_PREVIEW_FULL_CARDS = "full_cards"
+SIDE_PREVIEW_TABS = "tabs"
+DEFAULT_SIDE_PREVIEW_MODE = SIDE_PREVIEW_FULL_CARDS
+SIDE_TAB_HEIGHT = scaleBySize(28)
+SIDE_TAB_GAP = scaleBySize(0)
+SIDE_TAB_PADDING_H = scaleBySize(8)
+SIDE_TAB_PADDING_V = scaleBySize(4)
+SIDE_TAB_BORDER_SIZE = Size.border.thin
+
 CARD_SHADOW_ENABLED = false
 CARD_SHADOW_OFFSET = scaleBySize(3)
 CARD_SHADOW_COLOR = Blitbuffer.COLOR_DARK_GRAY
@@ -144,6 +153,7 @@ EMPTY_TEXT = "—"
 -- Settings ------------------------------------------------------------------
 SETTING_ENABLED = "lookuppreview_enabled"
 SETTING_CARD_ROUNDED = "lookuppreview_card_rounded"
+SETTING_SIDE_PREVIEW_MODE = "lookuppreview_side_preview_mode"
 SETTING_WIKI_LANG = "lookuppreview_wikipedia_lang"
 SETTING_LEFT_ACTION = "lookuppreview_dictionary_left_action"
 SETTING_TRANSLATION_SHOW_SOURCE = "lookuppreview_translation_show_source"

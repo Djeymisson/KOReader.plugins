@@ -38,6 +38,11 @@ return function(ctx)
 		return plugin:refreshVisibleCards()
 	end
 
+	local function applySidePreviewMode(plugin, mode)
+		plugin:setSidePreviewMode(mode)
+		return plugin:refreshVisibleCards()
+	end
+
 	function LookupPreview:init()
 		self.current_popup = nil
 		self.current_state = nil
@@ -104,6 +109,34 @@ return function(ctx)
 							end,
 							callback = function()
 								return applyCardStyleMode(self, true)
+							end,
+						},
+					},
+				},
+				{
+					text_func = function()
+						local mode = self:useTabsMode() and _("Tabs") or _("Full cards")
+						return string.format("%s: %s", _("Side card previews"), mode)
+					end,
+					sub_item_table = {
+						{
+							text = _("Full cards"),
+							radio = true,
+							checked_func = function()
+								return not self:useTabsMode()
+							end,
+							callback = function()
+								return applySidePreviewMode(self, SIDE_PREVIEW_FULL_CARDS)
+							end,
+						},
+						{
+							text = _("Tabs"),
+							radio = true,
+							checked_func = function()
+								return self:useTabsMode()
+							end,
+							callback = function()
+								return applySidePreviewMode(self, SIDE_PREVIEW_TABS)
 							end,
 						},
 					},
@@ -202,6 +235,25 @@ return function(ctx)
 
 	function LookupPreview:getCardRadius()
 		return self:useRoundedCards() and CARD_ROUNDED_RADIUS or CARD_RADIUS
+	end
+
+	function LookupPreview:getSidePreviewMode()
+		local mode = G_reader_settings:readSetting(SETTING_SIDE_PREVIEW_MODE) or DEFAULT_SIDE_PREVIEW_MODE
+		if mode ~= SIDE_PREVIEW_TABS then
+			return SIDE_PREVIEW_FULL_CARDS
+		end
+		return mode
+	end
+
+	function LookupPreview:useTabsMode()
+		return self:getSidePreviewMode() == SIDE_PREVIEW_TABS
+	end
+
+	function LookupPreview:setSidePreviewMode(mode)
+		if mode ~= SIDE_PREVIEW_TABS then
+			mode = SIDE_PREVIEW_FULL_CARDS
+		end
+		G_reader_settings:saveSetting(SETTING_SIDE_PREVIEW_MODE, mode)
 	end
 
 	function LookupPreview:refreshVisibleCards()
