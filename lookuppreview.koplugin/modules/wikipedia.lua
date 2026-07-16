@@ -7,6 +7,43 @@ return function(ctx)
 		return lang ~= "" and lang or "en"
 	end
 
+	local function isNetworkUnavailable()
+		local ok, NetworkMgr = pcall(require, "ui/network/manager")
+		if not ok or type(NetworkMgr) ~= "table" then
+			return false
+		end
+
+		local probes = { "isOnline", "isConnected", "isWifiConnected", "isWifiOn" }
+		for _, name in ipairs(probes) do
+			local fn = NetworkMgr[name]
+			if type(fn) == "function" then
+				local probe_ok, available = pcall(fn, NetworkMgr)
+				if probe_ok and available ~= nil then
+					return not available
+				end
+			end
+		end
+
+		return false
+	end
+
+	local function onlineLookupError(err, fallback)
+		local message = tostring(err or "")
+		local lower = message:lower()
+		if
+			lower:find("network", 1, true)
+			or lower:find("connection", 1, true)
+			or lower:find("timeout", 1, true)
+			or lower:find("host", 1, true)
+			or lower:find("socket", 1, true)
+			or lower:find("dns", 1, true)
+		then
+			return _("Network unavailable.")
+		end
+
+		return message ~= "" and message or fallback
+	end
+
 	local function menuDimensions()
 		return Screen:getWidth() - Screen:scaleBySize(80), math.floor(Screen:getHeight() * 0.8)
 	end
@@ -480,14 +517,8 @@ return function(ctx)
 		state.wikipedia_payload = loading_payload
 		self:refreshCurrentPage(PAGE_WIKIPEDIA)
 
-		local NetworkMgr = require("ui/network/manager")
-		if
-			NetworkMgr:willRerunWhenOnline(function()
-				state.wikipedia_full_loading = false
-				self:loadFullWikipediaArticle(state)
-			end)
-		then
-			state.wikipedia_error = _("Waiting for network connection.")
+		if isNetworkUnavailable() then
+			state.wikipedia_error = _("Network unavailable.")
 			state.wikipedia_full_loading = false
 			return self:refreshCurrentPage(PAGE_WIKIPEDIA)
 		end
@@ -517,7 +548,7 @@ return function(ctx)
 		if not ok then
 			logger.warn("LookupPreview: full Wikipedia article lookup failed:", err)
 			resetWikipediaTrapWidget()
-			state.wikipedia_error = tostring(err or _("Wikipedia lookup failed."))
+			state.wikipedia_error = onlineLookupError(err, _("Wikipedia lookup failed."))
 		end
 
 		state.wikipedia_full_loading = false
@@ -550,14 +581,8 @@ return function(ctx)
 			return self:refreshCurrentPage(PAGE_WIKIPEDIA)
 		end
 
-		local NetworkMgr = require("ui/network/manager")
-		if
-			NetworkMgr:willRerunWhenOnline(function()
-				state.wikipedia_loading = false
-				self:loadWikipedia(state)
-			end)
-		then
-			state.wikipedia_error = _("Waiting for network connection.")
+		if isNetworkUnavailable() then
+			state.wikipedia_error = _("Network unavailable.")
 			state.wikipedia_loading = false
 			return self:refreshCurrentPage(PAGE_WIKIPEDIA)
 		end
@@ -585,7 +610,7 @@ return function(ctx)
 		if not ok then
 			logger.warn("LookupPreview: Wikipedia lookup failed:", err)
 			resetWikipediaTrapWidget()
-			state.wikipedia_error = tostring(err or _("Wikipedia lookup failed."))
+			state.wikipedia_error = onlineLookupError(err, _("Wikipedia lookup failed."))
 		end
 
 		state.wikipedia_loading = false
