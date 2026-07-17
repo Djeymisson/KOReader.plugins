@@ -35,17 +35,29 @@ return function(ctx)
 
 	local PAGE_DOT_FACE = Font:getFace("cfont", math.max(14, (HEADER_BUTTON_FONT_SIZE or UI_FONT_SIZE or 20) - 5))
 	local BUTTON_ROW_SAFETY_WIDTH = math.max(1, Screen:scaleBySize(2))
+	local BASE_TAB_HEIGHT = SIDE_TAB_HEIGHT or HEADER_MENU_HEIGHT or Screen:scaleBySize(28)
+	local TAB_TOUCH_HEIGHT = BASE_TAB_HEIGHT + math.max(2, Screen:scaleBySize(6))
+	local TAB_TOUCH_PADDING_H = (SIDE_TAB_PADDING_H or 0) + math.max(2, Screen:scaleBySize(4))
+	local TAB_TOUCH_PADDING_V = (SIDE_TAB_PADDING_V or 0) + math.max(1, Screen:scaleBySize(1))
 	local TAB_INACTIVE_TOP_OFFSET = math.max(1, Screen:scaleBySize(3))
-	local TAB_LABEL_FACE = Font:getFace("cfont", math.max(13, (HEADER_MENU_FONT_SIZE or UI_FONT_SIZE or 20) - 1))
-	local TAB_COMPACT_MIN_WIDTH = math.max(Screen:scaleBySize(46), Screen:scaleBySize(1))
-	local TAB_COMPACT_EXTRA_PADDING_H = Screen:scaleBySize(10)
-	local TAB_LABEL_MAX_WIDTH = Screen:scaleBySize(160)
+	local TAB_LABEL_FACE = Font:getFace("cfont", math.max(14, HEADER_MENU_FONT_SIZE or UI_FONT_SIZE or 20))
+	local TAB_COMPACT_MIN_WIDTH = math.max(Screen:scaleBySize(58), Screen:scaleBySize(1))
+	local TAB_COMPACT_EXTRA_PADDING_H = Screen:scaleBySize(14)
+	local TAB_LABEL_MAX_WIDTH = Screen:scaleBySize(180)
+	local TAB_ROUNDED_RADIUS = math.max(2, Screen:scaleBySize(4))
 
 	local function getPopupCardRadius(popup)
 		if popup and type(popup.getCardRadius) == "function" then
 			return popup:getCardRadius()
 		end
 		return CARD_RADIUS
+	end
+
+	local function getRoundedTabRadius(card_radius)
+		if not card_radius or card_radius <= 0 then
+			return nil
+		end
+		return math.max(1, math.min(TAB_ROUNDED_RADIUS, math.floor(TAB_TOUCH_HEIGHT / 3)))
 	end
 
 	local function getRoundedTabInset(card_radius)
@@ -77,7 +89,7 @@ return function(ctx)
 			or SIDE_TAB_BORDER_SIZE
 		return math.max(
 			TAB_COMPACT_MIN_WIDTH,
-			label_width + 2 * SIDE_TAB_PADDING_H + 2 * border_size + TAB_COMPACT_EXTRA_PADDING_H
+			label_width + 2 * TAB_TOUCH_PADDING_H + 2 * border_size + TAB_COMPACT_EXTRA_PADDING_H
 		)
 	end
 
@@ -212,22 +224,26 @@ return function(ctx)
 	CardTabButton = InputContainer:extend({
 		text = nil,
 		width = nil,
-		height = SIDE_TAB_HEIGHT,
+		height = TAB_TOUCH_HEIGHT,
 		active = false,
+		radius = nil,
 		callback = nil,
 		show_parent = nil,
 	})
 
 	function CardTabButton:init()
 		local width = self.width or Screen:scaleBySize(80)
-		local height = self.height or SIDE_TAB_HEIGHT
+		local height = self.height or TAB_TOUCH_HEIGHT
 		local border_size = self.active and math.max(SIDE_TAB_BORDER_SIZE or 1, CARD_BORDER_SIZE or 1)
 			or SIDE_TAB_BORDER_SIZE
+		local radius = self.radius and math.max(0, self.radius) or 0
 		self.border_size = border_size
+		self.radius = radius
+		self.use_top_radius = radius > 0
 		self.top_offset = self.active and 0 or TAB_INACTIVE_TOP_OFFSET
 		self.frame_height = math.max(1, height - self.top_offset)
-		self.content_width = math.max(1, width - 2 * SIDE_TAB_PADDING_H - 2 * border_size)
-		self.content_height = math.max(1, self.frame_height - 2 * SIDE_TAB_PADDING_V - 2 * border_size)
+		self.content_width = math.max(1, width - 2 * TAB_TOUCH_PADDING_H - 2 * border_size)
+		self.content_height = math.max(1, self.frame_height - 2 * TAB_TOUCH_PADDING_V - 2 * border_size)
 
 		self.label = makeTextLabel(self.text or "", TAB_LABEL_FACE, self.content_width, self.active)
 		self.border_color = self.active and Blitbuffer.COLOR_BLACK or Blitbuffer.COLOR_GRAY
@@ -248,6 +264,37 @@ return function(ctx)
 			}),
 		})
 
+		if self.use_top_radius then
+			self.top_left_mask = LineWidget:new({
+				background = Blitbuffer.COLOR_WHITE,
+				dimen = Geom:new({ w = 1, h = 1 }),
+			})
+			self.top_right_mask = LineWidget:new({
+				background = Blitbuffer.COLOR_WHITE,
+				dimen = Geom:new({ w = 1, h = 1 }),
+			})
+			self.top_line = LineWidget:new({
+				background = self.border_color,
+				dimen = Geom:new({ w = 1, h = 1 }),
+			})
+			self.left_line = LineWidget:new({
+				background = self.border_color,
+				dimen = Geom:new({ w = 1, h = 1 }),
+			})
+			self.right_line = LineWidget:new({
+				background = self.border_color,
+				dimen = Geom:new({ w = 1, h = 1 }),
+			})
+			self.top_left_step = LineWidget:new({
+				background = self.border_color,
+				dimen = Geom:new({ w = 1, h = 1 }),
+			})
+			self.top_right_step = LineWidget:new({
+				background = self.border_color,
+				dimen = Geom:new({ w = 1, h = 1 }),
+			})
+		end
+
 		if self.active then
 			self.bottom_cover = LineWidget:new({
 				background = Blitbuffer.COLOR_WHITE,
@@ -267,12 +314,64 @@ return function(ctx)
 		return self.dimen
 	end
 
+	function CardTabButton:paintTopRoundedCorners(bb, x, y, width, frame_height)
+		if not self.use_top_radius then
+			return
+		end
+
+		local border_size = self.border_size or SIDE_TAB_BORDER_SIZE or 1
+		local radius =
+			math.max(border_size, math.min(self.radius or 0, math.floor(width / 2), math.floor(frame_height / 2)))
+		local mask_size = radius
+		local right_x = x + width - mask_size
+		local line_y = y + radius
+		local side_h = math.max(1, frame_height - radius)
+
+		self.top_left_mask.dimen = Geom:new({ x = x, y = y, w = mask_size, h = mask_size })
+		self.top_left_mask:paintTo(bb, x, y)
+
+		self.top_right_mask.dimen = Geom:new({ x = right_x, y = y, w = mask_size, h = mask_size })
+		self.top_right_mask:paintTo(bb, right_x, y)
+
+		self.top_line.dimen = Geom:new({
+			x = x + radius,
+			y = y,
+			w = math.max(1, width - 2 * radius),
+			h = border_size,
+		})
+		self.top_line:paintTo(bb, x + radius, y)
+
+		self.left_line.dimen = Geom:new({ x = x, y = line_y, w = border_size, h = side_h })
+		self.left_line:paintTo(bb, x, line_y)
+
+		self.right_line.dimen = Geom:new({
+			x = x + width - border_size,
+			y = line_y,
+			w = border_size,
+			h = side_h,
+		})
+		self.right_line:paintTo(bb, x + width - border_size, line_y)
+
+		local step_w = math.max(border_size, radius - border_size)
+		local step_y = y + border_size
+		self.top_left_step.dimen = Geom:new({ x = x + border_size, y = step_y, w = step_w, h = border_size })
+		self.top_left_step:paintTo(bb, x + border_size, step_y)
+
+		self.top_right_step.dimen = Geom:new({
+			x = x + width - border_size - step_w,
+			y = step_y,
+			w = step_w,
+			h = border_size,
+		})
+		self.top_right_step:paintTo(bb, x + width - border_size - step_w, step_y)
+	end
+
 	function CardTabButton:paintTo(bb, x, y)
 		x = x or (self.dimen and self.dimen.x) or 0
 		y = y or (self.dimen and self.dimen.y) or 0
 
 		local width = (self.dimen and self.dimen.w) or (self.width or Screen:scaleBySize(80))
-		local height = (self.dimen and self.dimen.h) or (self.height or SIDE_TAB_HEIGHT)
+		local height = (self.dimen and self.dimen.h) or (self.height or TAB_TOUCH_HEIGHT)
 		local top_offset = self.top_offset or 0
 		local frame_height = self.frame_height or math.max(1, height - top_offset)
 
@@ -292,6 +391,8 @@ return function(ctx)
 			end
 			self.frame:paintTo(bb, x, y + top_offset)
 		end
+
+		self:paintTopRoundedCorners(bb, x, y + top_offset, width, frame_height)
 
 		if self.bottom_cover then
 			local border_size = self.border_size or SIDE_TAB_BORDER_SIZE
@@ -579,7 +680,7 @@ return function(ctx)
 		self.side_tab_bounds = {}
 
 		self.side_tab_position = nil
-		self.tab_protrusion = self:useTabsMode() and math.max(0, SIDE_TAB_HEIGHT - SIDE_TAB_BORDER_SIZE) or 0
+		self.tab_protrusion = self:useTabsMode() and math.max(0, TAB_TOUCH_HEIGHT - SIDE_TAB_BORDER_SIZE) or 0
 		self.card_y = self.tab_protrusion
 		self.dimen = Geom:new({
 			x = 0,
@@ -656,9 +757,10 @@ return function(ctx)
 			return
 		end
 
-		local height = SIDE_TAB_HEIGHT
+		local height = TAB_TOUCH_HEIGHT
 		local y = 0
 		local card_radius = getPopupCardRadius(self.popup)
+		local tab_radius = getRoundedTabRadius(card_radius)
 		local tab_inset = getRoundedTabInset(card_radius)
 		local available_width = getTabAvailableWidth(self.card_width, tab_inset)
 		local x = active_x + tab_inset
@@ -693,6 +795,7 @@ return function(ctx)
 				width = spec.width,
 				height = height,
 				active = spec.active,
+				radius = tab_radius,
 				show_parent = self.popup,
 				callback = function()
 					return self.popup.plugin:switchToPage(spec.page_index)
@@ -988,7 +1091,7 @@ return function(ctx)
 		self.active_card = nil
 		self.active_container = nil
 
-		self.tab_protrusion = self:useTabsMode() and math.max(0, SIDE_TAB_HEIGHT - SIDE_TAB_BORDER_SIZE) or 0
+		self.tab_protrusion = self:useTabsMode() and math.max(0, TAB_TOUCH_HEIGHT - SIDE_TAB_BORDER_SIZE) or 0
 		self.card_y = self.tab_protrusion
 		if self.dimen then
 			self.dimen.h = self.card_height + self.tab_protrusion
@@ -1311,7 +1414,7 @@ return function(ctx)
 			}
 		end
 
-		local tab_protrusion = self:useTabsMode() and math.max(0, SIDE_TAB_HEIGHT - SIDE_TAB_BORDER_SIZE) or 0
+		local tab_protrusion = self:useTabsMode() and math.max(0, TAB_TOUCH_HEIGHT - SIDE_TAB_BORDER_SIZE) or 0
 		self.anchor_top = self:shouldAnchorTop(card_height + tab_protrusion)
 		local row, row_height = self:makeRow(card_width, card_height)
 		self.card_container = row
