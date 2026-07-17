@@ -40,7 +40,27 @@ return function(ctx)
 	local TAB_COMPACT_MIN_WIDTH = math.max(Screen:scaleBySize(46), Screen:scaleBySize(1))
 	local TAB_COMPACT_EXTRA_PADDING_H = Screen:scaleBySize(10)
 	local TAB_LABEL_MAX_WIDTH = Screen:scaleBySize(160)
-	local TAB_HEADER_GAP = math.max(SIDE_TAB_GAP or 0, Screen:scaleBySize(5))
+
+	local function getPopupCardRadius(popup)
+		if popup and type(popup.getCardRadius) == "function" then
+			return popup:getCardRadius()
+		end
+		return CARD_RADIUS
+	end
+
+	local function getRoundedTabInset(card_radius)
+		if not card_radius or card_radius <= 0 then
+			return 0
+		end
+		local max_inset = Screen:scaleBySize(18)
+		local inset = math.floor(card_radius * 0.75)
+		return math.max(CARD_BORDER_SIZE or 1, math.min(max_inset, inset))
+	end
+
+	local function getTabAvailableWidth(card_width, tab_inset)
+		return math.max(1, (card_width or 1) - (tab_inset or 0))
+	end
+
 	local function getTabLabel(page_index)
 		return PAGE_TITLES[page_index] or EMPTY_TEXT
 	end
@@ -53,9 +73,11 @@ return function(ctx)
 
 	local function getCompactTabWidth(text, active)
 		local label_width = getTabLabelWidth(text, active)
+		local border_size = active and math.max(SIDE_TAB_BORDER_SIZE or 1, CARD_BORDER_SIZE or 1)
+			or SIDE_TAB_BORDER_SIZE
 		return math.max(
 			TAB_COMPACT_MIN_WIDTH,
-			label_width + 2 * SIDE_TAB_PADDING_H + 2 * SIDE_TAB_BORDER_SIZE + TAB_COMPACT_EXTRA_PADDING_H
+			label_width + 2 * SIDE_TAB_PADDING_H + 2 * border_size + TAB_COMPACT_EXTRA_PADDING_H
 		)
 	end
 
@@ -75,28 +97,6 @@ return function(ctx)
 				dimen = Geom:new({
 					w = math.max(1, width - 2 * padding_h),
 					h = math.max(1, height - 2 * padding_v),
-				}),
-				label,
-			}),
-		})
-	end
-
-	local function makeSideTab(text, width, height, active)
-		local label = makeTextLabel(text, HEADER_MENU_FACE, math.max(1, width - 2 * SIDE_TAB_PADDING_H), active)
-
-		return FrameContainer:new({
-			background = Blitbuffer.COLOR_WHITE,
-			bordersize = SIDE_TAB_BORDER_SIZE,
-			color = active and Blitbuffer.COLOR_BLACK or Blitbuffer.COLOR_GRAY,
-			margin = 0,
-			padding_left = SIDE_TAB_PADDING_H,
-			padding_right = SIDE_TAB_PADDING_H,
-			padding_top = SIDE_TAB_PADDING_V,
-			padding_bottom = SIDE_TAB_PADDING_V,
-			CenterContainer:new({
-				dimen = Geom:new({
-					w = math.max(1, width - 2 * SIDE_TAB_PADDING_H),
-					h = math.max(1, height - 2 * SIDE_TAB_PADDING_V),
 				}),
 				label,
 			}),
@@ -221,23 +221,22 @@ return function(ctx)
 	function CardTabButton:init()
 		local width = self.width or Screen:scaleBySize(80)
 		local height = self.height or SIDE_TAB_HEIGHT
-		local border_size = SIDE_TAB_BORDER_SIZE
+		local border_size = self.active and math.max(SIDE_TAB_BORDER_SIZE or 1, CARD_BORDER_SIZE or 1)
+			or SIDE_TAB_BORDER_SIZE
+		self.border_size = border_size
 		self.top_offset = self.active and 0 or TAB_INACTIVE_TOP_OFFSET
 		self.frame_height = math.max(1, height - self.top_offset)
 		self.content_width = math.max(1, width - 2 * SIDE_TAB_PADDING_H - 2 * border_size)
 		self.content_height = math.max(1, self.frame_height - 2 * SIDE_TAB_PADDING_V - 2 * border_size)
 
-		-- Paint the tab label manually instead of relying on the nested container tree.
-		-- On some Kindle builds, the Windows 98-style nested frame is painted correctly,
-		-- but the TextWidget inside the CenterContainer may be clipped away. Keeping the
-		-- frame and the label as separate widgets preserves the tab shape and makes the
-		-- text render reliably.
 		self.label = makeTextLabel(self.text or "", TAB_LABEL_FACE, self.content_width, self.active)
+		self.border_color = self.active and Blitbuffer.COLOR_BLACK or Blitbuffer.COLOR_GRAY
 		self.frame = FrameContainer:new({
 			show_parent = self.show_parent,
 			background = Blitbuffer.COLOR_WHITE,
 			bordersize = border_size,
-			color = self.active and Blitbuffer.COLOR_BLACK or Blitbuffer.COLOR_GRAY,
+			color = self.border_color,
+			radius = nil,
 			margin = 0,
 			padding = 0,
 			CenterContainer:new({
@@ -295,17 +294,14 @@ return function(ctx)
 		end
 
 		if self.bottom_cover then
+			local border_size = self.border_size or SIDE_TAB_BORDER_SIZE
 			self.bottom_cover.dimen = Geom:new({
-				x = x + SIDE_TAB_BORDER_SIZE,
-				y = y + top_offset + frame_height - SIDE_TAB_BORDER_SIZE,
-				w = math.max(1, width - 2 * SIDE_TAB_BORDER_SIZE),
-				h = SIDE_TAB_BORDER_SIZE,
+				x = x + border_size,
+				y = y + top_offset + frame_height - border_size,
+				w = math.max(1, width - 2 * border_size),
+				h = border_size,
 			})
-			self.bottom_cover:paintTo(
-				bb,
-				x + SIDE_TAB_BORDER_SIZE,
-				y + top_offset + frame_height - SIDE_TAB_BORDER_SIZE
-			)
+			self.bottom_cover:paintTo(bb, x + border_size, y + top_offset + frame_height - border_size)
 		end
 
 		if self.label then
@@ -439,8 +435,6 @@ return function(ctx)
 
 		local y
 		if anchor then
-			-- Keep the selector inside the active card area instead of placing it
-			-- above the popup over the reader text.
 			y = anchor.y + anchor.h + PAGE_MENU_GAP
 		elseif parent_dimen then
 			y = parent_dimen.y + CARD_BORDER_SIZE + CARD_PADDING_TOP
@@ -585,19 +579,21 @@ return function(ctx)
 		self.side_tab_bounds = {}
 
 		self.side_tab_position = nil
-		self.card_y = 0
+		self.tab_protrusion = self:useTabsMode() and math.max(0, SIDE_TAB_HEIGHT - SIDE_TAB_BORDER_SIZE) or 0
+		self.card_y = self.tab_protrusion
 		self.dimen = Geom:new({
 			x = 0,
 			y = 0,
 			w = self.screen_width,
-			h = self.card_height,
+			h = self.card_height + self.tab_protrusion,
 		})
 
 		self:buildCardPositions()
 		self:buildVisibleCards()
+		if self:useTabsMode() then
+			self:buildSideTabs()
+		end
 
-		-- The centered card must remain in the widget tree so ScrollHtmlWidget can
-		-- receive pan/tap events. Side cards are painted manually in Full cards mode.
 		self:buildActiveContainer()
 	end
 
@@ -661,22 +657,55 @@ return function(ctx)
 		end
 
 		local height = SIDE_TAB_HEIGHT
-		local base_width = math.max(1, math.floor(self.card_width / 3))
 		local y = 0
+		local card_radius = getPopupCardRadius(self.popup)
+		local tab_inset = getRoundedTabInset(card_radius)
+		local available_width = getTabAvailableWidth(self.card_width, tab_inset)
+		local x = active_x + tab_inset
+		local specs = {}
+		local used_width = 0
 
 		for page_index = PAGE_DICTIONARY, PAGE_WIKIPEDIA do
-			local offset = page_index - PAGE_DICTIONARY
-			local width = page_index == PAGE_WIKIPEDIA and math.max(1, self.card_width - base_width * 2) or base_width
-			local x = active_x + offset * base_width
+			local active = page_index == self.active_index
+			local text = getTabLabel(page_index)
+			local width = getCompactTabWidth(text, active)
+			specs[#specs + 1] = {
+				page_index = page_index,
+				text = text,
+				width = width,
+				active = active,
+			}
+			used_width = used_width + width
+		end
 
-			self.side_tab_widgets[page_index] =
-				makeSideTab(PAGE_TITLES[page_index], width, height, page_index == self.active_index)
-			self.side_tab_bounds[page_index] = Geom:new({
+		if used_width > available_width then
+			local base_width = math.max(1, math.floor(available_width / #specs))
+			used_width = 0
+			for index, spec in ipairs(specs) do
+				spec.width = index == #specs and math.max(1, available_width - base_width * (#specs - 1)) or base_width
+				used_width = used_width + spec.width
+			end
+		end
+
+		for _, spec in ipairs(specs) do
+			self.side_tab_widgets[spec.page_index] = CardTabButton:new({
+				text = spec.text,
+				width = spec.width,
+				height = height,
+				active = spec.active,
+				show_parent = self.popup,
+				callback = function()
+					return self.popup.plugin:switchToPage(spec.page_index)
+				end,
+			})
+
+			self.side_tab_bounds[spec.page_index] = Geom:new({
 				x = x,
 				y = y,
-				w = width,
+				w = spec.width,
 				h = height,
 			})
+			x = x + spec.width
 		end
 	end
 
@@ -685,7 +714,8 @@ return function(ctx)
 			return
 		end
 
-		for page_index, widget in pairs(self.side_tab_widgets or {}) do
+		for page_index = PAGE_DICTIONARY, PAGE_WIKIPEDIA do
+			local widget = self.side_tab_widgets and self.side_tab_widgets[page_index]
 			local bounds = self.side_tab_bounds and self.side_tab_bounds[page_index]
 			if widget and bounds then
 				local x = (base_x or 0) + bounds.x
@@ -701,31 +731,116 @@ return function(ctx)
 		end
 	end
 
+	function CarouselRow:paintActiveTabConnector(bb, base_x, base_y)
+		if not self:useTabsMode() then
+			return
+		end
+
+		local bounds = self.side_tab_bounds and self.side_tab_bounds[self.active_index]
+		if not bounds then
+			return
+		end
+
+		local active_tab = self.side_tab_widgets and self.side_tab_widgets[self.active_index]
+		local active_tab_border_size = active_tab and active_tab.border_size or SIDE_TAB_BORDER_SIZE or 1
+		local border_size = math.max(1, CARD_BORDER_SIZE or 1, active_tab_border_size)
+		local card_radius = getPopupCardRadius(self.popup)
+		local active_x = self.positions and self.positions[self.active_index]
+		local card_x = (base_x or 0) + (active_x or bounds.x)
+		local card_y = (base_y or 0) + (self.card_y or 0)
+		local card_right = card_x + self.card_width
+
+		local tab_left = (base_x or 0) + bounds.x
+		local tab_right = tab_left + bounds.w
+		local cover_x = math.max(card_x + border_size, tab_left + active_tab_border_size)
+		local cover_right = math.min(card_right - border_size, tab_right - active_tab_border_size)
+		local cover_width = math.max(1, cover_right - cover_x)
+
+		self.active_tab_connector = self.active_tab_connector
+			or LineWidget:new({
+				background = Blitbuffer.COLOR_WHITE,
+				dimen = Geom:new({ w = cover_width, h = border_size }),
+			})
+		self.active_tab_connector.dimen = Geom:new({
+			x = cover_x,
+			y = card_y,
+			w = cover_width,
+			h = border_size,
+		})
+		self.active_tab_connector:paintTo(bb, cover_x, card_y)
+
+		if not card_radius or card_radius <= 0 then
+			return
+		end
+
+		if self.active_index == PAGE_DICTIONARY then
+			local bridge_height = math.max(border_size, math.min(card_radius, Screen:scaleBySize(5)))
+			local bridge_x = cover_x
+			local bridge_right = math.min(tab_right - active_tab_border_size, card_right - border_size)
+			local bridge_width = math.max(1, bridge_right - bridge_x)
+
+			self.active_tab_first_bridge = self.active_tab_first_bridge
+				or LineWidget:new({
+					background = Blitbuffer.COLOR_WHITE,
+					dimen = Geom:new({ w = bridge_width, h = bridge_height }),
+				})
+			self.active_tab_first_bridge.dimen = Geom:new({
+				x = bridge_x,
+				y = card_y,
+				w = bridge_width,
+				h = bridge_height,
+			})
+			self.active_tab_first_bridge:paintTo(bb, bridge_x, card_y)
+			return
+		end
+
+		local first_tab_bounds = self.side_tab_bounds and self.side_tab_bounds[PAGE_DICTIONARY]
+		local left_join_x = first_tab_bounds and ((base_x or 0) + first_tab_bounds.x) or (card_x + border_size)
+		local left_join_w = math.max(0, cover_x - left_join_x)
+		if left_join_w > 0 then
+			self.rounded_left_join_line = self.rounded_left_join_line
+				or LineWidget:new({
+					background = Blitbuffer.COLOR_BLACK,
+					dimen = Geom:new({ w = left_join_w, h = border_size }),
+				})
+			self.rounded_left_join_line.dimen = Geom:new({
+				x = left_join_x,
+				y = card_y,
+				w = left_join_w,
+				h = border_size,
+			})
+			self.rounded_left_join_line:paintTo(bb, left_join_x, card_y)
+		end
+	end
+
 	function CarouselRow:getSideTabPage(pos, row_y)
 		if not self:useTabsMode() or type(pos) ~= "table" then
 			return nil
 		end
 
-		for page_index, bounds in pairs(self.side_tab_bounds or {}) do
-			local absolute_bounds = Geom:new({
-				x = bounds.x,
-				y = (row_y or 0) + bounds.y,
-				w = bounds.w,
-				h = bounds.h,
-			})
+		for page_index = PAGE_DICTIONARY, PAGE_WIKIPEDIA do
+			local bounds = self.side_tab_bounds and self.side_tab_bounds[page_index]
+			if bounds then
+				local absolute_bounds = Geom:new({
+					x = bounds.x,
+					y = (row_y or 0) + bounds.y,
+					w = bounds.w,
+					h = bounds.h,
+				})
 
-			if type(pos.notIntersectWith) == "function" then
-				if not pos:notIntersectWith(absolute_bounds) then
-					return page_index
-				end
-			elseif pos.x and pos.y then
-				if
-					pos.x >= absolute_bounds.x
-					and pos.x <= absolute_bounds.x + absolute_bounds.w
-					and pos.y >= absolute_bounds.y
-					and pos.y <= absolute_bounds.y + absolute_bounds.h
-				then
-					return page_index
+				if type(pos.notIntersectWith) == "function" then
+					if not pos:notIntersectWith(absolute_bounds) then
+						return page_index
+					end
+				elseif pos.x and pos.y then
+					if
+						pos.x >= absolute_bounds.x
+						and pos.x <= absolute_bounds.x + absolute_bounds.w
+						and pos.y >= absolute_bounds.y
+						and pos.y <= absolute_bounds.y + absolute_bounds.h
+					then
+						return page_index
+					end
 				end
 			end
 		end
@@ -759,14 +874,7 @@ return function(ctx)
 		end
 
 		local card_y = (row_y or 0) + (self.card_y or 0)
-		local tabs_height = 0
-		local tabs_gap = 0
-		if self:useTabsMode() then
-			tabs_height = SIDE_TAB_HEIGHT + SIDE_TAB_BORDER_SIZE
-			tabs_gap = TAB_HEADER_GAP or 0
-		end
-
-		local top_offset = CARD_BORDER_SIZE + CARD_PADDING_TOP + tabs_height + tabs_gap
+		local top_offset = CARD_BORDER_SIZE + CARD_PADDING_TOP
 		local bottom_offset = CARD_BORDER_SIZE + CARD_PADDING_BOTTOM
 		return Geom:new({
 			x = card_x + CARD_BORDER_SIZE,
@@ -833,6 +941,11 @@ return function(ctx)
 		else
 			self:paintCard(bb, x, y, self.active_index)
 		end
+
+		if self:useTabsMode() then
+			self:paintSideTabs(bb, x, y)
+			self:paintActiveTabConnector(bb, x, y)
+		end
 	end
 
 	function CarouselRow:makeCard(index, is_active)
@@ -875,8 +988,17 @@ return function(ctx)
 		self.active_card = nil
 		self.active_container = nil
 
+		self.tab_protrusion = self:useTabsMode() and math.max(0, SIDE_TAB_HEIGHT - SIDE_TAB_BORDER_SIZE) or 0
+		self.card_y = self.tab_protrusion
+		if self.dimen then
+			self.dimen.h = self.card_height + self.tab_protrusion
+		end
+
 		self:buildCardPositions()
 		self:buildVisibleCards()
+		if self:useTabsMode() then
+			self:buildSideTabs()
+		end
 
 		self:buildActiveContainer()
 		return true
@@ -1068,76 +1190,8 @@ return function(ctx)
 		return self.plugin and type(self.plugin.useTabsMode) == "function" and self.plugin:useTabsMode()
 	end
 
-	function LookupPreviewPopup:makeCardTabs(content_width, active_index)
-		if not self:useTabsMode() then
-			return nil
-		end
-
-		active_index = active_index or self.active_index or PAGE_DICTIONARY
-		local specs = {}
-		local used_width = 0
-
-		for page_index = PAGE_DICTIONARY, PAGE_WIKIPEDIA do
-			local active = page_index == active_index
-			local text = getTabLabel(page_index)
-			local width = getCompactTabWidth(text, active)
-			specs[#specs + 1] = {
-				page_index = page_index,
-				text = text,
-				width = width,
-				active = active,
-			}
-			used_width = used_width + width
-		end
-
-		if used_width > content_width then
-			local base_width = math.max(1, math.floor(content_width / 3))
-			used_width = 0
-			for index, spec in ipairs(specs) do
-				spec.width = index == #specs and math.max(1, content_width - base_width * (#specs - 1)) or base_width
-				used_width = used_width + spec.width
-			end
-		end
-
-		local row_items = {}
-		local bottom_segments = {}
-
-		for _, spec in ipairs(specs) do
-			row_items[#row_items + 1] = CardTabButton:new({
-				text = spec.text,
-				width = spec.width,
-				height = SIDE_TAB_HEIGHT,
-				active = spec.active,
-				show_parent = self,
-				callback = function()
-					return self.plugin:switchToPage(spec.page_index)
-				end,
-			})
-
-			bottom_segments[#bottom_segments + 1] = LineWidget:new({
-				background = spec.active and Blitbuffer.COLOR_WHITE or Blitbuffer.COLOR_GRAY,
-				dimen = Geom:new({ w = spec.width, h = SIDE_TAB_BORDER_SIZE }),
-			})
-		end
-
-		local filler_width = math.max(0, content_width - used_width)
-		if filler_width > 0 then
-			row_items[#row_items + 1] = HorizontalSpan:new({ width = filler_width })
-			bottom_segments[#bottom_segments + 1] = LineWidget:new({
-				background = Blitbuffer.COLOR_GRAY,
-				dimen = Geom:new({ w = filler_width, h = SIDE_TAB_BORDER_SIZE }),
-			})
-		end
-
-		return VerticalGroup:new({
-			HorizontalGroup:new(row_items),
-			HorizontalGroup:new(bottom_segments),
-		})
-	end
-	function LookupPreviewPopup:getCardDimensions(card_width, card_height, header, buttons, page_type, tabs)
+	function LookupPreviewPopup:getCardDimensions(card_width, card_height, header, buttons, page_type)
 		local header_height = getWidgetSize(header).h or Screen:scaleBySize(46)
-		local tabs_height = tabs and (getWidgetSize(tabs).h or SIDE_TAB_HEIGHT) or 0
-		local tabs_gap = tabs and TAB_HEADER_GAP or 0
 		local button_height = page_type == PAGE_TRANSLATION and TRANSLATION_BUTTON_HEIGHT or DICTIONARY_BUTTON_HEIGHT
 		local button_gap = page_type == PAGE_TRANSLATION and TRANSLATION_BUTTON_GAP or DICTIONARY_BUTTON_GAP
 		local buttons_height = buttons and (getWidgetSize(buttons).h or button_height) or 0
@@ -1145,8 +1199,6 @@ return function(ctx)
 		local html_height = math.max(
 			MIN_HTML_HEIGHT,
 			card_height
-				- tabs_height
-				- tabs_gap
 				- header_height
 				- buttons_height
 				- buttons_gap
@@ -1168,11 +1220,10 @@ return function(ctx)
 	function LookupPreviewPopup:makeCard(payload, card_width, card_height)
 		payload = payload or {}
 		local content_width = math.max(1, card_width - 2 * CARD_PADDING_H - 2 * CARD_BORDER_SIZE)
-		local tabs = self:makeCardTabs(content_width, payload.page_type or self.active_index)
 		local header = self:makeHeader(payload, content_width)
 		local buttons = self:makeDictionaryButtons(payload, content_width)
 		local html_height, buttons_gap =
-			self:getCardDimensions(card_width, card_height, header, buttons, payload.page_type, tabs)
+			self:getCardDimensions(card_width, card_height, header, buttons, payload.page_type)
 
 		local html_widget = ScrollHtmlWidget:new({
 			html_body = payload.html_body or "",
@@ -1191,17 +1242,6 @@ return function(ctx)
 		local content_items = {
 			VerticalSpan:new({ width = CARD_PADDING_TOP }),
 		}
-
-		if tabs then
-			content_items[#content_items + 1] = HorizontalGroup:new({
-				HorizontalSpan:new({ width = CARD_PADDING_H }),
-				tabs,
-				HorizontalSpan:new({ width = CARD_PADDING_H }),
-			})
-			if TAB_HEADER_GAP > 0 then
-				content_items[#content_items + 1] = VerticalSpan:new({ width = TAB_HEADER_GAP })
-			end
-		end
 
 		content_items[#content_items + 1] = HorizontalGroup:new({
 			HorizontalSpan:new({ width = CARD_PADDING_H }),
@@ -1271,7 +1311,8 @@ return function(ctx)
 			}
 		end
 
-		self.anchor_top = self:shouldAnchorTop(card_height)
+		local tab_protrusion = self:useTabsMode() and math.max(0, SIDE_TAB_HEIGHT - SIDE_TAB_BORDER_SIZE) or 0
+		self.anchor_top = self:shouldAnchorTop(card_height + tab_protrusion)
 		local row, row_height = self:makeRow(card_width, card_height)
 		self.card_container = row
 
@@ -1457,7 +1498,6 @@ return function(ctx)
 			return self.plugin:switchToPage(math.max(PAGE_DICTIONARY, self.active_index - 1))
 		end
 
-		-- Vertical swipes are reserved for ScrollHtmlWidget inside the active card.
 		return false
 	end
 
