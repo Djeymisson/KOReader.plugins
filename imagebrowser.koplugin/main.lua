@@ -11,7 +11,6 @@ local BD = require("ui/bidi")
 local Blitbuffer = require("ffi/blitbuffer")
 local CenterContainer = require("ui/widget/container/centercontainer")
 local ConfirmBox = require("ui/widget/confirmbox")
-local DataStorage = require("datastorage")
 local DocSettings = require("docsettings")
 local Device = require("device")
 local Dispatcher = require("dispatcher")
@@ -164,6 +163,20 @@ local SHADOW_BAYER8 = {
 	{ 15, 47, 7, 39, 13, 45, 5, 37 },
 	{ 63, 31, 55, 23, 61, 29, 53, 21 },
 }
+
+-- Shadow generation is pixel-heavy Lua work, but its output depends only on
+-- geometry and display polarity. Keep one bounded cache across viewer opens.
+local PANEL_SHADOW_CACHE = {}
+
+local function clearPanelShadowCache()
+	if PANEL_SHADOW_CACHE.right then
+		PANEL_SHADOW_CACHE.right:free()
+	end
+	if PANEL_SHADOW_CACHE.bottom then
+		PANEL_SHADOW_CACHE.bottom:free()
+	end
+	PANEL_SHADOW_CACHE = {}
+end
 
 -- Anti-aliased filled circle blending fg over bg by edge coverage
 -- (paintCircle is hard-edged and looks jagged at dot sizes). All chrome is
@@ -1088,15 +1101,8 @@ function ImageBrowserViewer:init()
 	self:update()
 end
 
--- Upstream ImageViewer:onShow() unconditionally queues its OWN "full"
--- flashing refresh of the whole widget — UIManager:show() fires the
--- Show event (which reaches this) immediately after enqueuing whatever
--- refresh WE explicitly asked for, so every open queued both: our
--- careful "ui" refresh (see showViewer) AND upstream's forced "full"
--- one, and the queue promotes the merged region to the more aggressive
--- "full" — flashing on every single open regardless of what we asked
--- for (2026-07-21, reported worst in Night Mode). No-op this instead;
--- showViewer already enqueues the one refresh we actually want.
+-- Avoid ImageViewer's additional full refresh; showViewer schedules the
+-- layout-aware refresh after restoring the complete viewer state.
 function ImageBrowserViewer:onShow()
 	return true
 end
@@ -1147,10 +1153,7 @@ function ImageBrowserViewer:update()
 	end
 	self:_buildPill()
 
-	-- Explicit day-white backing behind the image area. KOReader's night mode
-	-- inverts the framebuffer when compositing, so this shows black in dark
-	-- mode (issue #9) rather than leaving a light gap around the image; in day
-	-- mode it just matches the white card. Logical/day polarity, flag 0.
+	-- Logical white is composited as black by KOReader in night mode.
 	local image_layer = FrameContainer:new({
 		background = Blitbuffer.COLOR_WHITE,
 		bordersize = 0,
@@ -1459,46 +1462,21 @@ end
 function ImageBrowserViewer:_paintPanel(bb, x, y)
 	local w, h = self._panel_w, self._panel_h
 	local py = y + self.panel_vgap
-	-- Night mode comes in two flavors:
-	--   * HW invert (real e-ink panels mostly): the fb flag stays 0 and
-	--     the panel inverts its output — paint the LOGICAL (day-polarity)
-	--     colors and the hardware turns them into the night look.
-	--   * SW invert (emulator, some devices): the fb's inverse flag is
-	--     set, which makes every mismatched-flag blit fall back to the
-	--     per-pixel Lua blitter (crushingly slow for our full-height
-	--     stencils) AND write pre-inverted. So in that case paint the
-	--     stencils with the final night colors raw and setInverse(1) on
-	--     them: with matching flags the C blitter runs and copies them
-	--     as-is — same pixels on screen, at C speed.
-	-- Night design in both: black card, white hairline edge and a stronger
-	-- shadow. Only the drawer grows wider; the popup stays uniform.
 	local night = Screen.night_mode
 	local inv = bb.getInverse and bb:getInverse() == 1
-	-- SW-invert night mode (Android/Boox): KOReader inverts the framebuffer
-	-- when compositing our buffers onto it. Flag-matching our stencils to that
-	-- inverse flag makes the C blitter copy them RAW, BYPASSING that inversion
-	-- — which left the whole drawer white in dark mode (issue #9). So in that
-	-- case DON'T flag-match: keep the stencils in logical/day polarity and let
-	-- KOReader invert them exactly like it does every stock widget. On HW-
-	-- invert panels the fb flag is already 0, so render_inv == inv == false and
-	-- nothing changes there.
+	-- Matching inverse flags keeps stencil blits in native code. Android's
+	-- software compositor is the exception: it needs logical/day polarity so
+	-- it can apply the same night inversion used by stock widgets.
 	local render_inv = inv and not (night and Device.isAndroid and Device:isAndroid())
 	local skey = table.concat({
 		tostring(night),
 		tostring(render_inv),
 		tostring(self._centered_popup),
 	}, ":")
-	-- Advanced → Disable shadow: skip the gradient entirely. The dithered
-	-- shadow is the main e-ink ghost source, so some users prefer it off.
 	local shadow_disabled = G_reader_settings:isTrue(SHADOW_KEY)
 
-	-- Shadow: cached DOT-PATTERN stencils (ordered/Bayer dithering, not a
-	-- true alpha gradient — see SHADOW_BAYER8 above). The drawer keeps its
-	-- original wide right-hand fade. The centered popup uses a tighter right
-	-- fade and a short bottom fade.
+	-- Ordered dithering keeps every shadow pixel opaque or transparent.
 	local shadow_h = h + 2 * self.panel_vgap
-	-- logical shadow color is white in night (inverts to dark); with the
-	-- SW-invert flag set we store the final dark value directly instead
 	local sv = render_inv and 0x00 or (night and 0xFF or 0x00)
 	local speak = night and 1.0 or 0.5
 	local shadow_metrics = self:_shadowMetrics(night)
@@ -1506,12 +1484,19 @@ function ImageBrowserViewer:_paintPanel(bb, x, y)
 	local right_overlap = shadow_metrics.right_overlap
 	local bottom_height = shadow_metrics.bottom_height
 	local bottom_overlap = shadow_metrics.bottom_overlap
+	local bottom_width = bottom_height > 0 and (w + swidth - right_overlap) or 0
+	local shadow_cache_key = table.concat({
+		skey,
+		tostring(swidth),
+		tostring(shadow_h),
+		tostring(right_overlap),
+		tostring(bottom_width),
+		tostring(bottom_height),
+		tostring(bottom_overlap),
+	}, ":")
 	local function origFrac(tt)
 		if night then
-			-- night: hold most of the darkness through the left half
-			-- (a strong contact band that reads as "above the page"),
-			-- then fall off quadratically so the right half is much
-			-- lighter than a straight ramp; continuous at t = 0.5
+			-- Hold a strong contact band, then fade quadratically.
 			return tt < 0.5 and (1 - 0.8 * tt) or 0.6 * (1 - (tt - 0.5) * 2) ^ 2
 		end
 		return 1 - tt
@@ -1531,69 +1516,35 @@ function ImageBrowserViewer:_paintPanel(bb, x, y)
 		end
 		return (orig_level + bump * (peak_level - orig_level)) * 255
 	end
-	if
-		not shadow_disabled
-		and (
-			not self._shadow_bb
-			or self._shadow_bb:getWidth() ~= swidth
-			or self._shadow_bb:getHeight() ~= shadow_h
-			or self._shadow_night ~= skey
-		)
-	then
-		if self._shadow_bb then
-			self._shadow_bb:free()
+	if shadow_disabled then
+		if PANEL_SHADOW_CACHE.key then
+			clearPanelShadowCache()
 		end
-		self._shadow_night = skey
-		self._shadow_bb = Blitbuffer.new(swidth, shadow_h, Blitbuffer.TYPE_BBRGB32)
-		-- BOOSTED NEAR-EDGE ZONE (2026-07-22, corrected twice same day):
-		-- the first overlap columns (t < vis0) are painted OVER
-		-- by the panel body along every straight edge — only the small
-		-- rounded-corner notches ever expose them — so a boost anchored
-		-- to t=0 (1st attempt) was invisible for ~95% of the panel's
-		-- height. Anchoring to vis0 instead (2nd attempt) fixed
-		-- visibility but introduced a real seam: it jumped straight to
-		-- `peak_level` AT vis0, discontinuous with whatever origFrac(t)
-		-- was doing just below vis0 — invisible along a straight edge
-		-- (the panel itself covers t < vis0 there) but the corner's
-		-- notch exposes BOTH sides of that jump within one small curved
-		-- area, so it read as a hard block breaking the curve instead of
-		-- following it ("the dithering missed the rounding of the
-		-- corner"). Fixed by boosting with a smooth bump added ON TOP OF
-		-- the untouched curve — continuous everywhere, including t <
-		-- vis0, so whatever the corner exposes always tapers smoothly,
-		-- no matter how much of the buffer that turns out to be.
+	elseif PANEL_SHADOW_CACHE.key ~= shadow_cache_key then
+		clearPanelShadowCache()
+		PANEL_SHADOW_CACHE.key = shadow_cache_key
+		PANEL_SHADOW_CACHE.right = Blitbuffer.new(swidth, shadow_h, Blitbuffer.TYPE_BBRGB32)
+		local shadow_on = Blitbuffer.ColorRGB32(sv, sv, sv, 255)
+		local shadow_off = Blitbuffer.ColorRGB32(sv, sv, sv, 0)
+
+		-- The smooth contact bump avoids a seam where the panel overlap ends.
 		for i = 0, swidth - 1 do
-			-- desired LOCAL darkness at this column, 0..255 — compared
-			-- against the tiled Bayer matrix per-pixel below rather than
-			-- written as a per-pixel alpha, so the result is always fully
-			-- opaque or fully transparent (a dot, or no dot)
 			local level = shadowLevel(i, swidth, right_overlap)
 			local col = (i % 8) + 1
 			for j = 0, shadow_h - 1 do
 				local threshold = (SHADOW_BAYER8[col][(j % 8) + 1] + 0.5) * 4
-				local a = level > threshold and 255 or 0
-				self._shadow_bb:setPixel(i, j, Blitbuffer.ColorRGB32(sv, sv, sv, a))
+				local color = level > threshold and shadow_on or shadow_off
+				PANEL_SHADOW_CACHE.right:setPixel(i, j, color)
 			end
 		end
-		self._shadow_bb:setInverse(render_inv and 1 or 0)
-	end
-	if bottom_height > 0 and not shadow_disabled then
-		local bottom_w = w + swidth - right_overlap
-		if
-			not self._bottom_shadow_bb
-			or self._bottom_shadow_bb:getWidth() ~= bottom_w
-			or self._bottom_shadow_bb:getHeight() ~= bottom_height
-			or self._bottom_shadow_night ~= skey
-		then
-			if self._bottom_shadow_bb then
-				self._bottom_shadow_bb:free()
-			end
-			self._bottom_shadow_night = skey
-			self._bottom_shadow_bb = Blitbuffer.new(bottom_w, bottom_height, Blitbuffer.TYPE_BBRGB32)
+		PANEL_SHADOW_CACHE.right:setInverse(render_inv and 1 or 0)
+
+		if bottom_height > 0 then
+			PANEL_SHADOW_CACHE.bottom = Blitbuffer.new(bottom_width, bottom_height, Blitbuffer.TYPE_BBRGB32)
 			for j = 0, bottom_height - 1 do
 				local bottom_level = shadowLevel(j, bottom_height, bottom_overlap)
 				local row = (j % 8) + 1
-				for i = 0, bottom_w - 1 do
+				for i = 0, bottom_width - 1 do
 					local level = bottom_level
 					-- The right stencil already paints the overlap beside the
 					-- panel. Below the panel, taper the southeast extension in
@@ -1604,11 +1555,11 @@ function ImageBrowserViewer:_paintPanel(bb, x, y)
 						level = math.min(level, shadowLevel(right_overlap + i - w, swidth, right_overlap))
 					end
 					local threshold = (SHADOW_BAYER8[(i % 8) + 1][row] + 0.5) * 4
-					local a = level > threshold and 255 or 0
-					self._bottom_shadow_bb:setPixel(i, j, Blitbuffer.ColorRGB32(sv, sv, sv, a))
+					local color = level > threshold and shadow_on or shadow_off
+					PANEL_SHADOW_CACHE.bottom:setPixel(i, j, color)
 				end
 			end
-			self._bottom_shadow_bb:setInverse(render_inv and 1 or 0)
+			PANEL_SHADOW_CACHE.bottom:setInverse(render_inv and 1 or 0)
 		end
 	end
 	-- consumed by interior updates (see update()): the page under the
@@ -1616,18 +1567,18 @@ function ImageBrowserViewer:_paintPanel(bb, x, y)
 	local skip_shadow = self._skip_shadow_paint
 	self._skip_shadow_paint = nil
 	if not skip_shadow and not shadow_disabled then
-		if bottom_height > 0 then
+		if PANEL_SHADOW_CACHE.bottom then
 			bb:alphablitFrom(
-				self._bottom_shadow_bb,
+				PANEL_SHADOW_CACHE.bottom,
 				x,
 				py + h - bottom_overlap,
 				0,
 				0,
-				self._bottom_shadow_bb:getWidth(),
+				PANEL_SHADOW_CACHE.bottom:getWidth(),
 				bottom_height
 			)
 		end
-		bb:alphablitFrom(self._shadow_bb, x + w - right_overlap, y, 0, 0, swidth, shadow_h)
+		bb:alphablitFrom(PANEL_SHADOW_CACHE.right, x + w - right_overlap, y, 0, 0, swidth, shadow_h)
 	end
 
 	-- Under-corner snapshots keep anti-aliased arcs idempotent across
@@ -1778,14 +1729,6 @@ function ImageBrowserViewer:onSetRotationMode(rotation)
 end
 
 function ImageBrowserViewer:onCloseWidget()
-	if self._shadow_bb then
-		self._shadow_bb:free()
-		self._shadow_bb = nil
-	end
-	if self._bottom_shadow_bb then
-		self._bottom_shadow_bb:free()
-		self._bottom_shadow_bb = nil
-	end
 	if self._panel_bb then
 		self._panel_bb:free()
 		self._panel_bb = nil
@@ -1828,35 +1771,10 @@ function ImageBrowserViewer:onCloseWidget()
 		self._thumb_bbs = nil
 	end
 	self:_resetHiRes() -- free the zoomed image's full-res decode, if any
-	-- ImageViewer.onCloseWidget() does necessary cleanup (frees self.image,
-	-- title_bar, button_container, etc.) but ALSO unconditionally queues
-	-- its OWN "flashui" refresh of main_frame.dimen at the very end (see
-	-- imageviewer.lua ~886-889) — the exact same pattern as the onShow()
-	-- bug fixed earlier this session, just on the close side instead:
-	-- "flashui" outranks our own "ui" request (refresh_modes: flashui=7 >
-	-- ui=3, see uimanager.lua ~1060), so it silently wins whenever the two
-	-- deferred refresh callbacks get merged, no matter what we ask for.
-	-- Confirmed via a headless refresh-queue trace (2026-07-21): closing
-	-- was NOT triggering KOReader's normal partial-refresh-count flash
-	-- promotion (measured zero "partial" ticks across several open/close
-	-- cycles) — it's this direct, unconditional "flashui" request, every
-	-- single time. Pop the just-queued upstream callback off the refresh
-	-- func stack before pushing our own, keeping the cleanup but dropping
-	-- the forced flash.
+	-- Keep upstream resource cleanup, but replace its queued flashui callback
+	-- with the regional ghost-clearing refresh below.
 	ImageViewer.onCloseWidget(self)
 	table.remove(UIManager._refresh_func_stack)
-	-- "ui" (non-flashing): the drawer covers most of the page, but KOReader's
-	-- own menus close the same way and rely on the normal partial-refresh
-	-- promotion cadence to mop up any ghosting, rather than forcing a flash
-	-- on every single close — matches that convention instead of "full"
-	-- (2026-07-21: was flashing here on every close, worst at night; if
-	-- ghosting turns out to be visible on device, "flashui" is the next
-	-- step up — see uimanager.lua's refreshtype docs).
-	-- Dither hint (2026-07-21): the open refresh always passed one, this
-	-- one never did — the gradient shadow being erased here banded into a
-	-- handful of distinct grays without it (very visible in Day mode's
-	-- black-on-light shadow; the same banding was there in Night mode too,
-	-- just far less visible against an already-dark background).
 	UIManager:setDirty(nil, function()
 		-- Same teardown-race guard as update(): if the frame is already gone
 		-- by the time this deferred callback runs, drop the refresh.
@@ -1869,17 +1787,11 @@ function ImageBrowserViewer:onCloseWidget()
 		-- reaches the book page.
 		if not G_reader_settings:isTrue(SHADOW_KEY) then
 			local metrics = self:_shadowMetrics(Screen.night_mode)
-			d.w =
-				math.min(Screen:getWidth() - d.x, d.w + metrics.right_width - metrics.right_overlap + 1)
-			d.h =
-				math.min(Screen:getHeight() - d.y, d.h + metrics.bottom_height - metrics.bottom_overlap + 1)
+			d.w = math.min(Screen:getWidth() - d.x, d.w + metrics.right_width - metrics.right_overlap + 1)
+			d.h = math.min(Screen:getHeight() - d.y, d.h + metrics.bottom_height - metrics.bottom_overlap + 1)
 		end
-		-- "full": a GC16 clearing refresh over Image Browser (and its shadow)
-		-- area on every close — the ghosting the drawer/shadow leaves on
-		-- e-ink, worst at night, is scrubbed as it lifts away. This is the
-		-- former "Full Refresh on Close" option, now baked in as the default
-		-- (same reliable GC16 waveform the image-switch clear uses); it stays
-		-- regional so the rest of the page is never flashed.
+		-- Regional GC16 clears panel and shadow ghosting without flashing the
+		-- rest of the page.
 		return "full", d, true
 	end)
 	-- Refresh isolation (see showViewer): hand the reader back its own
@@ -2703,9 +2615,7 @@ function ImageBrowserViewer:_showMoreMenu()
 		-- so shift left by our own width, known by the time ensureAnchor
 		-- calls this). The button sits near the screen bottom, so the menu
 		-- has no room below and pops UP — its bottom lands at the anchor's
-		-- y. Lifting y by `gap` above the button top puts a real margin
-		-- OUTSIDE the popup, between it and the button (an earlier attempt
-		-- put padding INSIDE, under the last row, which was wrong).
+		-- y. Lift it by `gap` to leave an outside margin above the button.
 		anchor = function()
 			local d = self._more_frame and self._more_frame.dimen
 			if not d then
@@ -3795,18 +3705,9 @@ function ImageBrowser:showViewer(whole_book_once)
 	-- lazy render functions: one image decoded at a time, freed on switch;
 	-- "invert in night mode" (a global setting) is applied here so
 	-- re-renders pick up setting and night-mode changes live.
-	-- Night handling (device-agnostic): whenever night mode is on and the
-	-- user has NOT ticked "Invert in Night Mode", pre-invert the image pixels
-	-- so the screen's own global night inversion brings them back to their
-	-- ORIGINAL colours — exactly what KOReader's ImageWidget does for every
-	-- image (original_in_nightmode), just baked once here instead of per
-	-- paint. Ticking the box skips the pre-invert, so the image ends up
-	-- inverted (negative) on screen. Crucially this depends only on the
-	-- SAME Screen.night_mode flag ImageWidget keys off (not getInverse() nor
-	-- the persisted setting) so our pre-invert is always paired with the
-	-- screen's actual inversion state — the old code keyed off getInverse()
-	-- and the setting, which could disagree with it and reversed the image on
-	-- some devices ("Invert in Night Mode reversed").
+	-- Pre-invert once when night mode is active so KOReader's global inversion
+	-- restores the original image. The opt-in setting deliberately skips this
+	-- step to show a negative image.
 	local read_file, close_reader = self:_makeReader()
 	-- The RESTING (fit) view decodes each image capped at 2× the drawer's
 	-- content box (one C-speed, aspect-preserving downscale): ImageWidget
@@ -4480,7 +4381,11 @@ function ImageBrowser:_menuItems()
 						return G_reader_settings:isTrue(SHADOW_KEY)
 					end,
 					callback = function()
-						G_reader_settings:saveSetting(SHADOW_KEY, not G_reader_settings:isTrue(SHADOW_KEY))
+						local disabled = not G_reader_settings:isTrue(SHADOW_KEY)
+						G_reader_settings:saveSetting(SHADOW_KEY, disabled)
+						if disabled then
+							clearPanelShadowCache()
+						end
 					end,
 					separator = true,
 				},

@@ -83,9 +83,13 @@ local function dir_of(path)
 	return path:match("^(.*)/[^/]*$") or ""
 end
 
--- Case-insensitive attribute extraction from a single tag string.
--- Handles double-quoted, single-quoted and unquoted values.
-local function attr(tag, name)
+local ATTR_PATTERNS = {}
+
+local function attr_pattern(name)
+	local cached = ATTR_PATTERNS[name]
+	if cached then
+		return cached
+	end
 	local pat = {}
 	for c in name:gmatch(".") do
 		if c:match("%a") then
@@ -94,7 +98,14 @@ local function attr(tag, name)
 			pat[#pat + 1] = c:gsub("(%W)", "%%%1")
 		end
 	end
-	local n = table.concat(pat)
+	cached = table.concat(pat)
+	ATTR_PATTERNS[name] = cached
+	return cached
+end
+
+-- Case-insensitive attribute extraction from a single tag string.
+local function attr(tag, name)
+	local n = attr_pattern(name)
 	local v = tag:match(n .. '%s*=%s*"([^"]*)"')
 		or tag:match(n .. "%s*=%s*'([^']*)'")
 		or tag:match(n .. "%s*=%s*([^%s>\"']+)")
@@ -510,6 +521,44 @@ function M.meaningful_text(s)
 	return s
 end
 
+local PUBLISHER_PREFIXES = {
+	"penguin",
+	"random house",
+	"harpercollins",
+	"harper collins",
+	"macmillan",
+	"hachette",
+	"simon & schuster",
+	"simon and schuster",
+	"bloomsbury",
+	"scholastic",
+	"knopf",
+	"doubleday",
+	"scribner",
+	"picador",
+	"tor books",
+	"tor publishing",
+	"del rey",
+	"st%. martin",
+	"little, brown",
+	"houghton",
+	"w%. w%. norton",
+	"faber",
+	"berkley",
+	"bantam",
+	"ballantine",
+	"redhook",
+	"red tower",
+	"grand central",
+	"gallery books",
+	"atria",
+	"riverhead",
+	"putnam",
+	"dutton",
+	"sourcebooks",
+	"entangled publishing",
+}
+
 -- Chapter/part-opener art routinely carries the section heading as its alt
 -- text ("Chapter 1 Choose the Good", "Prologue"), and title-page art an alt
 -- describing the title page ("Book Title, Educated, Subtitle, ..."). Such a
@@ -538,43 +587,7 @@ function M.decorative_caption(s)
 	end
 	-- caption that BEGINS with a publishing-house name ("Penguin Books",
 	-- "Penguin Random House UK") — only unambiguous names, start-anchored
-	for _, pub in ipairs({
-		"penguin",
-		"random house",
-		"harpercollins",
-		"harper collins",
-		"macmillan",
-		"hachette",
-		"simon & schuster",
-		"simon and schuster",
-		"bloomsbury",
-		"scholastic",
-		"knopf",
-		"doubleday",
-		"scribner",
-		"picador",
-		"tor books",
-		"tor publishing",
-		"del rey",
-		"st%. martin",
-		"little, brown",
-		"houghton",
-		"w%. w%. norton",
-		"faber",
-		"berkley",
-		"bantam",
-		"ballantine",
-		"redhook",
-		"red tower",
-		"grand central",
-		"gallery books",
-		"atria",
-		"riverhead",
-		"putnam",
-		"dutton",
-		"sourcebooks",
-		"entangled publishing",
-	}) do
+	for _, pub in ipairs(PUBLISHER_PREFIXES) do
 		if l:match("^" .. pub .. "%f[%W]") then
 			return true
 		end
@@ -822,9 +835,15 @@ function M.extract_images(html)
 	local out = {}
 
 	local function fig_at(pos)
-		for i = 1, #figures do
-			local f = figures[i]
-			if pos >= f.s and pos <= f.e then
+		local first, last = 1, #figures
+		while first <= last do
+			local middle = math.floor((first + last) / 2)
+			local f = figures[middle]
+			if pos < f.s then
+				last = middle - 1
+			elseif pos > f.e then
+				first = middle + 1
+			else
 				return f
 			end
 		end
