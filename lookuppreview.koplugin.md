@@ -1,4 +1,4 @@
-# KOReader Lookup Preview ![Version](https://img.shields.io/badge/version-v1.0.0-blue)
+# KOReader Lookup Preview ![Version](https://img.shields.io/badge/version-v1.0.2-blue)
 
 **Lookup Preview** is a KOReader reader plugin that changes the lookup flow for selected text. Instead of opening each native lookup window immediately, it first shows a compact floating carousel with preview cards for **Dictionary**, **Translate**, and **Wikipedia**.
 
@@ -22,6 +22,7 @@ The plugin metadata registers it as `lookuppreview` with the display name **Look
 - Uses lazy loading for Translate and Wikipedia cards, avoiding unnecessary network requests until those cards are opened.
 - Reuses the current popup while switching content, reducing unnecessary carousel rebuilds.
 - Supports square and rounded card corners from the plugin settings.
+- Uses matching dithered shadows along the right and bottom edges of each card.
 - Adds a version entry in the plugin settings menu.
 
 ## Dictionary card
@@ -119,17 +120,23 @@ After restarting KOReader, open a book and go to the reader menu. The plugin add
 The menu contains:
 
 - **Enable lookup preview**: turns the preview behavior on or off.
-- **Wikipedia language**: selects the language used by the Wikipedia card.
-- **Translation**:
-  - **Target language**: selects the target language used by the Translate card;
-  - **Show source text**: shows or hides the original selected text below the translation;
-  - **Buttons**:
-    - **Show copy button**: shows or hides the copy button;
-    - **Show note button**: shows or hides the note button.
-- **Card corners**: switches between square and rounded card corners.
-- **Version: v1.0.0**: displays the current plugin version.
+- **Appearance**:
+  - **Card corners**: switches between square and rounded card corners;
+  - **Side card previews**: switches between full side cards and tabs;
+  - **Show card shadows**: enables or disables the dithered right and bottom shadows.
+- **Content**:
+  - **Online card loading**: switches between automatic and manual online loading;
+  - **Dictionary HTML**: selects formatted or fast/raw dictionary rendering;
+  - **Wikipedia language**: selects the language used by the Wikipedia card;
+  - **Translation**:
+    - **Target language**: selects the target language used by the Translate card;
+    - **Show source text**: shows or hides the original selected text below the translation;
+    - **Buttons**:
+      - **Show copy button**: shows or hides the copy button;
+      - **Show note button**: shows or hides the note button.
+- **Version: v1.0.2**: displays the current plugin version.
 
-By default, Lookup Preview is enabled, the carousel uses square card corners, optional translation buttons follow the saved plugin settings, and Translate/Wikipedia languages are read from KOReader or plugin settings when available.
+By default, Lookup Preview and card shadows are enabled, the carousel uses square card corners, optional translation buttons follow the saved plugin settings, and Translate/Wikipedia languages are read from KOReader or plugin settings when available.
 
 ## How it works
 
@@ -245,6 +252,7 @@ The plugin stores settings through KOReader's reader settings system.
 | `lookuppreview_enabled` | Enables or disables Lookup Preview |
 | `lookuppreview_wikipedia_lang` | Stores the language used by the Wikipedia card |
 | `lookuppreview_card_rounded` | Enables or disables rounded card corners |
+| `lookuppreview_card_shadows` | Enables or disables card shadows |
 | `lookuppreview_translation_show_source` | Shows or hides the original source text in the Translate card |
 | `lookuppreview_translation_show_copy_button` | Shows or hides the translation copy button |
 | `lookuppreview_translation_show_note_button` | Shows or hides the translation note button |

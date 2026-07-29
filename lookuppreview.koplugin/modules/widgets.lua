@@ -45,6 +45,160 @@ return function(ctx)
 	local TAB_COMPACT_EXTRA_PADDING_H = Screen:scaleBySize(14)
 	local TAB_LABEL_MAX_WIDTH = Screen:scaleBySize(180)
 	local TAB_ROUNDED_RADIUS = math.max(2, Screen:scaleBySize(4))
+	local SHADOW_BAYER8 = {
+		{ 0, 32, 8, 40, 2, 34, 10, 42 },
+		{ 48, 16, 56, 24, 50, 18, 58, 26 },
+		{ 12, 44, 4, 36, 14, 46, 6, 38 },
+		{ 60, 28, 52, 20, 62, 30, 54, 22 },
+		{ 3, 35, 11, 43, 1, 33, 9, 41 },
+		{ 51, 19, 59, 27, 49, 17, 57, 25 },
+		{ 15, 47, 7, 39, 13, 45, 5, 37 },
+		{ 63, 31, 55, 23, 61, 29, 53, 21 },
+	}
+
+	local CardShadow = WidgetContainer:extend({
+		width = 0,
+		height = 0,
+		shadow_width = CARD_SHADOW_WIDTH,
+		shadow_overlap = CARD_SHADOW_OVERLAP,
+	})
+
+	function CardShadow:_freeBuffers()
+		if self._right_bb then
+			self._right_bb:free()
+			self._right_bb = nil
+		end
+		if self._bottom_bb then
+			self._bottom_bb:free()
+			self._bottom_bb = nil
+		end
+		self._cache_key = nil
+	end
+
+	function CardShadow:free()
+		self:_freeBuffers()
+	end
+
+	function CardShadow:_ensureBuffers(bb)
+		local width = math.max(1, self.width or 1)
+		local height = math.max(1, self.height or 1)
+		local shadow_width = math.max(1, self.shadow_width or CARD_SHADOW_WIDTH)
+		local overlap = math.max(0, math.min(shadow_width - 1, self.shadow_overlap or CARD_SHADOW_OVERLAP))
+		local bottom_width = width + shadow_width - overlap
+		local night = Screen.night_mode
+		local inv = bb.getInverse and bb:getInverse() == 1
+		local render_inv = inv and not (night and Device.isAndroid and Device:isAndroid())
+		local cache_key = table.concat({
+			tostring(width),
+			tostring(height),
+			tostring(shadow_width),
+			tostring(overlap),
+			tostring(night),
+			tostring(render_inv),
+		}, ":")
+		if self._cache_key == cache_key and self._right_bb and self._bottom_bb then
+			return
+		end
+
+		self:_freeBuffers()
+		self._cache_key = cache_key
+
+		local shadow_value = render_inv and 0x00 or (night and 0xFF or 0x00)
+		local base_strength = night and 1.0 or 0.5
+		local peak_level = night and 1.0 or 0.62
+		local bump_width = 0.18
+		local function baseFraction(t)
+			if night then
+				return t < 0.5 and (1 - 0.8 * t) or 0.6 * (1 - (t - 0.5) * 2) ^ 2
+			end
+			return 1 - t
+		end
+		local function shadowLevel(pos)
+			local t = (pos + 0.5) / shadow_width
+			local original_level = base_strength * baseFraction(t)
+			local visible_start = overlap / shadow_width
+			local bump
+			if t <= visible_start then
+				bump = 1
+			else
+				local distance = (t - visible_start) / bump_width
+				bump = distance < 1 and 0.5 * (1 + math.cos(math.pi * distance)) or 0
+			end
+			return (original_level + bump * (peak_level - original_level)) * 255
+		end
+
+		self._right_bb = Blitbuffer.new(shadow_width, height, Blitbuffer.TYPE_BBRGB32)
+		for x = 0, shadow_width - 1 do
+			local level = shadowLevel(x)
+			local column = (x % 8) + 1
+			for y = 0, height - 1 do
+				local threshold = (SHADOW_BAYER8[column][(y % 8) + 1] + 0.5) * 4
+				local alpha = level > threshold and 255 or 0
+				self._right_bb:setPixel(x, y, Blitbuffer.ColorRGB32(shadow_value, shadow_value, shadow_value, alpha))
+			end
+		end
+		self._right_bb:setInverse(render_inv and 1 or 0)
+
+		self._bottom_bb = Blitbuffer.new(bottom_width, shadow_width, Blitbuffer.TYPE_BBRGB32)
+		for y = 0, shadow_width - 1 do
+			local bottom_level = shadowLevel(y)
+			local row = (y % 8) + 1
+			for x = 0, bottom_width - 1 do
+				local level = bottom_level
+				if y < overlap and x >= width - overlap then
+					level = 0
+				elseif x >= width then
+					level = math.min(level, shadowLevel(overlap + x - width))
+				end
+				local threshold = (SHADOW_BAYER8[(x % 8) + 1][row] + 0.5) * 4
+				local alpha = level > threshold and 255 or 0
+				self._bottom_bb:setPixel(x, y, Blitbuffer.ColorRGB32(shadow_value, shadow_value, shadow_value, alpha))
+			end
+		end
+		self._bottom_bb:setInverse(render_inv and 1 or 0)
+	end
+
+	function CardShadow:_alphaBlitClipped(bb, source, x, y)
+		local source_x, source_y = 0, 0
+		local width, height = source:getWidth(), source:getHeight()
+		if x < 0 then
+			source_x = -x
+			width = width - source_x
+			x = 0
+		end
+		if y < 0 then
+			source_y = -y
+			height = height - source_y
+			y = 0
+		end
+		width = math.min(width, bb:getWidth() - x)
+		height = math.min(height, bb:getHeight() - y)
+		if width > 0 and height > 0 then
+			bb:alphablitFrom(source, x, y, source_x, source_y, width, height)
+		end
+	end
+
+	function CardShadow:paintTo(bb, x, y)
+		self:_ensureBuffers(bb)
+		local width = math.max(1, self.width or 1)
+		local height = math.max(1, self.height or 1)
+		local overlap = math.max(0, self.shadow_overlap or CARD_SHADOW_OVERLAP)
+		self.dimen = Geom:new({
+			x = x,
+			y = y,
+			w = width + CARD_SHADOW_EXTENT,
+			h = height + CARD_SHADOW_EXTENT,
+		})
+		self:_alphaBlitClipped(bb, self._bottom_bb, x, y + height - overlap)
+		self:_alphaBlitClipped(bb, self._right_bb, x + width - overlap, y)
+	end
+
+	local function popupShowsCardShadows(popup)
+		return popup
+			and popup.plugin
+			and type(popup.plugin.showCardShadows) == "function"
+			and popup.plugin:showCardShadows()
+	end
 
 	local function getPopupCardRadius(popup)
 		if popup and type(popup.getCardRadius) == "function" then
@@ -662,7 +816,7 @@ return function(ctx)
 		active_card = nil,
 		active_container = nil,
 		positions = nil,
-		shadow_widgets = nil,
+		card_shadow = nil,
 		side_tab_widgets = nil,
 		side_tab_bounds = nil,
 		side_tab_position = nil,
@@ -675,7 +829,7 @@ return function(ctx)
 		self.card_height = self.card_height or math.floor(Screen:getHeight() * CARD_HEIGHT_RATIO)
 		self.active_index = self.active_index or PAGE_DICTIONARY
 		self.cards = {}
-		self.shadow_widgets = {}
+		self:updateCardShadow()
 		self.side_tab_widgets = {}
 		self.side_tab_bounds = {}
 
@@ -703,6 +857,23 @@ return function(ctx)
 			and self.popup.plugin
 			and type(self.popup.plugin.useTabsMode) == "function"
 			and self.popup.plugin:useTabsMode()
+	end
+
+	function CarouselRow:useCardShadows()
+		return popupShowsCardShadows(self.popup)
+	end
+
+	function CarouselRow:updateCardShadow()
+		local enabled = self:useCardShadows() and CARD_SHADOW_EXTENT > 0
+		if enabled and not self.card_shadow then
+			self.card_shadow = CardShadow:new({
+				width = self.card_width,
+				height = self.card_height,
+			})
+		elseif not enabled and self.card_shadow then
+			self.card_shadow:free()
+			self.card_shadow = nil
+		end
 	end
 
 	function CarouselRow:buildActiveContainer()
@@ -961,12 +1132,12 @@ return function(ctx)
 			card_x = math.floor(((self.screen_width or Screen:getWidth()) - (self.card_width or 0)) / 2)
 		end
 
-		local shadow_offset = CARD_SHADOW_ENABLED and CARD_SHADOW_OFFSET or 0
+		local shadow_extent = self:useCardShadows() and CARD_SHADOW_EXTENT or 0
 		return Geom:new({
 			x = card_x,
 			y = (row_y or 0) + (self.card_y or 0),
-			w = (self.card_width or 1) + shadow_offset,
-			h = (self.card_height or 1) + shadow_offset,
+			w = (self.card_width or 1) + shadow_extent,
+			h = (self.card_height or 1) + shadow_extent,
 		})
 	end
 
@@ -988,25 +1159,18 @@ return function(ctx)
 	end
 
 	function CarouselRow:paintCardShadow(bb, base_x, base_y, index)
-		if not CARD_SHADOW_ENABLED or CARD_SHADOW_OFFSET <= 0 then
+		if not self:useCardShadows() or CARD_SHADOW_EXTENT <= 0 then
 			return
 		end
 
-		local shadow = self.shadow_widgets and self.shadow_widgets[index]
 		local card_x = self.positions and self.positions[index]
-		if not shadow or not card_x then
+		if not self.card_shadow or not card_x then
 			return
 		end
 
-		local x = (base_x or 0) + card_x + CARD_SHADOW_OFFSET
-		local y = (base_y or 0) + (self.card_y or 0) + CARD_SHADOW_OFFSET
-		if shadow.dimen then
-			shadow.dimen.x = x
-			shadow.dimen.y = y
-			shadow.dimen.w = self.card_width
-			shadow.dimen.h = self.card_height
-		end
-		shadow:paintTo(bb, x, y)
+		local x = (base_x or 0) + card_x
+		local y = (base_y or 0) + (self.card_y or 0)
+		self.card_shadow:paintTo(bb, x, y)
 	end
 
 	function CarouselRow:paintCard(bb, base_x, base_y, index)
@@ -1061,13 +1225,6 @@ return function(ctx)
 		local card = popup:makeCard(payload, self.card_width, self.card_height)
 		self.cards[index] = card
 
-		if CARD_SHADOW_ENABLED and CARD_SHADOW_OFFSET > 0 and not self.shadow_widgets[index] then
-			self.shadow_widgets[index] = LineWidget:new({
-				background = CARD_SHADOW_COLOR,
-				dimen = Geom:new({ w = self.card_width, h = self.card_height }),
-			})
-		end
-
 		return card
 	end
 
@@ -1085,11 +1242,11 @@ return function(ctx)
 	function CarouselRow:rebuildForPage(index)
 		self.active_index = index or PAGE_DICTIONARY
 		self.cards = {}
-		self.shadow_widgets = {}
 		self.side_tab_widgets = {}
 		self.side_tab_bounds = {}
 		self.active_card = nil
 		self.active_container = nil
+		self:updateCardShadow()
 
 		self.tab_protrusion = self:useTabsMode() and math.max(0, TAB_TOUCH_HEIGHT - SIDE_TAB_BORDER_SIZE) or 0
 		self.card_y = self.tab_protrusion
@@ -1105,6 +1262,14 @@ return function(ctx)
 
 		self:buildActiveContainer()
 		return true
+	end
+
+	function CarouselRow:free(...)
+		if self.card_shadow then
+			self.card_shadow:free()
+			self.card_shadow = nil
+		end
+		WidgetContainer.free(self, ...)
 	end
 
 	LookupPreviewPopup = InputContainer:extend({
@@ -1293,6 +1458,10 @@ return function(ctx)
 		return self.plugin and type(self.plugin.useTabsMode) == "function" and self.plugin:useTabsMode()
 	end
 
+	function LookupPreviewPopup:showCardShadows()
+		return popupShowsCardShadows(self)
+	end
+
 	function LookupPreviewPopup:getCardDimensions(card_width, card_height, header, buttons, page_type)
 		local header_height = getWidgetSize(header).h or Screen:scaleBySize(46)
 		local button_height = page_type == PAGE_TRANSLATION and TRANSLATION_BUTTON_HEIGHT or DICTIONARY_BUTTON_HEIGHT
@@ -1415,7 +1584,8 @@ return function(ctx)
 		end
 
 		local tab_protrusion = self:useTabsMode() and math.max(0, TAB_TOUCH_HEIGHT - SIDE_TAB_BORDER_SIZE) or 0
-		self.anchor_top = self:shouldAnchorTop(card_height + tab_protrusion)
+		local shadow_extent = self:showCardShadows() and CARD_SHADOW_EXTENT or 0
+		self.anchor_top = self:shouldAnchorTop(card_height + tab_protrusion + shadow_extent)
 		local row, row_height = self:makeRow(card_width, card_height)
 		self.card_container = row
 
@@ -1430,17 +1600,17 @@ return function(ctx)
 				}),
 			})
 		else
-			y = screen_height - CARD_EDGE_MARGIN - row_height
+			y = screen_height - CARD_EDGE_MARGIN - row_height - shadow_extent
 			self[1] = BottomContainer:new({
 				dimen = Screen:getSize(),
 				VerticalGroup:new({
 					row,
-					VerticalSpan:new({ width = CARD_EDGE_MARGIN }),
+					VerticalSpan:new({ width = CARD_EDGE_MARGIN + shadow_extent }),
 				}),
 			})
 		end
 
-		local visible_height = row_height + (CARD_SHADOW_ENABLED and CARD_SHADOW_OFFSET or 0)
+		local visible_height = row_height + shadow_extent
 		self.visible_dimen = Geom:new({ x = 0, y = y, w = screen_width, h = visible_height })
 	end
 

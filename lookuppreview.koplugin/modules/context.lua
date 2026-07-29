@@ -55,7 +55,7 @@ LookupPreview = WidgetContainer:extend({
 	is_doc_only = true,
 })
 
-PLUGIN_VERSION = "v1.0.0"
+PLUGIN_VERSION = "v1.0.2"
 
 -- Fonts ---------------------------------------------------------------------
 UI_FONT_FACE = "Noto Sans"
@@ -123,9 +123,9 @@ SIDE_TAB_PADDING_H = scaleBySize(8)
 SIDE_TAB_PADDING_V = scaleBySize(4)
 SIDE_TAB_BORDER_SIZE = Size.border.thin
 
-CARD_SHADOW_ENABLED = false
-CARD_SHADOW_OFFSET = scaleBySize(3)
-CARD_SHADOW_COLOR = Blitbuffer.COLOR_DARK_GRAY
+CARD_SHADOW_WIDTH = scaleBySize(24)
+CARD_SHADOW_OVERLAP = scaleBySize(12)
+CARD_SHADOW_EXTENT = math.max(0, CARD_SHADOW_WIDTH - CARD_SHADOW_OVERLAP)
 
 CARD_PADDING_H = scaleBySize(14)
 CARD_PADDING_TOP = scaleBySize(6)
@@ -161,6 +161,7 @@ EMPTY_TEXT = "—"
 -- Settings ------------------------------------------------------------------
 SETTING_ENABLED = "lookuppreview_enabled"
 SETTING_CARD_ROUNDED = "lookuppreview_card_rounded"
+SETTING_CARD_SHADOWS = "lookuppreview_card_shadows"
 SETTING_SIDE_PREVIEW_MODE = "lookuppreview_side_preview_mode"
 SETTING_ONLINE_CARD_LOAD_MODE = "lookuppreview_online_card_load_mode"
 SETTING_DICTIONARY_HTML_MODE = "lookuppreview_dictionary_html_mode"

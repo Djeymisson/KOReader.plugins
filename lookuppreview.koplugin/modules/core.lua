@@ -42,6 +42,17 @@ return function(ctx)
 		return plugin:refreshVisibleCards()
 	end
 
+	local function applyCardShadowMode(plugin, enabled)
+		plugin:setCardShadows(enabled)
+		local state = plugin.current_state
+		if state and plugin.current_popup then
+			local active_index = state.active_index or PAGE_DICTIONARY
+			plugin:closeCurrentPopup(true)
+			return plugin:showCarousel(state, active_index)
+		end
+		return true
+	end
+
 	local function applySidePreviewMode(plugin, mode)
 		plugin:setSidePreviewMode(mode)
 		return plugin:refreshVisibleCards()
@@ -94,6 +105,180 @@ return function(ctx)
 	end
 
 	function LookupPreview:addToMainMenu(menu_items)
+		local card_corners_item = {
+			text_func = function()
+				local mode = self:useRoundedCards() and _("Rounded") or _("Square")
+				return string.format("%s: %s", _("Card corners"), mode)
+			end,
+			sub_item_table = {
+				{
+					text = _("Square"),
+					radio = true,
+					checked_func = function()
+						return not self:useRoundedCards()
+					end,
+					callback = function()
+						return applyCardStyleMode(self, false)
+					end,
+				},
+				{
+					text = _("Rounded"),
+					radio = true,
+					checked_func = function()
+						return self:useRoundedCards()
+					end,
+					callback = function()
+						return applyCardStyleMode(self, true)
+					end,
+				},
+			},
+		}
+
+		local side_previews_item = {
+			text_func = function()
+				local mode = self:useTabsMode() and _("Tabs") or _("Full cards")
+				return string.format("%s: %s", _("Side card previews"), mode)
+			end,
+			sub_item_table = {
+				{
+					text = _("Full cards"),
+					radio = true,
+					checked_func = function()
+						return not self:useTabsMode()
+					end,
+					callback = function()
+						return applySidePreviewMode(self, SIDE_PREVIEW_FULL_CARDS)
+					end,
+				},
+				{
+					text = _("Tabs"),
+					radio = true,
+					checked_func = function()
+						return self:useTabsMode()
+					end,
+					callback = function()
+						return applySidePreviewMode(self, SIDE_PREVIEW_TABS)
+					end,
+				},
+			},
+		}
+
+		local online_loading_item = {
+			text_func = function()
+				local mode = self:useManualOnlineCardLoading() and _("Manual only") or _("Automatic")
+				return string.format("%s: %s", _("Online card loading"), mode)
+			end,
+			sub_item_table = {
+				{
+					text = _("Automatic"),
+					radio = true,
+					checked_func = function()
+						return self:useAutomaticOnlineCardLoading()
+					end,
+					callback = function()
+						return applyOnlineCardLoadMode(self, ONLINE_CARD_LOAD_AUTOMATIC)
+					end,
+				},
+				{
+					text = _("Manual only"),
+					radio = true,
+					checked_func = function()
+						return self:useManualOnlineCardLoading()
+					end,
+					callback = function()
+						return applyOnlineCardLoadMode(self, ONLINE_CARD_LOAD_MANUAL_ONLY)
+					end,
+				},
+			},
+		}
+
+		local dictionary_html_item = {
+			text_func = function()
+				local mode = self:useFastRawDictionaryHtml() and _("Fast / Raw") or _("Formatted")
+				return string.format("%s: %s", _("Dictionary HTML"), mode)
+			end,
+			sub_item_table = {
+				{
+					text = _("Formatted"),
+					radio = true,
+					checked_func = function()
+						return not self:useFastRawDictionaryHtml()
+					end,
+					callback = function()
+						return applyDictionaryHtmlMode(self, DICTIONARY_HTML_FORMATTED)
+					end,
+				},
+				{
+					text = _("Fast / Raw"),
+					radio = true,
+					checked_func = function()
+						return self:useFastRawDictionaryHtml()
+					end,
+					callback = function()
+						return applyDictionaryHtmlMode(self, DICTIONARY_HTML_FAST_RAW)
+					end,
+				},
+			},
+		}
+
+		local translation_item = {
+			text = _("Translation"),
+			sub_item_table = {
+				{
+					text_func = function()
+						return string.format("%s: %s", _("Target language"), self:getTranslationTargetLang())
+					end,
+					sub_item_table_func = function()
+						return self:getTargetLanguageMenuItems(self.current_state)
+					end,
+				},
+				{
+					text = _("Show source text"),
+					checked_func = function()
+						return self:showTranslationSourceText()
+					end,
+					callback = function()
+						G_reader_settings:saveSetting(
+							SETTING_TRANSLATION_SHOW_SOURCE,
+							not self:showTranslationSourceText()
+						)
+						refreshTranslationPayloadIfLoaded(self)
+					end,
+				},
+				{
+					text = _("Buttons"),
+					sub_item_table = {
+						{
+							text = _("Show copy button"),
+							checked_func = function()
+								return self:showTranslationCopyButton()
+							end,
+							callback = function()
+								G_reader_settings:saveSetting(
+									SETTING_TRANSLATION_SHOW_COPY_BUTTON,
+									not self:showTranslationCopyButton()
+								)
+								self:refreshCurrentPage(PAGE_TRANSLATION)
+							end,
+						},
+						{
+							text = _("Show note button"),
+							checked_func = function()
+								return self:showTranslationNoteButton()
+							end,
+							callback = function()
+								G_reader_settings:saveSetting(
+									SETTING_TRANSLATION_SHOW_NOTE_BUTTON,
+									not self:showTranslationNoteButton()
+								)
+								self:refreshCurrentPage(PAGE_TRANSLATION)
+							end,
+						},
+					},
+				},
+			},
+		}
+
 		menu_items.lookuppreview = {
 			text = _("Lookup preview"),
 			sorting_hint = "tools",
@@ -108,180 +293,36 @@ return function(ctx)
 					end,
 				},
 				{
-					text_func = function()
-						local mode = self:useRoundedCards() and _("Rounded") or _("Square")
-						return string.format("%s: %s", _("Card corners"), mode)
-					end,
+					text = _("Appearance"),
 					sub_item_table = {
+						card_corners_item,
+						side_previews_item,
 						{
-							text = _("Square"),
-							radio = true,
+							text = _("Show card shadows"),
+							help_text = _("Show matching dithered shadows along the right and bottom edges of preview cards."),
 							checked_func = function()
-								return not self:useRoundedCards()
+								return self:showCardShadows()
 							end,
 							callback = function()
-								return applyCardStyleMode(self, false)
-							end,
-						},
-						{
-							text = _("Rounded"),
-							radio = true,
-							checked_func = function()
-								return self:useRoundedCards()
-							end,
-							callback = function()
-								return applyCardStyleMode(self, true)
+								return applyCardShadowMode(self, not self:showCardShadows())
 							end,
 						},
 					},
 				},
 				{
-					text_func = function()
-						local mode = self:useTabsMode() and _("Tabs") or _("Full cards")
-						return string.format("%s: %s", _("Side card previews"), mode)
-					end,
+					text = _("Content"),
 					sub_item_table = {
-						{
-							text = _("Full cards"),
-							radio = true,
-							checked_func = function()
-								return not self:useTabsMode()
-							end,
-							callback = function()
-								return applySidePreviewMode(self, SIDE_PREVIEW_FULL_CARDS)
-							end,
-						},
-						{
-							text = _("Tabs"),
-							radio = true,
-							checked_func = function()
-								return self:useTabsMode()
-							end,
-							callback = function()
-								return applySidePreviewMode(self, SIDE_PREVIEW_TABS)
-							end,
-						},
-					},
-				},
-				{
-					text_func = function()
-						local mode = self:useManualOnlineCardLoading() and _("Manual only") or _("Automatic")
-						return string.format("%s: %s", _("Online card loading"), mode)
-					end,
-					sub_item_table = {
-						{
-							text = _("Automatic"),
-							radio = true,
-							checked_func = function()
-								return self:useAutomaticOnlineCardLoading()
-							end,
-							callback = function()
-								return applyOnlineCardLoadMode(self, ONLINE_CARD_LOAD_AUTOMATIC)
-							end,
-						},
-						{
-							text = _("Manual only"),
-							radio = true,
-							checked_func = function()
-								return self:useManualOnlineCardLoading()
-							end,
-							callback = function()
-								return applyOnlineCardLoadMode(self, ONLINE_CARD_LOAD_MANUAL_ONLY)
-							end,
-						},
-					},
-				},
-				{
-					text_func = function()
-						local mode = self:useFastRawDictionaryHtml() and _("Fast / Raw") or _("Formatted")
-						return string.format("%s: %s", _("Dictionary HTML"), mode)
-					end,
-					sub_item_table = {
-						{
-							text = _("Formatted"),
-							radio = true,
-							checked_func = function()
-								return not self:useFastRawDictionaryHtml()
-							end,
-							callback = function()
-								return applyDictionaryHtmlMode(self, DICTIONARY_HTML_FORMATTED)
-							end,
-						},
-						{
-							text = _("Fast / Raw"),
-							radio = true,
-							checked_func = function()
-								return self:useFastRawDictionaryHtml()
-							end,
-							callback = function()
-								return applyDictionaryHtmlMode(self, DICTIONARY_HTML_FAST_RAW)
-							end,
-						},
-					},
-				},
-				{
-					text_func = function()
-						return string.format("%s: %s", _("Wikipedia language"), self:getWikipediaLang())
-					end,
-					sub_item_table_func = function()
-						return self:getWikipediaLanguageMenuItems(self.current_state)
-					end,
-				},
-				{
-					text = _("Translation"),
-					sub_item_table = {
+						online_loading_item,
+						dictionary_html_item,
 						{
 							text_func = function()
-								return string.format("%s: %s", _("Target language"), self:getTranslationTargetLang())
+								return string.format("%s: %s", _("Wikipedia language"), self:getWikipediaLang())
 							end,
 							sub_item_table_func = function()
-								return self:getTargetLanguageMenuItems(self.current_state)
+								return self:getWikipediaLanguageMenuItems(self.current_state)
 							end,
 						},
-						{
-							text = _("Show source text"),
-							checked_func = function()
-								return self:showTranslationSourceText()
-							end,
-							callback = function()
-								G_reader_settings:saveSetting(
-									SETTING_TRANSLATION_SHOW_SOURCE,
-									not self:showTranslationSourceText()
-								)
-								refreshTranslationPayloadIfLoaded(self)
-							end,
-						},
-						{
-							text = _("Buttons"),
-							sub_item_table = {
-								{
-									text = _("Show copy button"),
-									checked_func = function()
-										return self:showTranslationCopyButton()
-									end,
-									callback = function()
-										G_reader_settings:saveSetting(
-											SETTING_TRANSLATION_SHOW_COPY_BUTTON,
-											not self:showTranslationCopyButton()
-										)
-										self:refreshCurrentPage(PAGE_TRANSLATION)
-									end,
-								},
-								{
-									text = _("Show note button"),
-									checked_func = function()
-										return self:showTranslationNoteButton()
-									end,
-									callback = function()
-										G_reader_settings:saveSetting(
-											SETTING_TRANSLATION_SHOW_NOTE_BUTTON,
-											not self:showTranslationNoteButton()
-										)
-										self:refreshCurrentPage(PAGE_TRANSLATION)
-									end,
-								},
-							},
-						},
+						translation_item,
 					},
 				},
 				{
@@ -309,6 +350,14 @@ return function(ctx)
 
 	function LookupPreview:setRoundedCards(enabled)
 		G_reader_settings:saveSetting(SETTING_CARD_ROUNDED, enabled and true or false)
+	end
+
+	function LookupPreview:showCardShadows()
+		return G_reader_settings:nilOrTrue(SETTING_CARD_SHADOWS)
+	end
+
+	function LookupPreview:setCardShadows(enabled)
+		G_reader_settings:saveSetting(SETTING_CARD_SHADOWS, enabled and true or false)
 	end
 
 	function LookupPreview:getCardRadius()
