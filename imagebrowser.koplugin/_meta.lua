@@ -7,5 +7,5 @@ return {
 
 Based on the Glimpse plugin.]]
 	),
-	version = "0.2.3",
+	version = "0.2.4",
 }

@@ -1058,8 +1058,8 @@ local ImageBrowserViewer = ImageViewer:extend({
 	shadow_overlap = Screen:scaleBySize(66), -- part hidden under the panel
 	-- The centered popup needs a tighter shadow than the full-height drawer,
 	-- plus a short fade below it so the card lifts evenly from the page.
-	popup_shadow_width = Screen:scaleBySize(56),
-	popup_shadow_overlap = Screen:scaleBySize(24),
+	popup_shadow_width = Screen:scaleBySize(24),
+	popup_shadow_overlap = Screen:scaleBySize(12),
 	popup_bottom_shadow_height = Screen:scaleBySize(24),
 	popup_bottom_shadow_overlap = Screen:scaleBySize(12),
 	-- gap between the image area and the panel's rounded right edge
@@ -1443,7 +1443,9 @@ end
 
 function ImageBrowserViewer:_shadowMetrics(night)
 	local width = self._centered_popup and self.popup_shadow_width or self.shadow_width
-	if night then
+	-- Keep both visible popup fades geometrically uniform. Night mode makes
+	-- them darker via the density curve, without extending either direction.
+	if night and not self._centered_popup then
 		width = math.floor(width * 1.5 + 0.5)
 	end
 	return {
@@ -1468,8 +1470,8 @@ function ImageBrowserViewer:_paintPanel(bb, x, y)
 	--     stencils with the final night colors raw and setInverse(1) on
 	--     them: with matching flags the C blitter runs and copies them
 	--     as-is — same pixels on screen, at C speed.
-	-- Night design in both: black card, white hairline edge, dark shadow
-	-- (stronger/wider than day so it reads on black).
+	-- Night design in both: black card, white hairline edge and a stronger
+	-- shadow. Only the drawer grows wider; the popup stays uniform.
 	local night = Screen.night_mode
 	local inv = bb.getInverse and bb:getInverse() == 1
 	-- SW-invert night mode (Android/Boox): KOReader inverts the framebuffer
