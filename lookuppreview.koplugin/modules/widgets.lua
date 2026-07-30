@@ -278,6 +278,7 @@ return function(ctx)
 	HeaderSubtitleButton = InputContainer:extend({
 		text = nil,
 		face = nil,
+		bold = nil,
 		width = nil,
 		height = nil,
 		callback = nil,
@@ -286,7 +287,7 @@ return function(ctx)
 
 	function HeaderSubtitleButton:init()
 		local width = self.width or Screen:scaleBySize(240)
-		local label = makeTextLabel(self.text, self.face or SUBTITLE_FACE, width)
+		local label = makeTextLabel(self.text, self.face or SUBTITLE_FACE, width, self.bold)
 		local label_size = getWidgetSize(label)
 		local height = self.height or math.max(1, label_size.h or Screen:scaleBySize(14))
 
@@ -1266,6 +1267,7 @@ return function(ctx)
 			widget = HeaderSubtitleButton:new({
 				text = text or EMPTY_TEXT,
 				face = face,
+				bold = bold,
 				width = width,
 				show_parent = self,
 				callback = callback,
@@ -1302,14 +1304,26 @@ return function(ctx)
 
 		local text_width = menu_button and math.max(1, content_width - menu_width - HEADER_TITLE_MENU_GAP)
 			or content_width
-		local text_items = {
-			self:makeHeaderText(payload.title or EMPTY_TEXT, TITLE_FACE, true, nil, text_width),
-		}
+		local hide_redundant_title = self:useTabsMode()
+			and (payload.page_type == PAGE_TRANSLATION or payload.page_type == PAGE_WIKIPEDIA)
+		local text_items = {}
+		if not hide_redundant_title then
+			text_items[#text_items + 1] =
+				self:makeHeaderText(payload.title or EMPTY_TEXT, TITLE_FACE, true, nil, text_width)
+		end
 
 		if payload.subtitle and payload.subtitle ~= "" then
-			text_items[#text_items + 1] = VerticalSpan:new({ width = HEADER_GAP })
-			text_items[#text_items + 1] =
-				self:makeHeaderText(payload.subtitle, SUBTITLE_FACE, false, payload.subtitle_callback, text_width)
+			if #text_items > 0 then
+				text_items[#text_items + 1] = VerticalSpan:new({ width = HEADER_GAP })
+			end
+			local subtitle_face = hide_redundant_title and TITLE_FACE or SUBTITLE_FACE
+			text_items[#text_items + 1] = self:makeHeaderText(
+				payload.subtitle,
+				subtitle_face,
+				hide_redundant_title,
+				payload.subtitle_callback,
+				text_width
+			)
 		end
 
 		local text_block = VerticalGroup:new(text_items)
