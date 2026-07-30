@@ -40,6 +40,7 @@ return function(ctx)
 	local TAB_TOUCH_PADDING_H = (SIDE_TAB_PADDING_H or 0) + math.max(2, Screen:scaleBySize(4))
 	local TAB_TOUCH_PADDING_V = (SIDE_TAB_PADDING_V or 0) + math.max(1, Screen:scaleBySize(1))
 	local TAB_INACTIVE_TOP_OFFSET = math.max(1, Screen:scaleBySize(3))
+	local TAB_CARD_JOIN_GAP = math.max(1, Screen:scaleBySize(1))
 	local TAB_LABEL_FACE = Font:getFace("cfont", math.max(14, HEADER_MENU_FONT_SIZE or UI_FONT_SIZE or 20))
 	local TAB_COMPACT_MIN_WIDTH = math.max(Screen:scaleBySize(58), Screen:scaleBySize(1))
 	local TAB_COMPACT_EXTRA_PADDING_H = Screen:scaleBySize(14)
@@ -388,6 +389,8 @@ return function(ctx)
 		height = TAB_TOUCH_HEIGHT,
 		active = false,
 		radius = nil,
+		bottom_left_inset = 0,
+		left_extension_height = 0,
 		callback = nil,
 		show_parent = nil,
 	})
@@ -472,7 +475,14 @@ return function(ctx)
 			bb:paintRect(x, square_y, width, square_height, background)
 			bb:paintRect(x, square_y, border_size, square_height, self.border_color)
 			bb:paintRect(x + width - border_size, square_y, border_size, square_height, self.border_color)
-			bb:paintRect(x, y + frame_height - border_size, width, border_size, self.border_color)
+			local bottom_left_inset = math.max(0, math.min(width - border_size, self.bottom_left_inset or 0))
+			bb:paintRect(
+				x + bottom_left_inset,
+				y + frame_height - border_size,
+				width - bottom_left_inset,
+				border_size,
+				self.border_color
+			)
 		end
 	end
 
@@ -502,6 +512,12 @@ return function(ctx)
 				self.frame.dimen.h = frame_height
 			end
 			self.frame:paintTo(bb, x, y + top_offset)
+		end
+
+		local left_extension_height = math.max(0, self.left_extension_height or 0)
+		if left_extension_height > 0 then
+			local border_size = self.border_size or SIDE_TAB_BORDER_SIZE or 1
+			bb:paintRect(x, y + top_offset + frame_height, border_size, left_extension_height, self.border_color)
 		end
 
 		if self.bottom_cover then
@@ -916,12 +932,21 @@ return function(ctx)
 		end
 
 		for _, spec in ipairs(specs) do
+			local extend_dictionary_border = card_radius
+				and card_radius > 0
+				and self.active_index ~= PAGE_DICTIONARY
+				and spec.page_index == PAGE_DICTIONARY
+			local tab_border_size = math.max(1, SIDE_TAB_BORDER_SIZE or 1)
 			self.side_tab_widgets[spec.page_index] = CardTabButton:new({
 				text = spec.text,
 				width = spec.width,
 				height = height,
 				active = spec.active,
 				radius = tab_radius,
+				bottom_left_inset = extend_dictionary_border and card_radius or 0,
+				left_extension_height = extend_dictionary_border
+						and math.max(0, card_radius - tab_border_size - TAB_CARD_JOIN_GAP)
+					or 0,
 				show_parent = self.popup,
 				callback = function()
 					return self.popup.plugin:switchToPage(spec.page_index)
@@ -1024,7 +1049,8 @@ return function(ctx)
 		end
 
 		local first_tab_bounds = self.side_tab_bounds and self.side_tab_bounds[PAGE_DICTIONARY]
-		local left_join_x = first_tab_bounds and ((base_x or 0) + first_tab_bounds.x) or (card_x + border_size)
+		local first_tab_left = first_tab_bounds and ((base_x or 0) + first_tab_bounds.x) or card_x
+		local left_join_x = math.max(first_tab_left, card_x + card_radius)
 		local left_join_w = math.max(0, cover_x - left_join_x)
 		if left_join_w > 0 then
 			self.rounded_left_join_line = self.rounded_left_join_line
@@ -1510,7 +1536,10 @@ return function(ctx)
 			bordersize = CARD_BORDER_SIZE,
 			color = CARD_BORDER_COLOR,
 			radius = card_radius,
-			square_top_left = self:useTabsMode() and card_radius ~= nil and card_radius > 0,
+			square_top_left = self:useTabsMode()
+				and card_radius ~= nil
+				and card_radius > 0
+				and payload.page_type == PAGE_DICTIONARY,
 			margin = 0,
 			padding = 0,
 			VerticalGroup:new(content_items),
