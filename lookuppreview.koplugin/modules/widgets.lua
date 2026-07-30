@@ -44,7 +44,6 @@ return function(ctx)
 	local TAB_COMPACT_MIN_WIDTH = math.max(Screen:scaleBySize(58), Screen:scaleBySize(1))
 	local TAB_COMPACT_EXTRA_PADDING_H = Screen:scaleBySize(14)
 	local TAB_LABEL_MAX_WIDTH = Screen:scaleBySize(180)
-	local TAB_ROUNDED_RADIUS = math.max(2, Screen:scaleBySize(4))
 	local SHADOW_BAYER8 = {
 		{ 0, 32, 8, 40, 2, 34, 10, 42 },
 		{ 48, 16, 56, 24, 50, 18, 58, 26 },
@@ -211,20 +210,27 @@ return function(ctx)
 		if not card_radius or card_radius <= 0 then
 			return nil
 		end
-		return math.max(1, math.min(TAB_ROUNDED_RADIUS, math.floor(TAB_TOUCH_HEIGHT / 3)))
+		return math.max(1, math.min(card_radius, math.floor(TAB_TOUCH_HEIGHT / 2)))
 	end
 
-	local function getRoundedTabInset(card_radius)
-		if not card_radius or card_radius <= 0 then
-			return 0
+	local LookupCardFrame = FrameContainer:extend({
+		square_top_left = false,
+	})
+
+	function LookupCardFrame:paintTo(bb, x, y)
+		FrameContainer.paintTo(self, bb, x, y)
+		if not self.square_top_left or not self.radius or self.radius <= 0 then
+			return
 		end
-		local max_inset = Screen:scaleBySize(18)
-		local inset = math.floor(card_radius * 0.75)
-		return math.max(CARD_BORDER_SIZE or 1, math.min(max_inset, inset))
-	end
 
-	local function getTabAvailableWidth(card_width, tab_inset)
-		return math.max(1, (card_width or 1) - (tab_inset or 0))
+		local border_size = math.max(1, self.bordersize or 0)
+		local margin = self.margin or 0
+		local corner_size = math.max(border_size, math.floor(self.radius + border_size))
+		local corner_x = x + margin
+		local corner_y = y + margin
+		bb:paintRect(corner_x, corner_y, corner_size, corner_size, self.background or Blitbuffer.COLOR_WHITE)
+		bb:paintRect(corner_x, corner_y, corner_size, border_size, self.color or CARD_BORDER_COLOR)
+		bb:paintRect(corner_x, corner_y, border_size, corner_size, self.color or CARD_BORDER_COLOR)
 	end
 
 	local function getTabLabel(page_index)
@@ -418,37 +424,6 @@ return function(ctx)
 			}),
 		})
 
-		if self.use_top_radius then
-			self.top_left_mask = LineWidget:new({
-				background = Blitbuffer.COLOR_WHITE,
-				dimen = Geom:new({ w = 1, h = 1 }),
-			})
-			self.top_right_mask = LineWidget:new({
-				background = Blitbuffer.COLOR_WHITE,
-				dimen = Geom:new({ w = 1, h = 1 }),
-			})
-			self.top_line = LineWidget:new({
-				background = self.border_color,
-				dimen = Geom:new({ w = 1, h = 1 }),
-			})
-			self.left_line = LineWidget:new({
-				background = self.border_color,
-				dimen = Geom:new({ w = 1, h = 1 }),
-			})
-			self.right_line = LineWidget:new({
-				background = self.border_color,
-				dimen = Geom:new({ w = 1, h = 1 }),
-			})
-			self.top_left_step = LineWidget:new({
-				background = self.border_color,
-				dimen = Geom:new({ w = 1, h = 1 }),
-			})
-			self.top_right_step = LineWidget:new({
-				background = self.border_color,
-				dimen = Geom:new({ w = 1, h = 1 }),
-			})
-		end
-
 		if self.active then
 			self.bottom_cover = LineWidget:new({
 				background = Blitbuffer.COLOR_WHITE,
@@ -468,7 +443,7 @@ return function(ctx)
 		return self.dimen
 	end
 
-	function CardTabButton:paintTopRoundedCorners(bb, x, y, width, frame_height)
+	function CardTabButton:paintRoundedFrame(bb, x, y, width, frame_height)
 		if not self.use_top_radius then
 			return
 		end
@@ -476,48 +451,28 @@ return function(ctx)
 		local border_size = self.border_size or SIDE_TAB_BORDER_SIZE or 1
 		local radius =
 			math.max(border_size, math.min(self.radius or 0, math.floor(width / 2), math.floor(frame_height / 2)))
-		local mask_size = radius
-		local right_x = x + width - mask_size
-		local line_y = y + radius
-		local side_h = math.max(1, frame_height - radius)
+		local background = Blitbuffer.COLOR_WHITE
+		local paint_rounded_rect = Blitbuffer.isColor8(background) and bb.paintRoundedRect or bb.paintRoundedRectRGB32
+		paint_rounded_rect(bb, x, y, width, frame_height, background, radius + border_size)
+		bb:paintBorder(
+			x,
+			y,
+			width,
+			frame_height,
+			border_size,
+			self.border_color,
+			radius,
+			G_reader_settings:nilOrTrue("anti_alias_ui")
+		)
 
-		self.top_left_mask.dimen = Geom:new({ x = x, y = y, w = mask_size, h = mask_size })
-		self.top_left_mask:paintTo(bb, x, y)
-
-		self.top_right_mask.dimen = Geom:new({ x = right_x, y = y, w = mask_size, h = mask_size })
-		self.top_right_mask:paintTo(bb, right_x, y)
-
-		self.top_line.dimen = Geom:new({
-			x = x + radius,
-			y = y,
-			w = math.max(1, width - 2 * radius),
-			h = border_size,
-		})
-		self.top_line:paintTo(bb, x + radius, y)
-
-		self.left_line.dimen = Geom:new({ x = x, y = line_y, w = border_size, h = side_h })
-		self.left_line:paintTo(bb, x, line_y)
-
-		self.right_line.dimen = Geom:new({
-			x = x + width - border_size,
-			y = line_y,
-			w = border_size,
-			h = side_h,
-		})
-		self.right_line:paintTo(bb, x + width - border_size, line_y)
-
-		local step_w = math.max(border_size, radius - border_size)
-		local step_y = y + border_size
-		self.top_left_step.dimen = Geom:new({ x = x + border_size, y = step_y, w = step_w, h = border_size })
-		self.top_left_step:paintTo(bb, x + border_size, step_y)
-
-		self.top_right_step.dimen = Geom:new({
-			x = x + width - border_size - step_w,
-			y = step_y,
-			w = step_w,
-			h = border_size,
-		})
-		self.top_right_step:paintTo(bb, x + width - border_size - step_w, step_y)
+		local square_y = y + radius
+		local square_height = frame_height - radius
+		if square_height > 0 then
+			bb:paintRect(x, square_y, width, square_height, background)
+			bb:paintRect(x, square_y, border_size, square_height, self.border_color)
+			bb:paintRect(x + width - border_size, square_y, border_size, square_height, self.border_color)
+			bb:paintRect(x, y + frame_height - border_size, width, border_size, self.border_color)
+		end
 	end
 
 	function CardTabButton:paintTo(bb, x, y)
@@ -536,7 +491,9 @@ return function(ctx)
 			self.dimen.h = height
 		end
 
-		if self.frame then
+		if self.use_top_radius then
+			self:paintRoundedFrame(bb, x, y + top_offset, width, frame_height)
+		elseif self.frame then
 			if self.frame.dimen then
 				self.frame.dimen.x = x
 				self.frame.dimen.y = y + top_offset
@@ -545,8 +502,6 @@ return function(ctx)
 			end
 			self.frame:paintTo(bb, x, y + top_offset)
 		end
-
-		self:paintTopRoundedCorners(bb, x, y + top_offset, width, frame_height)
 
 		if self.bottom_cover then
 			local border_size = self.border_size or SIDE_TAB_BORDER_SIZE
@@ -932,9 +887,8 @@ return function(ctx)
 		local y = 0
 		local card_radius = getPopupCardRadius(self.popup)
 		local tab_radius = getRoundedTabRadius(card_radius)
-		local tab_inset = getRoundedTabInset(card_radius)
-		local available_width = getTabAvailableWidth(self.card_width, tab_inset)
-		local x = active_x + tab_inset
+		local available_width = math.max(1, self.card_width or 1)
+		local x = active_x
 		local specs = {}
 		local used_width = 0
 
@@ -1536,11 +1490,13 @@ return function(ctx)
 		end
 		content_items[#content_items + 1] = VerticalSpan:new({ width = CARD_PADDING_BOTTOM })
 
-		return FrameContainer:new({
+		local card_radius = self:getCardRadius()
+		return LookupCardFrame:new({
 			background = Blitbuffer.COLOR_WHITE,
 			bordersize = CARD_BORDER_SIZE,
 			color = CARD_BORDER_COLOR,
-			radius = self:getCardRadius(),
+			radius = card_radius,
+			square_top_left = self:useTabsMode() and card_radius ~= nil and card_radius > 0,
 			margin = 0,
 			padding = 0,
 			VerticalGroup:new(content_items),

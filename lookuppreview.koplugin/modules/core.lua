@@ -105,6 +105,7 @@ return function(ctx)
 	end
 
 	function LookupPreview:addToMainMenu(menu_items)
+		local version = plugin_meta and plugin_meta.version or "?"
 		local card_corners_item = {
 			text_func = function()
 				local mode = self:useRoundedCards() and _("Rounded") or _("Square")
@@ -299,7 +300,9 @@ return function(ctx)
 						side_previews_item,
 						{
 							text = _("Show card shadows"),
-							help_text = _("Show matching dithered shadows along the right and bottom edges of preview cards."),
+							help_text = _(
+								"Show matching dithered shadows along the right and bottom edges of preview cards."
+							),
 							checked_func = function()
 								return self:showCardShadows()
 							end,
@@ -326,9 +329,9 @@ return function(ctx)
 					},
 				},
 				{
-					text = string.format("%s: %s", _("Version"), PLUGIN_VERSION),
+					text = string.format("%s: %s", _("Version"), version),
 					callback = function()
-						self:notify(string.format("%s %s", _("Lookup Preview"), PLUGIN_VERSION))
+						self:notify(string.format("%s %s", _("Lookup Preview"), version))
 					end,
 					separator = true,
 				},

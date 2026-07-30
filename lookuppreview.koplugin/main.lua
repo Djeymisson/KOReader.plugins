@@ -1,5 +1,9 @@
 local ctx = require("modules.context")
 
+local source = debug.getinfo(1, "S").source or ""
+local plugin_dir = source:match("^@(.*/)") or source:match("^(.*/)") or ""
+ctx.plugin_meta = dofile(plugin_dir .. "_meta.lua")
+
 local module_names = {
 	"modules.utils",
 	"modules.widgets",
