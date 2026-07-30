@@ -1,4 +1,5 @@
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
+local Blitbuffer = require("ffi/blitbuffer")
 local ButtonDialog = require("ui/widget/buttondialog")
 local IconWidget = require("ui/widget/iconwidget")
 local UIManager = require("ui/uimanager")
@@ -15,7 +16,7 @@ local math_floor = math.floor
 local math_max = math.max
 local math_min = math.min
 
-local PLUGIN_VERSION = "v1.0.1"
+local PLUGIN_VERSION = "v1.0.3"
 local QR_MESSAGE_MODULE = "ui/widget/qrmessage"
 
 local BUTTON_ICON_SIZE = Screen:scaleBySize(22)
@@ -23,8 +24,23 @@ local BUTTON_HEIGHT = Screen:scaleBySize(42)
 local BUTTON_SIDE_PADDING = Screen:scaleBySize(6)
 local BUTTON_WIDTH = BUTTON_HEIGHT + 2 * BUTTON_SIDE_PADDING
 
+local SHADOW_WIDTH = math_max(2, Screen:scaleBySize(12))
+local SHADOW_OVERLAP = math_min(SHADOW_WIDTH - 1, math_max(1, Screen:scaleBySize(6)))
+local SHADOW_EXTENT = math_max(0, SHADOW_WIDTH - SHADOW_OVERLAP)
+local SHADOW_BAYER8 = {
+	{ 0, 32, 8, 40, 2, 34, 10, 42 },
+	{ 48, 16, 56, 24, 50, 18, 58, 26 },
+	{ 12, 44, 4, 36, 14, 46, 6, 38 },
+	{ 60, 28, 52, 20, 62, 30, 54, 22 },
+	{ 3, 35, 11, 43, 1, 33, 9, 41 },
+	{ 51, 19, 59, 27, 49, 17, 57, 25 },
+	{ 15, 47, 7, 39, 13, 45, 5, 37 },
+	{ 63, 31, 55, 23, 61, 29, 53, 21 },
+}
+
 local SETTING_ENABLED = "selectiontoolbar_enabled"
 local SETTING_ACTIONS = "selectiontoolbar_actions"
+local SETTING_SHADOWS = "selectiontoolbar_shadows"
 
 local ACTIONS = {
 	{ id = "select", key = "01_select", icon = "select", text = _("Select") },
@@ -39,6 +55,151 @@ local ACTIONS = {
 	{ id = "search", key = "12_search", icon = "search", text = _("Search") },
 }
 local QR_ICON_ACTION = { icon = "qr_code" }
+
+local TOOLBAR_SHADOW_CACHE = {}
+
+local function clearToolbarShadowCache()
+	if TOOLBAR_SHADOW_CACHE.right then
+		TOOLBAR_SHADOW_CACHE.right:free()
+	end
+	if TOOLBAR_SHADOW_CACHE.bottom then
+		TOOLBAR_SHADOW_CACHE.bottom:free()
+	end
+	TOOLBAR_SHADOW_CACHE = {}
+end
+
+local ShadowedPopup = WidgetContainer:extend({})
+
+function ShadowedPopup:getSize()
+	local size = self[1]:getSize()
+	return Geom:new({
+		w = size.w + SHADOW_EXTENT,
+		h = size.h + SHADOW_EXTENT,
+	})
+end
+
+function ShadowedPopup:_ensureShadowBuffers(bb, width, height)
+	local night = Screen.night_mode
+	local inv = bb.getInverse and bb:getInverse() == 1
+	local render_inv = inv and not (night and Device.isAndroid and Device:isAndroid())
+	local cache_key = table.concat({
+		tostring(width),
+		tostring(height),
+		tostring(night),
+		tostring(render_inv),
+	}, ":")
+	if TOOLBAR_SHADOW_CACHE.key == cache_key then
+		return
+	end
+
+	clearToolbarShadowCache()
+	TOOLBAR_SHADOW_CACHE.key = cache_key
+
+	local shadow_value = render_inv and 0x00 or (night and 0xFF or 0x00)
+	local shadow_on = Blitbuffer.ColorRGB32(shadow_value, shadow_value, shadow_value, 255)
+	local shadow_off = Blitbuffer.ColorRGB32(shadow_value, shadow_value, shadow_value, 0)
+	local base_strength = night and 1.0 or 0.5
+	local peak_level = night and 1.0 or 0.62
+	local bump_width = 0.18
+
+	local function baseFraction(t)
+		if night then
+			return t < 0.5 and (1 - 0.8 * t) or 0.6 * (1 - (t - 0.5) * 2) ^ 2
+		end
+		return 1 - t
+	end
+
+	local function shadowLevel(pos)
+		local t = (pos + 0.5) / SHADOW_WIDTH
+		local original_level = base_strength * baseFraction(t)
+		local visible_start = SHADOW_OVERLAP / SHADOW_WIDTH
+		local bump
+		if t <= visible_start then
+			bump = 1
+		else
+			local distance = (t - visible_start) / bump_width
+			bump = distance < 1 and 0.5 * (1 + math.cos(math.pi * distance)) or 0
+		end
+		return (original_level + bump * (peak_level - original_level)) * 255
+	end
+
+	TOOLBAR_SHADOW_CACHE.right = Blitbuffer.new(SHADOW_WIDTH, height, Blitbuffer.TYPE_BBRGB32)
+	for x = 0, SHADOW_WIDTH - 1 do
+		local level = shadowLevel(x)
+		local column = (x % 8) + 1
+		for y = 0, height - 1 do
+			local threshold = (SHADOW_BAYER8[column][(y % 8) + 1] + 0.5) * 4
+			local color = level > threshold and shadow_on or shadow_off
+			TOOLBAR_SHADOW_CACHE.right:setPixel(x, y, color)
+		end
+	end
+	TOOLBAR_SHADOW_CACHE.right:setInverse(render_inv and 1 or 0)
+
+	local bottom_width = width + SHADOW_EXTENT
+	TOOLBAR_SHADOW_CACHE.bottom = Blitbuffer.new(bottom_width, SHADOW_WIDTH, Blitbuffer.TYPE_BBRGB32)
+	for y = 0, SHADOW_WIDTH - 1 do
+		local bottom_level = shadowLevel(y)
+		local row = (y % 8) + 1
+		for x = 0, bottom_width - 1 do
+			local level = bottom_level
+			if y < SHADOW_OVERLAP and x >= width - SHADOW_OVERLAP then
+				level = 0
+			elseif x >= width then
+				level = math_min(level, shadowLevel(SHADOW_OVERLAP + x - width))
+			end
+			local threshold = (SHADOW_BAYER8[(x % 8) + 1][row] + 0.5) * 4
+			local color = level > threshold and shadow_on or shadow_off
+			TOOLBAR_SHADOW_CACHE.bottom:setPixel(x, y, color)
+		end
+	end
+	TOOLBAR_SHADOW_CACHE.bottom:setInverse(render_inv and 1 or 0)
+end
+
+function ShadowedPopup:_alphaBlitClipped(bb, source, x, y)
+	local source_x, source_y = 0, 0
+	local width, height = source:getWidth(), source:getHeight()
+	if x < 0 then
+		source_x = -x
+		width = width - source_x
+		x = 0
+	end
+	if y < 0 then
+		source_y = -y
+		height = height - source_y
+		y = 0
+	end
+	width = math_min(width, bb:getWidth() - x)
+	height = math_min(height, bb:getHeight() - y)
+	if width > 0 and height > 0 then
+		bb:alphablitFrom(source, x, y, source_x, source_y, width, height)
+	end
+end
+
+function ShadowedPopup:paintTo(bb, x, y)
+	local content_size = self[1]:getSize()
+	local width, height = content_size.w, content_size.h
+	self:_ensureShadowBuffers(bb, width, height)
+	self.dimen = Geom:new({
+		x = x,
+		y = y,
+		w = width + SHADOW_EXTENT,
+		h = height + SHADOW_EXTENT,
+	})
+	self:_alphaBlitClipped(bb, TOOLBAR_SHADOW_CACHE.bottom, x, y + height - SHADOW_OVERLAP)
+	self:_alphaBlitClipped(bb, TOOLBAR_SHADOW_CACHE.right, x + width - SHADOW_OVERLAP, y)
+	self[1]:paintTo(bb, x, y)
+end
+
+local ShadowedButtonDialog = ButtonDialog:extend({})
+
+function ShadowedButtonDialog:init()
+	ButtonDialog.init(self)
+	if self.show_shadow then
+		self.movable[1] = ShadowedPopup:new({
+			self.movable[1],
+		})
+	end
+end
 
 local function pluginDir()
 	local source = debug.getinfo(1, "S").source or ""
@@ -85,6 +246,7 @@ function SelectionToolbar:onClose()
 	end
 
 	self:unpatchIconWidget()
+	clearToolbarShadowCache()
 end
 
 function SelectionToolbar:isEnabled()
@@ -93,6 +255,17 @@ end
 
 function SelectionToolbar:setEnabled(enabled)
 	G_reader_settings:saveSetting(SETTING_ENABLED, enabled and true or false)
+end
+
+function SelectionToolbar:showToolbarShadows()
+	return G_reader_settings:nilOrTrue(SETTING_SHADOWS)
+end
+
+function SelectionToolbar:setToolbarShadows(enabled)
+	G_reader_settings:saveSetting(SETTING_SHADOWS, enabled and true or false)
+	if not enabled then
+		clearToolbarShadowCache()
+	end
 end
 
 function SelectionToolbar:getActionSettings()
@@ -243,14 +416,33 @@ function SelectionToolbar:addToMainMenu(menu_items)
 				keep_menu_open = true,
 			},
 			{
-				text = _("Version") .. ": " .. PLUGIN_VERSION,
-				callback = function()
-					UIManager:show(InfoMessage:new({ text = _("Selection Toolbar Plugin") .. " " .. PLUGIN_VERSION }))
-				end,
+				text = _("Appearance"),
+				sub_item_table = {
+					{
+						text = _("Show toolbar shadow"),
+						help_text = _(
+							"Show a small dithered shadow along the right and bottom edges of the selection toolbar."
+						),
+						checked_func = function()
+							return self:showToolbarShadows()
+						end,
+						callback = function()
+							self:setToolbarShadows(not self:showToolbarShadows())
+						end,
+						keep_menu_open = true,
+					},
+				},
 			},
 			{
 				text = _("Visible actions"),
 				sub_item_table = action_items,
+			},
+			{
+				text = _("Version") .. ": " .. PLUGIN_VERSION,
+				callback = function()
+					UIManager:show(InfoMessage:new({ text = _("Selection Toolbar Plugin") .. " " .. PLUGIN_VERSION }))
+				end,
+				separator = true,
 			},
 		},
 	}
@@ -483,14 +675,17 @@ function SelectionToolbar:showToolbar(reader_highlight, index)
 	self:closeHighlightDialog(reader_highlight)
 
 	local button_size = BUTTON_WIDTH
+	local show_shadow = self:showToolbarShadows()
+	local shadow_extent = show_shadow and SHADOW_EXTENT or 0
 	local width = math_min(
-		Screen:getWidth() - 2 * Size.padding.large,
+		Screen:getWidth() - 2 * Size.padding.large - shadow_extent,
 		#row * button_size + 2 * Size.border.window + 2 * Size.padding.button
 	)
 
-	reader_highlight.highlight_dialog = ButtonDialog:new({
+	reader_highlight.highlight_dialog = ShadowedButtonDialog:new({
 		buttons = { row },
 		width = width,
+		show_shadow = show_shadow,
 		shrink_unneeded_width = true,
 		shrink_min_width = button_size,
 		dismissable = true,
