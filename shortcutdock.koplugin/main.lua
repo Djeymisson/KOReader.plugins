@@ -21,7 +21,7 @@ local math_floor = math.floor
 local math_max = math.max
 local math_min = math.min
 
-local PLUGIN_VERSION = "v0.5.0"
+local PLUGIN_VERSION = "v0.6.1"
 local SETTING_ACTIONS = "shortcutdock_actions"
 local SETTING_ACTION_CONTEXTS = "shortcutdock_action_contexts"
 local SETTING_AUTO_VISIBILITY = "shortcutdock_auto_visibility"
@@ -515,29 +515,84 @@ function ShortcutDock:isReaderContext()
     return self.ui and self.ui.document ~= nil
 end
 
-function ShortcutDock:getParkedBookshelfContext()
-    -- Bookshelf keeps ReaderUI alive while showing its full-screen widget, so
-    -- self.ui.document alone cannot distinguish the shelf from the reader.
+function ShortcutDock:getActiveBookshelfWidget()
     -- Use already-loaded Bookshelf modules to keep this integration optional
     -- and avoid loading the plugin merely because Shortcut Dock is opened.
     local BookshelfWidget = package.loaded["lib/bookshelf_widget"]
         or package.loaded["bookshelf_widget"]
-    local Park = package.loaded["lib/bookshelf_reader_park"]
-        or package.loaded["bookshelf_reader_park"]
     local live_widget = type(BookshelfWidget) == "table" and BookshelfWidget.live or nil
     if
         not live_widget
-        or type(Park) ~= "table"
-        or type(Park.isParked) ~= "function"
-        or type(Park.unpark) ~= "function"
         or type(UIManager.isWidgetShown) ~= "function"
     then
         return nil
     end
 
-    local parked_ok, parked = pcall(Park.isParked)
     local shown_ok, shown = pcall(UIManager.isWidgetShown, UIManager, live_widget)
-    if parked_ok and parked and shown_ok and shown then
+    if not shown_ok or not shown then
+        return nil
+    end
+
+    -- Bookshelf deliberately remains in UIManager's stack after a parked
+    -- reader is resumed. In that state isWidgetShown() is still true, but the
+    -- ReaderUI that owns this plugin is above Bookshelf and is the active
+    -- context. Compare both positions so search and history target the screen
+    -- actually in the foreground.
+    local stack = UIManager._window_stack
+    if type(stack) == "table" then
+        local bookshelf_index
+        local host_index
+        for index, window in ipairs(stack) do
+            local widget = type(window) == "table" and window.widget or nil
+            if widget == live_widget then
+                bookshelf_index = index
+            elseif widget == self.ui then
+                host_index = index
+            end
+        end
+
+        if not bookshelf_index then
+            return nil
+        elseif host_index then
+            return bookshelf_index > host_index and live_widget or nil
+        end
+    end
+
+    -- Compatibility fallback for UIManager implementations whose stack is
+    -- unavailable or does not expose the host widget. In reader context,
+    -- Bookshelf is active only while that reader is parked.
+    if self:isReaderContext() then
+        local Park = package.loaded["lib/bookshelf_reader_park"]
+            or package.loaded["bookshelf_reader_park"]
+        if type(Park) ~= "table" or type(Park.isParked) ~= "function" then
+            return nil
+        end
+        local parked_ok, parked = pcall(Park.isParked)
+        if not parked_ok or not parked then
+            return nil
+        end
+    end
+
+    return live_widget
+end
+
+function ShortcutDock:getParkedBookshelfContext()
+    -- Bookshelf keeps ReaderUI alive while showing its full-screen widget, so
+    -- self.ui.document alone cannot distinguish the shelf from the reader.
+    local live_widget = self:getActiveBookshelfWidget()
+    local Park = package.loaded["lib/bookshelf_reader_park"]
+        or package.loaded["bookshelf_reader_park"]
+    if
+        not live_widget
+        or type(Park) ~= "table"
+        or type(Park.isParked) ~= "function"
+        or type(Park.unpark) ~= "function"
+    then
+        return nil
+    end
+
+    local parked_ok, parked = pcall(Park.isParked)
+    if parked_ok and parked then
         return {
             park = Park,
             widget = live_widget,
@@ -573,9 +628,51 @@ function ShortcutDock:onShortcutDockContextHome()
 end
 
 function ShortcutDock:onShortcutDockContextSearch()
+    local bookshelf = self:getActiveBookshelfWidget()
+    if bookshelf and type(bookshelf._openSearchDialog) == "function" then
+        local ok = pcall(bookshelf._openSearchDialog, bookshelf)
+        if ok then
+            return true
+        end
+    end
+
     local event = self:isReaderContext() and "ShowFulltextSearchInput" or "ShowFileSearch"
     UIManager:broadcastEvent(require("ui/event"):new(event))
     return true
+end
+
+function ShortcutDock:openBookshelfRecent()
+    local bookshelf = self:getActiveBookshelfWidget()
+    if not bookshelf then
+        return false
+    end
+
+    local select_chip = bookshelf._selectChip or bookshelf._setActiveChip
+    if type(select_chip) ~= "function" then
+        return false
+    end
+
+    local recent_id = "recent"
+    local TabModel = package.loaded["lib/bookshelf_tab_model"]
+        or package.loaded["bookshelf_tab_model"]
+    if type(TabModel) == "table" and type(TabModel.load) == "function" then
+        local loaded_ok, tabs = pcall(TabModel.load)
+        if loaded_ok and type(tabs) == "table" then
+            recent_id = nil
+            for _, tab in ipairs(tabs) do
+                if type(tab) == "table" and tab.source and tab.source.kind == "recent" then
+                    recent_id = tab.id
+                    break
+                end
+            end
+            if not recent_id then
+                return false
+            end
+        end
+    end
+
+    local ok = pcall(select_chip, bookshelf, recent_id)
+    return ok
 end
 
 function ShortcutDock:onShowShortcutDock()
@@ -776,6 +873,9 @@ function ShortcutDock:executeAction(action_id)
 
     self:closeDock()
     UIManager:scheduleIn(0.05, function()
+        if action_id == "history" and self:openBookshelfRecent() then
+            return
+        end
         Dispatcher:execute({ [action_id] = value })
     end)
 end

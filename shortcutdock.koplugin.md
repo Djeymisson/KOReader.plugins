@@ -1,4 +1,4 @@
-# Shortcut Dock ![Version](https://img.shields.io/badge/version-v0.5.0-blue)
+# Shortcut Dock ![Version](https://img.shields.io/badge/version-v0.6.1-blue)
 
 Shortcut Dock adds a floating, vertical shortcut bar to KOReader. It is designed for touch devices and can be assigned to any gesture supported by KOReader.
 
@@ -18,7 +18,9 @@ Shortcut Dock adds a floating, vertical shortcut bar to KOReader. It is designed
 - The context-aware home button is fixed at the beginning of the action group and can be hidden in the plugin settings. Its icon changes between a home and an open document according to the current screen, including the Bookshelf overlay.
 - Context-aware search button:
   - opens file search in the file browser;
-  - opens full-text search while reading.
+  - opens full-text search while reading;
+  - opens Bookshelf's library search while Bookshelf is in the foreground.
+- The History action opens Bookshelf's Recent shelf while Bookshelf is in the foreground, and keeps KOReader's native history behavior in other contexts.
 - Dynamic Wi-Fi icon reflecting the current Wi-Fi state whenever the dock is opened.
 - Optional per-action custom icons with automatic fallback to KOReader icons.
 - Two-letter action abbreviations when neither a custom nor a KOReader icon is available; hold the button to see its full name.
@@ -55,7 +57,7 @@ The settings follow the same grouped layout as the other plugins in this reposit
   - `Visibility by context`: displays the automatic result and controls manual overrides for each action.
   - `Expected icon filenames`: lists the custom SVG and PNG names accepted for every action.
 - `Gesture setup`: displays instructions for assigning the dock to a KOReader gesture.
-- `Version: v0.5.0`: shows the installed plugin version.
+- `Version: v0.6.1`: shows the installed plugin version.
 
 The side selector and visibility options keep their menu open after a change, making it easier to review related settings.
 
@@ -91,6 +93,8 @@ Open **Tools > Shortcut Dock > Buttons > Expected icon filenames** to see the ex
 ## Bookshelf compatibility
 
 When the Bookshelf plugin is displayed over a parked reader, Shortcut Dock treats it as a separate context. The fixed button changes to the open-document icon and resumes the parked reader instead of sending another `Home` event. This prevents the button from closing Bookshelf while still showing the home icon.
+
+While Bookshelf is in the foreground, **Search current context** opens its **Search library** dialog. If the reader is above a still-loaded Bookshelf screen, the same button opens the full-text search for the current document. The configured **History** action opens the first shelf whose source is **Recent** only while Bookshelf is in the foreground, including a renamed or customized Recent shelf. If either integration point is unavailable in the installed Bookshelf version, Shortcut Dock falls back to the corresponding native KOReader action.
 
 The integration only uses Bookshelf modules that are already loaded. Bookshelf remains an optional plugin and is not loaded or required by Shortcut Dock.
 
@@ -134,4 +138,4 @@ Extract `shortcutdock.koplugin` into KOReader's `plugins` directory and restart 
 
 ## Version
 
-v0.5.0
+v0.6.1
