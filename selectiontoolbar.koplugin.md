@@ -1,4 +1,4 @@
-# Selection Toolbar ![Version](https://img.shields.io/badge/version-v1.0.3-blue)
+# Selection Toolbar ![Version](https://img.shields.io/badge/version-v1.0.4-blue)
 
 A KOReader plugin that replaces the centered text-selection menu with a compact toolbar displayed near the selected text.
 
@@ -31,11 +31,11 @@ Options:
 
 - `Use compact selection toolbar`: enables/disables replacement of the default menu.
 - `Appearance`: controls the toolbar's visual presentation.
-  - `Show toolbar shadow`: shows or removes the dithered shadow along the right and bottom edges.
+  - `Show toolbar shadow`: shows or removes the dithered shadow along the right and bottom edges. The shadow follows the toolbar's rounded corners.
 - `Visible actions`: lets you choose which actions appear in the toolbar.
   - `Show all actions`: restores all actions.
   - Other items: enable/disable each toolbar action individually.
-- `Version: v1.0.3`: shows the installed plugin version.
+- `Version: v1.0.4`: shows the installed plugin version.
 
 ## Icons
 

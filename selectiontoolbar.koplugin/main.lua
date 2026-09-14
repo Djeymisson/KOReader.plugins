@@ -12,11 +12,13 @@ local util = require("util")
 local _ = require("gettext")
 
 local Screen = Device.screen
+local math_abs = math.abs
 local math_floor = math.floor
 local math_max = math.max
 local math_min = math.min
+local math_sqrt = math.sqrt
 
-local PLUGIN_VERSION = "v1.0.3"
+local PLUGIN_VERSION = "v1.0.4"
 local QR_MESSAGE_MODULE = "ui/widget/qrmessage"
 
 local BUTTON_ICON_SIZE = Screen:scaleBySize(22)
@@ -68,6 +70,19 @@ local function clearToolbarShadowCache()
 	TOOLBAR_SHADOW_CACHE = {}
 end
 
+local function roundedRectDistance(x, y, width, height, radius)
+	local half_width = width / 2
+	local half_height = height / 2
+	radius = math_max(0, math_min(radius or 0, half_width, half_height))
+	local qx = math_abs(x - half_width) - (half_width - radius)
+	local qy = math_abs(y - half_height) - (half_height - radius)
+	local outside_x = math_max(qx, 0)
+	local outside_y = math_max(qy, 0)
+	return math_sqrt(outside_x * outside_x + outside_y * outside_y)
+		+ math_min(math_max(qx, qy), 0)
+		- radius
+end
+
 local ShadowedPopup = WidgetContainer:extend({})
 
 function ShadowedPopup:getSize()
@@ -79,12 +94,14 @@ function ShadowedPopup:getSize()
 end
 
 function ShadowedPopup:_ensureShadowBuffers(bb, width, height)
+	local radius = math_max(0, math_min(self.shadow_radius or 0, width / 2, height / 2))
 	local night = Screen.night_mode
 	local inv = bb.getInverse and bb:getInverse() == 1
 	local render_inv = inv and not (night and Device.isAndroid and Device:isAndroid())
 	local cache_key = table.concat({
 		tostring(width),
 		tostring(height),
+		tostring(radius),
 		tostring(night),
 		tostring(render_inv),
 	}, ":")
@@ -125,9 +142,16 @@ function ShadowedPopup:_ensureShadowBuffers(bb, width, height)
 
 	TOOLBAR_SHADOW_CACHE.right = Blitbuffer.new(SHADOW_WIDTH, height, Blitbuffer.TYPE_BBRGB32)
 	for x = 0, SHADOW_WIDTH - 1 do
-		local level = shadowLevel(x)
 		local column = (x % 8) + 1
 		for y = 0, height - 1 do
+			local level
+			if radius > 0 then
+				local distance = roundedRectDistance(width - SHADOW_OVERLAP + x, y, width, height, radius)
+				local shadow_pos = SHADOW_OVERLAP + distance
+				level = shadow_pos >= 0 and shadow_pos < SHADOW_WIDTH and shadowLevel(shadow_pos) or 0
+			else
+				level = shadowLevel(x)
+			end
 			local threshold = (SHADOW_BAYER8[column][(y % 8) + 1] + 0.5) * 4
 			local color = level > threshold and shadow_on or shadow_off
 			TOOLBAR_SHADOW_CACHE.right:setPixel(x, y, color)
@@ -141,11 +165,22 @@ function ShadowedPopup:_ensureShadowBuffers(bb, width, height)
 		local bottom_level = shadowLevel(y)
 		local row = (y % 8) + 1
 		for x = 0, bottom_width - 1 do
-			local level = bottom_level
-			if y < SHADOW_OVERLAP and x >= width - SHADOW_OVERLAP then
-				level = 0
-			elseif x >= width then
-				level = math_min(level, shadowLevel(SHADOW_OVERLAP + x - width))
+			local level
+			if radius > 0 then
+				if y < SHADOW_OVERLAP and x >= width - SHADOW_OVERLAP then
+					level = 0
+				else
+					local distance = roundedRectDistance(x, height - SHADOW_OVERLAP + y, width, height, radius)
+					local shadow_pos = SHADOW_OVERLAP + distance
+					level = shadow_pos >= 0 and shadow_pos < SHADOW_WIDTH and shadowLevel(shadow_pos) or 0
+				end
+			else
+				level = bottom_level
+				if y < SHADOW_OVERLAP and x >= width - SHADOW_OVERLAP then
+					level = 0
+				elseif x >= width then
+					level = math_min(level, shadowLevel(SHADOW_OVERLAP + x - width))
+				end
 			end
 			local threshold = (SHADOW_BAYER8[(x % 8) + 1][row] + 0.5) * 4
 			local color = level > threshold and shadow_on or shadow_off
@@ -195,8 +230,10 @@ local ShadowedButtonDialog = ButtonDialog:extend({})
 function ShadowedButtonDialog:init()
 	ButtonDialog.init(self)
 	if self.show_shadow then
+		local frame = self.movable[1]
 		self.movable[1] = ShadowedPopup:new({
-			self.movable[1],
+			shadow_radius = frame.radius,
+			frame,
 		})
 	end
 end

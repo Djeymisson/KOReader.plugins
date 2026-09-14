@@ -56,9 +56,23 @@ return function(ctx)
 		{ 63, 31, 55, 23, 61, 29, 53, 21 },
 	}
 
+	local function roundedRectDistance(x, y, width, height, radius)
+		local half_width = width / 2
+		local half_height = height / 2
+		radius = math.max(0, math.min(radius or 0, half_width, half_height))
+		local qx = math.abs(x - half_width) - (half_width - radius)
+		local qy = math.abs(y - half_height) - (half_height - radius)
+		local outside_x = math.max(qx, 0)
+		local outside_y = math.max(qy, 0)
+		return math.sqrt(outside_x * outside_x + outside_y * outside_y)
+			+ math.min(math.max(qx, qy), 0)
+			- radius
+	end
+
 	local CardShadow = WidgetContainer:extend({
 		width = 0,
 		height = 0,
+		radius = 0,
 		shadow_width = CARD_SHADOW_WIDTH,
 		shadow_overlap = CARD_SHADOW_OVERLAP,
 	})
@@ -84,6 +98,7 @@ return function(ctx)
 		local height = math.max(1, self.height or 1)
 		local shadow_width = math.max(1, self.shadow_width or CARD_SHADOW_WIDTH)
 		local overlap = math.max(0, math.min(shadow_width - 1, self.shadow_overlap or CARD_SHADOW_OVERLAP))
+		local radius = math.max(0, math.min(self.radius or 0, width / 2, height / 2))
 		local bottom_width = width + shadow_width - overlap
 		local night = Screen.night_mode
 		local inv = bb.getInverse and bb:getInverse() == 1
@@ -93,6 +108,7 @@ return function(ctx)
 			tostring(height),
 			tostring(shadow_width),
 			tostring(overlap),
+			tostring(radius),
 			tostring(night),
 			tostring(render_inv),
 		}, ":")
@@ -129,9 +145,16 @@ return function(ctx)
 
 		self._right_bb = Blitbuffer.new(shadow_width, height, Blitbuffer.TYPE_BBRGB32)
 		for x = 0, shadow_width - 1 do
-			local level = shadowLevel(x)
 			local column = (x % 8) + 1
 			for y = 0, height - 1 do
+				local level
+				if radius > 0 then
+					local distance = roundedRectDistance(width - overlap + x, y, width, height, radius)
+					local shadow_pos = overlap + distance
+					level = shadow_pos >= 0 and shadow_pos < shadow_width and shadowLevel(shadow_pos) or 0
+				else
+					level = shadowLevel(x)
+				end
 				local threshold = (SHADOW_BAYER8[column][(y % 8) + 1] + 0.5) * 4
 				local alpha = level > threshold and 255 or 0
 				self._right_bb:setPixel(x, y, Blitbuffer.ColorRGB32(shadow_value, shadow_value, shadow_value, alpha))
@@ -144,11 +167,22 @@ return function(ctx)
 			local bottom_level = shadowLevel(y)
 			local row = (y % 8) + 1
 			for x = 0, bottom_width - 1 do
-				local level = bottom_level
-				if y < overlap and x >= width - overlap then
-					level = 0
-				elseif x >= width then
-					level = math.min(level, shadowLevel(overlap + x - width))
+				local level
+				if radius > 0 then
+					if y < overlap and x >= width - overlap then
+						level = 0
+					else
+						local distance = roundedRectDistance(x, height - overlap + y, width, height, radius)
+						local shadow_pos = overlap + distance
+						level = shadow_pos >= 0 and shadow_pos < shadow_width and shadowLevel(shadow_pos) or 0
+					end
+				else
+					level = bottom_level
+					if y < overlap and x >= width - overlap then
+						level = 0
+					elseif x >= width then
+						level = math.min(level, shadowLevel(overlap + x - width))
+					end
 				end
 				local threshold = (SHADOW_BAYER8[(x % 8) + 1][row] + 0.5) * 4
 				local alpha = level > threshold and 255 or 0
@@ -837,11 +871,16 @@ return function(ctx)
 
 	function CarouselRow:updateCardShadow()
 		local enabled = self:useCardShadows() and CARD_SHADOW_EXTENT > 0
+		local radius = math.max(0, getPopupCardRadius(self.popup) or 0)
 		if enabled and not self.card_shadow then
 			self.card_shadow = CardShadow:new({
 				width = self.card_width,
 				height = self.card_height,
+				radius = radius,
 			})
+		elseif enabled and self.card_shadow.radius ~= radius then
+			self.card_shadow.radius = radius
+			self.card_shadow:_freeBuffers()
 		elseif not enabled and self.card_shadow then
 			self.card_shadow:free()
 			self.card_shadow = nil

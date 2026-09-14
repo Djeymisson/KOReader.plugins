@@ -1,4 +1,4 @@
-# KOReader Lookup Preview ![Version](https://img.shields.io/badge/version-v1.0.9-blue)
+# KOReader Lookup Preview ![Version](https://img.shields.io/badge/version-v1.0.10-blue)
 
 **Lookup Preview** is a KOReader reader plugin that changes the lookup flow for selected text. Instead of opening each native lookup window immediately, it first shows a compact floating carousel with preview cards for **Dictionary**, **Translate**, and **Wikipedia**.
 
@@ -24,7 +24,7 @@ The plugin metadata registers it as `lookuppreview` with the display name **Look
 - Supports square and rounded card corners from the plugin settings.
 - In tabbed mode, uses a square upper-left junction while Dictionary is active, restoring the rounded card corner and extending the Dictionary tab border to meet it on the other tabs.
 - Avoids repeating the Translate and Wikipedia tab labels as card titles in tabbed mode, promoting their useful language and result controls to title styling.
-- Uses matching dithered shadows along the right and bottom edges of each card.
+- Uses matching dithered shadows along the right and bottom edges of each card, following the card radius in rounded mode while preserving square shadows in square mode.
 - Adds a version entry in the plugin settings menu.
 
 ## Dictionary card
