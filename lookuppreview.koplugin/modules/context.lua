@@ -188,7 +188,10 @@ PLUGIN_ICON_EXTENSIONS = { ".svg", ".png" }
 ICON_SEARCH = "appbar.search"
 ICON_PREVIOUS = "chevron.left"
 ICON_NEXT = "chevron.right"
-ICON_DETAILS = "chevron.up"
+ICON_DETAILS = "read_more"
+ICON_DETAILS_FALLBACK = "chevron.up"
+ICON_COPY = "copy"
+ICON_ADD_NOTE = "add_note"
 ICON_WIKIPEDIA = "wikipedia"
 ICON_LOADING = "loading"
 
@@ -216,7 +219,17 @@ PLUGIN_ICON_DEFINITIONS = {
 	{
 		id = ICON_DETAILS,
 		label = _("Open native details"),
-		basenames = { "chevron.up" },
+		basenames = { "read_more" },
+	},
+	{
+		id = ICON_COPY,
+		label = _("Copy translation"),
+		basenames = { "copy" },
+	},
+	{
+		id = ICON_ADD_NOTE,
+		label = _("Add translation note"),
+		basenames = { "add_note" },
 	},
 	{
 		id = ICON_WIKIPEDIA,

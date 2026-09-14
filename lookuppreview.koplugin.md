@@ -1,4 +1,4 @@
-# KOReader Lookup Preview ![Version](https://img.shields.io/badge/version-v1.0.12-blue)
+# KOReader Lookup Preview ![Version](https://img.shields.io/badge/version-v1.0.13-blue)
 
 **Lookup Preview** is a KOReader reader plugin that changes the lookup flow for selected text. Instead of opening each native lookup window immediately, it first shows a compact floating carousel with preview cards for **Dictionary**, **Translate**, and **Wikipedia**.
 
@@ -86,8 +86,11 @@ lookuppreview.koplugin/
 ├── _meta.lua
 ├── main.lua
 ├── icons/
+│   ├── add_note.svg
+│   ├── copy.svg
 │   ├── highlight.svg
 │   ├── loading.svg
+│   ├── read_more.svg
 │   ├── search.svg
 │   └── wikipedia.svg
 └── modules/
@@ -112,11 +115,13 @@ Expected primary filenames:
 | Full-text search | `search.svg` | `search.png` |
 | Previous result | `chevron.left.svg` | `chevron.left.png` |
 | Next result | `chevron.right.svg` | `chevron.right.png` |
-| Open native details | `chevron.up.svg` | `chevron.up.png` |
+| Open native details | `read_more.svg` | `read_more.png` |
+| Copy translation | `copy.svg` | `copy.png` |
+| Add translation note | `add_note.svg` | `add_note.png` |
 | Full Wikipedia article | `wikipedia.svg` | `wikipedia.png` |
 | Loading feedback | `loading.svg` | `loading.png` |
 
-The Highlight action also accepts `lookuppreview.highlight` and `dictionarypreview.highlight`; search also accepts `appbar.search`; and Full Wikipedia article also accepts `lookuppreview.wikipedia` and `dictionarypreview.wikipedia`, each with an `.svg` or `.png` extension. If no local file exists, Lookup Preview uses the corresponding KOReader system icon. Highlight and Full Wikipedia article fall back to their text labels because KOReader has no matching stock icon for these actions.
+The Highlight action also accepts `lookuppreview.highlight` and `dictionarypreview.highlight`; search also accepts `appbar.search`; and Full Wikipedia article also accepts `lookuppreview.wikipedia` and `dictionarypreview.wikipedia`, each with an `.svg` or `.png` extension. If `read_more` is absent, Open native details falls back to KOReader's `chevron.up` icon. Highlight, Copy translation, Add translation note, and Full Wikipedia article fall back to their text labels when their local icons are absent.
 
 The same list is available on the device under **Lookup preview → Appearance → Expected icon filenames**.
 

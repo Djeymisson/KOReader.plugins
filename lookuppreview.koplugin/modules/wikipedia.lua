@@ -429,7 +429,7 @@ return function(ctx)
 		end
 
 		buttons[#buttons + 1] = {
-			spec = { icon = ICON_DETAILS },
+			spec = { plugin_icon = ICON_DETAILS, icon = ICON_DETAILS_FALLBACK },
 			weight = 0.85,
 			callback = function()
 				return self:openOriginalWikipediaFromState(state)

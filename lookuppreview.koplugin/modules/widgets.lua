@@ -1474,11 +1474,11 @@ return function(ctx)
 			local icon_file = spec.icon_file
 			if
 				not icon_file
-				and spec.icon
+				and (spec.plugin_icon or spec.icon)
 				and self.plugin
 				and type(self.plugin.getPluginIconFile) == "function"
 			then
-				icon_file = self.plugin:getPluginIconFile(spec.icon)
+				icon_file = self.plugin:getPluginIconFile(spec.plugin_icon or spec.icon)
 			end
 			widgets[#widgets + 1] = DictionaryCardButton:new({
 				text = spec.text,

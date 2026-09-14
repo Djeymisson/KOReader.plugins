@@ -226,7 +226,7 @@ return function(ctx)
 		end
 
 		button_specs[#button_specs + 1] = {
-			spec = { icon = ICON_DETAILS },
+			spec = { plugin_icon = ICON_DETAILS, icon = ICON_DETAILS_FALLBACK },
 			callback = function()
 				return self:openOriginalDictionaryFromState(state)
 			end,

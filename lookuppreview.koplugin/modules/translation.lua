@@ -197,7 +197,7 @@ return function(ctx)
 
 		if self.clipboard_available and self:showTranslationCopyButton() then
 			buttons[#buttons + 1] = {
-				spec = { text = _("Copy") },
+				spec = { plugin_icon = ICON_COPY, text = _("Copy") },
 				callback = function()
 					return self:copyMainTranslation(text_main)
 				end,
@@ -206,7 +206,7 @@ return function(ctx)
 
 		if self:showTranslationNoteButton() then
 			buttons[#buttons + 1] = {
-				spec = { text = _("Note") },
+				spec = { plugin_icon = ICON_ADD_NOTE, text = _("Note") },
 				callback = function()
 					return self:saveMainTranslationToNote(text_main)
 				end,
@@ -214,7 +214,7 @@ return function(ctx)
 		end
 
 		buttons[#buttons + 1] = {
-			spec = { icon = ICON_DETAILS },
+			spec = { plugin_icon = ICON_DETAILS, icon = ICON_DETAILS_FALLBACK },
 			callback = function()
 				return self:openOriginalTranslationFromState(state)
 			end,
