@@ -185,14 +185,49 @@ for _, action in ipairs(LEFT_ACTIONS) do
 end
 
 PLUGIN_ICON_EXTENSIONS = { ".svg", ".png" }
-PLUGIN_LEFT_ICON_CANDIDATES = {
-	[LEFT_ACTION_HIGHLIGHT] = { "highlight", "lookuppreview.highlight", "dictionarypreview.highlight" },
-}
-
 ICON_SEARCH = "appbar.search"
 ICON_PREVIOUS = "chevron.left"
 ICON_NEXT = "chevron.right"
 ICON_DETAILS = "chevron.up"
+ICON_WIKIPEDIA = "wikipedia"
+
+PLUGIN_ICON_DEFINITIONS = {
+	{
+		id = LEFT_ACTION_HIGHLIGHT,
+		label = _("Highlight"),
+		basenames = { "highlight", "lookuppreview.highlight", "dictionarypreview.highlight" },
+	},
+	{
+		id = ICON_SEARCH,
+		label = _("Full-text search"),
+		basenames = { "search", "appbar.search" },
+	},
+	{
+		id = ICON_PREVIOUS,
+		label = _("Previous result"),
+		basenames = { "chevron.left" },
+	},
+	{
+		id = ICON_NEXT,
+		label = _("Next result"),
+		basenames = { "chevron.right" },
+	},
+	{
+		id = ICON_DETAILS,
+		label = _("Open native details"),
+		basenames = { "chevron.up" },
+	},
+	{
+		id = ICON_WIKIPEDIA,
+		label = C_("Wikipedia", "Full article"),
+		basenames = { "wikipedia", "lookuppreview.wikipedia", "dictionarypreview.wikipedia" },
+	},
+}
+
+PLUGIN_ICON_CANDIDATES = {}
+for _, definition in ipairs(PLUGIN_ICON_DEFINITIONS) do
+	PLUGIN_ICON_CANDIDATES[definition.id] = definition.basenames
+end
 
 -- Pages ---------------------------------------------------------------------
 PAGE_DICTIONARY = 1

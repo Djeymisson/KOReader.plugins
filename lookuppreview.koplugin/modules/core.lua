@@ -310,6 +310,13 @@ return function(ctx)
 								return applyCardShadowMode(self, not self:showCardShadows())
 							end,
 						},
+						{
+							text = _("Expected icon filenames"),
+							help_text = _("Lists the SVG and PNG filenames accepted from the plugin's icons folder."),
+							sub_item_table_func = function()
+								return self:getExpectedIconFilenamesMenu()
+							end,
+						},
 					},
 				},
 				{
@@ -476,15 +483,15 @@ return function(ctx)
 		G_reader_settings:saveSetting(SETTING_LEFT_ACTION, normalizeLeftAction(action))
 	end
 
-	function LookupPreview:getPluginIconFile(action_id)
+	function LookupPreview:getPluginIconFile(icon_id)
 		self.plugin_icon_cache = self.plugin_icon_cache or {}
-		if self.plugin_icon_cache[action_id] ~= nil then
-			return self.plugin_icon_cache[action_id] or nil
+		if self.plugin_icon_cache[icon_id] ~= nil then
+			return self.plugin_icon_cache[icon_id] or nil
 		end
 
-		local candidates = PLUGIN_LEFT_ICON_CANDIDATES[action_id]
+		local candidates = PLUGIN_ICON_CANDIDATES[icon_id]
 		if not candidates or not self.path or self.path == "" then
-			self.plugin_icon_cache[action_id] = false
+			self.plugin_icon_cache[icon_id] = false
 			return nil
 		end
 
@@ -493,14 +500,35 @@ return function(ctx)
 			for _, ext in ipairs(PLUGIN_ICON_EXTENSIONS) do
 				local path = icons_dir .. "/" .. basename .. ext
 				if fileExists(path) then
-					self.plugin_icon_cache[action_id] = path
+					self.plugin_icon_cache[icon_id] = path
 					return path
 				end
 			end
 		end
 
-		self.plugin_icon_cache[action_id] = false
+		self.plugin_icon_cache[icon_id] = false
 		return nil
+	end
+
+	function LookupPreview:getExpectedIconFilenamesMenu()
+		local items = {}
+		for definition_index, definition in ipairs(PLUGIN_ICON_DEFINITIONS) do
+			local accepted = {}
+			for _, basename in ipairs(definition.basenames) do
+				for _, extension in ipairs(PLUGIN_ICON_EXTENSIONS) do
+					accepted[#accepted + 1] = basename .. extension
+				end
+			end
+
+			local primary = definition.basenames[1]
+			items[#items + 1] = {
+				id = "lookuppreview_icon_filename_" .. tostring(definition_index),
+				text = definition.label .. ": " .. primary .. ".svg",
+				help_text = _("Accepted filenames") .. ": " .. table.concat(accepted, ", "),
+				enabled = false,
+			}
+		end
+		return items
 	end
 
 	function LookupPreview:getLeftButtonSpec(action_id)

@@ -1471,10 +1471,19 @@ return function(ctx)
 			end
 
 			local spec = item.spec or {}
+			local icon_file = spec.icon_file
+			if
+				not icon_file
+				and spec.icon
+				and self.plugin
+				and type(self.plugin.getPluginIconFile) == "function"
+			then
+				icon_file = self.plugin:getPluginIconFile(spec.icon)
+			end
 			widgets[#widgets + 1] = DictionaryCardButton:new({
 				text = spec.text,
 				icon = spec.icon,
-				icon_file = spec.icon_file,
+				icon_file = icon_file,
 				width = widths[index],
 				height = DICTIONARY_BUTTON_HEIGHT,
 				icon_width = DICTIONARY_ICON_SIZE,

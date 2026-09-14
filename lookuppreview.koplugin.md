@@ -1,4 +1,4 @@
-# KOReader Lookup Preview ![Version](https://img.shields.io/badge/version-v1.0.10-blue)
+# KOReader Lookup Preview ![Version](https://img.shields.io/badge/version-v1.0.11-blue)
 
 **Lookup Preview** is a KOReader reader plugin that changes the lookup flow for selected text. Instead of opening each native lookup window immediately, it first shows a compact floating carousel with preview cards for **Dictionary**, **Translate**, and **Wikipedia**.
 
@@ -87,6 +87,7 @@ lookuppreview.koplugin/
 ├── main.lua
 ├── icons/
 │   ├── highlight.svg
+│   ├── search.svg
 │   └── wikipedia.svg
 └── modules/
     ├── carousel.lua
@@ -100,12 +101,22 @@ lookuppreview.koplugin/
     └── wikipedia.lua
 ```
 
-The `icons/` folder contains the custom SVG icons used by Lookup Preview action buttons. Keep this folder inside `lookuppreview.koplugin/` together with the Lua files:
+The `icons/` folder contains custom SVG or PNG icons used by Lookup Preview action buttons. Local files take precedence over KOReader's system icons. Keep this folder inside `lookuppreview.koplugin/` together with the Lua files.
 
-```text
-icons/highlight.svg
-icons/wikipedia.svg
-```
+Expected primary filenames:
+
+| Action | SVG | PNG |
+|---|---|---|
+| Highlight | `highlight.svg` | `highlight.png` |
+| Full-text search | `search.svg` | `search.png` |
+| Previous result | `chevron.left.svg` | `chevron.left.png` |
+| Next result | `chevron.right.svg` | `chevron.right.png` |
+| Open native details | `chevron.up.svg` | `chevron.up.png` |
+| Full Wikipedia article | `wikipedia.svg` | `wikipedia.png` |
+
+The Highlight action also accepts `lookuppreview.highlight` and `dictionarypreview.highlight`; search also accepts `appbar.search`; and Full Wikipedia article also accepts `lookuppreview.wikipedia` and `dictionarypreview.wikipedia`, each with an `.svg` or `.png` extension. If no local file exists, Lookup Preview uses the corresponding KOReader system icon. Highlight and Full Wikipedia article fall back to their text labels because KOReader has no matching stock icon for these actions.
+
+The same list is available on the device under **Lookup preview → Appearance → Expected icon filenames**.
 
 The final path should look like this:
 
@@ -125,7 +136,8 @@ The menu contains:
 - **Appearance**:
   - **Card corners**: switches between square and rounded card corners;
   - **Side card previews**: switches between full side cards and tabs;
-  - **Show card shadows**: enables or disables the dithered right and bottom shadows.
+  - **Show card shadows**: enables or disables the dithered right and bottom shadows;
+  - **Expected icon filenames**: lists every supported local SVG and PNG filename.
 - **Content**:
   - **Online card loading**: switches between automatic and manual online loading;
   - **Dictionary HTML**: selects formatted or fast/raw dictionary rendering;

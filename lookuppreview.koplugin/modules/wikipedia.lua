@@ -366,10 +366,12 @@ return function(ctx)
 		end
 
 		local count = state.wikipedia_count or #(state.wikipedia_pages or {})
+		local full_article_icon = self:getPluginIconFile(ICON_WIKIPEDIA)
 		local buttons = {
 			{
-				spec = { text = C_("Wikipedia", "Full article") },
-				weight = 1.75,
+				spec = full_article_icon and { icon_file = full_article_icon }
+					or { text = C_("Wikipedia", "Full article") },
+				weight = full_article_icon and 0.85 or 1.75,
 				callback = function()
 					return self:openFullWikipediaArticleFromState(state)
 				end,
