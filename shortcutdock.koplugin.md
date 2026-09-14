@@ -1,10 +1,11 @@
-# Shortcut Dock ![Version](https://img.shields.io/badge/version-v0.6.2-blue)
+# Shortcut Dock ![Version](https://img.shields.io/badge/version-v0.7.1-blue)
 
 Shortcut Dock adds a floating, vertical shortcut bar to KOReader. It is designed for touch devices and can be assigned to any gesture supported by KOReader.
 
 ## Features
 
 - Floating dock anchored near the lower-left or lower-right corner, without touching the screen edges.
+- Optional gesture-following position mode that opens the dock on the same half of the screen where the assigned gesture started.
 - Compact icon buttons using the same scaled dimensions and standard `ButtonDialog` corner radius as Selection Toolbar.
 - Unlimited configurable actions through KOReader's native Dispatcher action picker.
 - Configurable button order.
@@ -47,8 +48,8 @@ In the file browser or reader, open:
 The settings follow the same grouped layout as the other plugins in this repository:
 
 - `Show Shortcut Dock`: opens the dock immediately.
-- `Appearance`: controls the dock position and its floating side control.
-  - `Dock side`: selects `Left` or `Right`.
+- `Behavior`: controls the dock position and its floating side control.
+  - `Dock side`: selects `Left`, `Right`, or `Follow gesture side`. The automatic option uses the configured fixed side as a fallback when the dock is opened without gesture coordinates.
   - `Show side-switch button`: shows a separate chevron above the dock that changes its side without opening the settings.
 - `Buttons`: controls the fixed and configurable dock buttons.
   - `Show fixed context button`: enables the first contextual button in the main group.
@@ -57,7 +58,7 @@ The settings follow the same grouped layout as the other plugins in this reposit
   - `Visibility by context`: displays the automatic result and controls manual overrides for each action.
   - `Expected icon filenames`: lists the custom SVG and PNG names accepted for every action.
 - `Gesture setup`: displays instructions for assigning the dock to a KOReader gesture.
-- `Version: v0.6.2`: shows the installed plugin version.
+- `Version: v0.7.1`: shows the installed plugin version.
 
 The side selector and visibility options keep their menu open after a change, making it easier to review related settings.
 
@@ -66,6 +67,8 @@ The side selector and visibility options keep their menu open after a change, ma
 1. Open **Settings > Taps and gestures > Gesture manager**.
 2. Choose a gesture.
 3. Select **Show Shortcut Dock** from the general actions.
+
+With **Behavior > Dock side > Follow gesture side** enabled, the dock opens on the left or right according to the gesture's starting position. Opening it from the Tools menu, a keyboard action, or any event without screen coordinates uses the last fixed side.
 
 The dock can also be opened from **Tools > Shortcut Dock > Show Shortcut Dock**.
 
@@ -125,6 +128,7 @@ Shortcut Dock stores its preferences through KOReader's reader settings using th
 | `shortcutdock_action_contexts` | Per-action reader/browser visibility |
 | `shortcutdock_auto_visibility` | Enables automatic context classification |
 | `shortcutdock_side` | Left or right dock position |
+| `shortcutdock_side_mode` | Selects a fixed position or follows the gesture side |
 | `shortcutdock_show_side_button` | Visibility of the floating side-switch button |
 | `shortcutdock_show_context_button` | Visibility of the fixed contextual button |
 
@@ -138,4 +142,4 @@ Extract `shortcutdock.koplugin` into KOReader's `plugins` directory and restart 
 
 ## Version
 
-v0.6.2
+v0.7.1

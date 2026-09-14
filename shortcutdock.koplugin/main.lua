@@ -21,13 +21,17 @@ local math_floor = math.floor
 local math_max = math.max
 local math_min = math.min
 
-local PLUGIN_VERSION = "v0.6.2"
+local PLUGIN_VERSION = "v0.7.1"
 local SETTING_ACTIONS = "shortcutdock_actions"
 local SETTING_ACTION_CONTEXTS = "shortcutdock_action_contexts"
 local SETTING_AUTO_VISIBILITY = "shortcutdock_auto_visibility"
 local SETTING_SIDE = "shortcutdock_side"
+local SETTING_SIDE_MODE = "shortcutdock_side_mode"
 local SETTING_SHOW_SIDE_BUTTON = "shortcutdock_show_side_button"
 local SETTING_SHOW_CONTEXT_BUTTON = "shortcutdock_show_context_button"
+
+local SIDE_MODE_FIXED = "fixed"
+local SIDE_MODE_GESTURE = "gesture"
 
 local ACTION_CONTEXT_ALL = "all"
 local ACTION_CONTEXT_AUTOMATIC = "automatic"
@@ -348,7 +352,9 @@ function ShortcutDock:onDispatcherRegisterActions()
         general = true,
     })
     Dispatcher:registerAction("show_shortcut_dock", {
-        category = "none",
+        -- The arg category lets KOReader's gesture manager forward the gesture
+        -- object, including its screen position, to onShowShortcutDock().
+        category = "arg",
         event = "ShowShortcutDock",
         title = _("Show Shortcut Dock"),
         general = true,
@@ -493,6 +499,32 @@ end
 
 function ShortcutDock:setSide(side)
     G_reader_settings:saveSetting(SETTING_SIDE, side == "left" and "left" or "right")
+end
+
+function ShortcutDock:getSideMode()
+    return G_reader_settings:readSetting(SETTING_SIDE_MODE) == SIDE_MODE_GESTURE
+        and SIDE_MODE_GESTURE
+        or SIDE_MODE_FIXED
+end
+
+function ShortcutDock:setSideMode(mode)
+    G_reader_settings:saveSetting(
+        SETTING_SIDE_MODE,
+        mode == SIDE_MODE_GESTURE and SIDE_MODE_GESTURE or SIDE_MODE_FIXED
+    )
+end
+
+function ShortcutDock:getGestureSide(gesture)
+    if self:getSideMode() ~= SIDE_MODE_GESTURE or type(gesture) ~= "table" then
+        return nil
+    end
+
+    local pos = gesture.pos or gesture.start_pos or gesture.end_pos
+    local x = pos and tonumber(pos.x)
+    if not x then
+        return nil
+    end
+    return x < Screen:getWidth() / 2 and "left" or "right"
 end
 
 function ShortcutDock:showSideButton()
@@ -675,8 +707,8 @@ function ShortcutDock:openBookshelfRecent()
     return ok
 end
 
-function ShortcutDock:onShowShortcutDock()
-    self:showDock(1)
+function ShortcutDock:onShowShortcutDock(gesture)
+    self:showDock(1, self:getGestureSide(gesture))
     return true
 end
 
@@ -946,7 +978,7 @@ function ShortcutDock:makePageButton(direction, target_page)
         id = is_next and "shortcutdock_next" or "shortcutdock_previous",
         enabled = true,
         callback = function()
-            self:showDock(target_page)
+            self:showDock(target_page, self.current_dock_side)
         end,
     }
     if icon then
@@ -959,7 +991,7 @@ function ShortcutDock:makePageButton(direction, target_page)
 end
 
 function ShortcutDock:makeSideButton(width, dialog)
-    local current_side = self:getSide()
+    local current_side = self.current_dock_side or self:getSide()
     local target_side = current_side == "left" and "right" or "left"
     local icon = self:getIcon("chevron-" .. target_side)
     local button = {
@@ -978,7 +1010,7 @@ function ShortcutDock:makeSideButton(width, dialog)
             local page = self.current_page
             self:setSide(target_side)
             UIManager:scheduleIn(0.05, function()
-                self:showDock(page)
+                self:showDock(page, target_side)
             end)
         end,
         hold_callback = function()
@@ -998,11 +1030,13 @@ function ShortcutDock:makeSideButton(width, dialog)
     return Button:new(button)
 end
 
-function ShortcutDock:showDock(page)
+function ShortcutDock:showDock(page, side)
     -- Another UI instance (reader or file browser) may have changed these
     -- shared preferences since this instance was created.
     self.action_contexts = self:loadActionContexts()
     self.auto_visibility = self:loadAutomaticVisibility()
+    side = side == "left" and "left" or side == "right" and "right" or self:getSide()
+    self.current_dock_side = side
     local actions = self:getDisplayActions()
     if #actions == 0 and not self:showContextButton() then
         UIManager:show(InfoMessage:new({ text = _("No Shortcut Dock actions are configured.") }))
@@ -1048,7 +1082,7 @@ function ShortcutDock:showDock(page)
         anchor = function()
             local dialog_size = dialog:getContentSize()
             local left
-            if self:getSide() == "left" then
+            if side == "left" then
                 left = DOCK_MARGIN
             else
                 left = Screen:getWidth() - DOCK_MARGIN - dialog_size.w
@@ -1243,7 +1277,7 @@ function ShortcutDock:addToMainMenu(menu_items)
                 end,
             },
             {
-                text = _("Appearance"),
+                text = _("Behavior"),
                 sub_item_table = {
                     {
                         text = _("Dock side"),
@@ -1251,28 +1285,47 @@ function ShortcutDock:addToMainMenu(menu_items)
                             {
                                 text = _("Left"),
                                 checked_func = function()
-                                    return self:getSide() == "left"
+                                    return self:getSideMode() == SIDE_MODE_FIXED and self:getSide() == "left"
                                 end,
                                 callback = function(touchmenu_instance)
                                     self:setSide("left")
+                                    self:setSideMode(SIDE_MODE_FIXED)
                                     if touchmenu_instance and touchmenu_instance.updateItems then
                                         touchmenu_instance:updateItems()
                                     end
                                 end,
                                 keep_menu_open = true,
+                                radio = true,
                             },
                             {
                                 text = _("Right"),
                                 checked_func = function()
-                                    return self:getSide() == "right"
+                                    return self:getSideMode() == SIDE_MODE_FIXED and self:getSide() == "right"
                                 end,
                                 callback = function(touchmenu_instance)
                                     self:setSide("right")
+                                    self:setSideMode(SIDE_MODE_FIXED)
                                     if touchmenu_instance and touchmenu_instance.updateItems then
                                         touchmenu_instance:updateItems()
                                     end
                                 end,
                                 keep_menu_open = true,
+                                radio = true,
+                            },
+                            {
+                                text = _("Follow gesture side"),
+                                help_text = _("Places the dock on the half of the screen where the gesture started. Uses the fixed side when no gesture position is available."),
+                                checked_func = function()
+                                    return self:getSideMode() == SIDE_MODE_GESTURE
+                                end,
+                                callback = function(touchmenu_instance)
+                                    self:setSideMode(SIDE_MODE_GESTURE)
+                                    if touchmenu_instance and touchmenu_instance.updateItems then
+                                        touchmenu_instance:updateItems()
+                                    end
+                                end,
+                                keep_menu_open = true,
+                                radio = true,
                             },
                         },
                     },
