@@ -234,17 +234,34 @@ return function(ctx)
 		}
 	end
 
+	function LookupPreview:buildTranslationLoadingButtons()
+		return {
+			{
+				spec = self:getLoadingButtonSpec(),
+			},
+		}
+	end
+
 	function LookupPreview:requestTranslationLoad(state)
 		state = state or self.current_state
-		if not state or state ~= self.current_state then
+		if not state or state ~= self.current_state or state.translation_loading then
 			return true
 		end
 
 		state.translation_payload = nil
 		state.translation_error = nil
-		state.translation_loading = nil
 		state.translation_text_main = nil
-		return self:loadTranslation(state, true)
+		state.translation_loading = true
+		self:refreshCurrentPage(PAGE_TRANSLATION)
+
+		UIManager:scheduleIn(0.05, function()
+			if state ~= self.current_state then
+				return
+			end
+			state.translation_loading = nil
+			self:loadTranslation(state, true)
+		end)
+		return true
 	end
 
 	function LookupPreview:copyMainTranslation(text_main)

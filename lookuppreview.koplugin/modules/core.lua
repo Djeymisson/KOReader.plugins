@@ -531,6 +531,14 @@ return function(ctx)
 		return items
 	end
 
+	function LookupPreview:getLoadingButtonSpec()
+		local icon_file = self:getPluginIconFile(ICON_LOADING)
+		if icon_file then
+			return { icon_file = icon_file }
+		end
+		return { text = _("Loading…") }
+	end
+
 	function LookupPreview:getLeftButtonSpec(action_id)
 		action_id = normalizeLeftAction(action_id or self:getLeftButtonAction())
 

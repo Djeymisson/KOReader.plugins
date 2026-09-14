@@ -344,20 +344,46 @@ return function(ctx)
 		}
 	end
 
+	function LookupPreview:buildWikipediaLoadingButtons(state)
+		state = state or self.current_state
+		return {
+			{
+				spec = self:getLoadingButtonSpec(),
+				weight = 1.6,
+			},
+			{
+				spec = { text = tostring((state and state.wikipedia_lang) or self:getWikipediaLang()):upper() },
+				weight = 0.8,
+				callback = function()
+					return self:showWikipediaLanguageMenu(state)
+				end,
+			},
+		}
+	end
+
 	function LookupPreview:requestWikipediaLoad(state)
 		state = state or self.current_state
-		if not state or state ~= self.current_state then
+		if not state or state ~= self.current_state or state.wikipedia_loading then
 			return true
 		end
 
 		state.wikipedia_payload = nil
 		state.wikipedia_error = nil
-		state.wikipedia_loading = nil
 		state.wikipedia_full_loading = nil
 		state.wikipedia_pages = nil
 		state.wikipedia_count = nil
 		state.wikipedia_index = 1
-		return self:loadWikipedia(state, true)
+		state.wikipedia_loading = true
+		self:refreshCurrentPage(PAGE_WIKIPEDIA)
+
+		UIManager:scheduleIn(0.05, function()
+			if state ~= self.current_state then
+				return
+			end
+			state.wikipedia_loading = nil
+			self:loadWikipedia(state, true)
+		end)
+		return true
 	end
 
 	function LookupPreview:buildWikipediaButtons(state)

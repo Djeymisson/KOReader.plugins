@@ -67,6 +67,18 @@ return function(ctx)
 			return payload
 		end
 
+		if state.translation_loading then
+			local payload = plugin:makeLoadingPayload(
+				_("Translate"),
+				_("Querying translation service…"),
+				PAGE_TRANSLATION
+			)
+			if is_active then
+				payload.card_buttons = plugin:buildTranslationLoadingButtons()
+			end
+			return payload
+		end
+
 		if state.translation_error then
 			local payload = textPayload(_("Translate"), state.search_text, state.translation_error, PAGE_TRANSLATION)
 			if is_active then
@@ -116,6 +128,19 @@ return function(ctx)
 
 			local payload = copyTable(state.wikipedia_payload)
 			payload.card_buttons = plugin:buildWikipediaButtons(state)
+			return payload
+		end
+
+		if state.wikipedia_loading then
+			local payload = plugin:makeLoadingPayload(
+				_("Wikipedia"),
+				_("Querying Wikipedia…"),
+				PAGE_WIKIPEDIA
+			)
+			payload.subtitle_callback = getWikipediaLanguageCallback(plugin, state)
+			if is_active then
+				payload.card_buttons = plugin:buildWikipediaLoadingButtons(state)
+			end
 			return payload
 		end
 

@@ -190,6 +190,7 @@ ICON_PREVIOUS = "chevron.left"
 ICON_NEXT = "chevron.right"
 ICON_DETAILS = "chevron.up"
 ICON_WIKIPEDIA = "wikipedia"
+ICON_LOADING = "loading"
 
 PLUGIN_ICON_DEFINITIONS = {
 	{
@@ -221,6 +222,11 @@ PLUGIN_ICON_DEFINITIONS = {
 		id = ICON_WIKIPEDIA,
 		label = C_("Wikipedia", "Full article"),
 		basenames = { "wikipedia", "lookuppreview.wikipedia", "dictionarypreview.wikipedia" },
+	},
+	{
+		id = ICON_LOADING,
+		label = _("Loading"),
+		basenames = { "loading" },
 	},
 }
 

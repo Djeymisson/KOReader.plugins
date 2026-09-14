@@ -1,4 +1,4 @@
-# KOReader Lookup Preview ![Version](https://img.shields.io/badge/version-v1.0.11-blue)
+# KOReader Lookup Preview ![Version](https://img.shields.io/badge/version-v1.0.12-blue)
 
 **Lookup Preview** is a KOReader reader plugin that changes the lookup flow for selected text. Instead of opening each native lookup window immediately, it first shows a compact floating carousel with preview cards for **Dictionary**, **Translate**, and **Wikipedia**.
 
@@ -87,6 +87,7 @@ lookuppreview.koplugin/
 ├── main.lua
 ├── icons/
 │   ├── highlight.svg
+│   ├── loading.svg
 │   ├── search.svg
 │   └── wikipedia.svg
 └── modules/
@@ -113,6 +114,7 @@ Expected primary filenames:
 | Next result | `chevron.right.svg` | `chevron.right.png` |
 | Open native details | `chevron.up.svg` | `chevron.up.png` |
 | Full Wikipedia article | `wikipedia.svg` | `wikipedia.png` |
+| Loading feedback | `loading.svg` | `loading.png` |
 
 The Highlight action also accepts `lookuppreview.highlight` and `dictionarypreview.highlight`; search also accepts `appbar.search`; and Full Wikipedia article also accepts `lookuppreview.wikipedia` and `dictionarypreview.wikipedia`, each with an `.svg` or `.png` extension. If no local file exists, Lookup Preview uses the corresponding KOReader system icon. Highlight and Full Wikipedia article fall back to their text labels because KOReader has no matching stock icon for these actions.
 
@@ -151,6 +153,8 @@ The menu contains:
 - **Version**: displays the version declared in `_meta.lua`.
 
 By default, Lookup Preview and card shadows are enabled, the carousel uses square card corners, optional translation buttons follow the saved plugin settings, and Translate/Wikipedia languages are read from KOReader or plugin settings when available.
+
+In manual online-loading mode, tapping **Load** or **Retry** immediately replaces that button with `loading.svg` before the Translate or Wikipedia request starts. If the custom loading icon is absent, the button displays **Loading…** instead.
 
 ## How it works
 
