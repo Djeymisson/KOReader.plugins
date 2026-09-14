@@ -1,4 +1,4 @@
-# KOReader Lookup Preview ![Version](https://img.shields.io/badge/version-v1.0.13-blue)
+# KOReader Lookup Preview ![Version](https://img.shields.io/badge/version-v1.0.18-blue)
 
 **Lookup Preview** is a KOReader reader plugin that changes the lookup flow for selected text. Instead of opening each native lookup window immediately, it first shows a compact floating carousel with preview cards for **Dictionary**, **Translate**, and **Wikipedia**.
 
@@ -32,7 +32,7 @@ The plugin metadata registers it as `lookuppreview` with the display name **Look
 - Shows the selected word or text and the current dictionary name.
 - Displays the dictionary definition inside a scrollable preview area.
 - Supports multiple dictionary results.
-- Shows the current dictionary result count in the subtitle when more than one result is available.
+- Shows the current dictionary result count in regular text between the Previous and Next footer arrows when more than one result is available, without dividers inside that navigation group. Highlight comes before the navigation group, followed by Search and Details.
 - Makes the subtitle clickable to open the dictionary result list.
 - Lists dictionary results as:
 
@@ -42,8 +42,8 @@ found word · dictionary name
 
 - Provides compact action buttons:
   - **Highlight**: creates a highlight from the current selection when available;
+  - **Previous / result count / Next**: switches between dictionary results when multiple results are available;
   - **Search**: opens KOReader's full-text search for the selected text;
-  - **Previous / Next**: switches between dictionary results when multiple results are available;
   - **Details**: opens KOReader's original dictionary popup.
 - Keeps KOReader's original dictionary result order when opening the native dictionary view from the selected preview result.
 
@@ -68,12 +68,14 @@ found word · dictionary name
 - Searches Wikipedia using the selected text.
 - Shows article introductions in a compact preview card.
 - Supports multiple article results.
+- Shows the current article result count in regular text between the Previous and Next footer arrows, without dividers inside that navigation group.
 - Makes the subtitle clickable to open the article result list.
 - Provides a visible language button even while loading or when no article is found, so the user can quickly retry with another language.
+- Keeps the Language button first on the left in the Wikipedia footer, including while waiting for manual loading and while showing loading feedback.
 - Provides compact action buttons:
-  - **Full article**: opens the full Wikipedia article through KOReader's native Wikipedia flow;
   - **Language**: opens the Wikipedia language menu;
-  - **Previous / Next**: switches between article results when multiple results are available;
+  - **Previous / result count / Next**: switches between article results when multiple results are available;
+  - **Full article**: opens the full Wikipedia article through KOReader's native Wikipedia flow;
   - **Details**: opens KOReader's original Wikipedia widget.
 - Keeps the selected Wikipedia language saved in the plugin settings.
 
@@ -200,9 +202,10 @@ Translate and Wikipedia are loaded lazily. This means the plugin does not query 
 | Button | Action |
 |---|---|
 | Highlight | Creates a highlight from the current selection when available |
-| Search | Opens KOReader full-text search for the selected text |
 | Previous | Moves to the previous dictionary result |
+| Result count | Shows the active dictionary result and the total number of results |
 | Next | Moves to the next dictionary result |
+| Search | Opens KOReader full-text search for the selected text |
 | Details | Opens KOReader's original dictionary popup |
 
 ### Translation buttons
@@ -219,10 +222,11 @@ The **Copy** and **Note** buttons can be shown or hidden from the plugin setting
 
 | Button | Action |
 |---|---|
-| Full article | Opens the full Wikipedia article in KOReader's native Wikipedia flow |
 | Language | Opens the Wikipedia language menu |
 | Previous | Moves to the previous article result |
+| Result count | Shows the active Wikipedia result and the total number of results |
 | Next | Moves to the next article result |
+| Full article | Opens the full Wikipedia article in KOReader's native Wikipedia flow |
 | Details | Opens KOReader's original Wikipedia widget |
 
 ### Gestures

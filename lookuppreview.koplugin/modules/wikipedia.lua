@@ -249,7 +249,7 @@ return function(ctx)
 		return showMenu(self, _("Wikipedia"), self:getWikipediaArticleMenuItems(state))
 	end
 
-	function LookupPreview:buildWikipediaPayload(state, page, page_index, page_count, is_full_article)
+	function LookupPreview:buildWikipediaPayload(state, page, _page_index, _page_count, is_full_article)
 		state = state or self.current_state or {}
 		page = page or {}
 
@@ -262,9 +262,6 @@ return function(ctx)
 		end
 
 		local subtitle = title .. " · " .. lang
-		if page_count and page_count > 1 then
-			subtitle = string.format("%s · %d/%d", subtitle, page_index or 1, page_count)
-		end
 		if is_full_article then
 			subtitle = subtitle .. " · " .. _("Full article")
 		end
@@ -328,17 +325,17 @@ return function(ctx)
 		state = state or self.current_state
 		return {
 			{
-				spec = { text = label or _("Load") },
-				weight = 1.6,
-				callback = function()
-					return self:requestWikipediaLoad(state)
-				end,
-			},
-			{
 				spec = { text = tostring((state and state.wikipedia_lang) or self:getWikipediaLang()):upper() },
 				weight = 0.8,
 				callback = function()
 					return self:showWikipediaLanguageMenu(state)
+				end,
+			},
+			{
+				spec = { text = label or _("Load") },
+				weight = 1.6,
+				callback = function()
+					return self:requestWikipediaLoad(state)
 				end,
 			},
 		}
@@ -348,15 +345,15 @@ return function(ctx)
 		state = state or self.current_state
 		return {
 			{
-				spec = self:getLoadingButtonSpec(),
-				weight = 1.6,
-			},
-			{
 				spec = { text = tostring((state and state.wikipedia_lang) or self:getWikipediaLang()):upper() },
 				weight = 0.8,
 				callback = function()
 					return self:showWikipediaLanguageMenu(state)
 				end,
+			},
+			{
+				spec = self:getLoadingButtonSpec(),
+				weight = 1.6,
 			},
 		}
 	end
@@ -395,14 +392,6 @@ return function(ctx)
 		local full_article_icon = self:getPluginIconFile(ICON_WIKIPEDIA)
 		local buttons = {
 			{
-				spec = full_article_icon and { icon_file = full_article_icon }
-					or { text = C_("Wikipedia", "Full article") },
-				weight = full_article_icon and 0.85 or 1.75,
-				callback = function()
-					return self:openFullWikipediaArticleFromState(state)
-				end,
-			},
-			{
 				spec = { text = tostring(state.wikipedia_lang or self:getWikipediaLang()):upper() },
 				weight = 0.9,
 				callback = function()
@@ -420,13 +409,31 @@ return function(ctx)
 				end,
 			}
 			buttons[#buttons + 1] = {
+				spec = {
+					text = string.format("%d/%d", state.wikipedia_index or 1, count),
+					bold = false,
+				},
+				weight = 0.8,
+				separator_before = false,
+			}
+			buttons[#buttons + 1] = {
 				spec = { icon = ICON_NEXT },
 				weight = 0.85,
+				separator_before = false,
 				callback = function()
 					return self:switchWikipediaResult((state.wikipedia_index or 1) + 1)
 				end,
 			}
 		end
+
+		buttons[#buttons + 1] = {
+			spec = full_article_icon and { icon_file = full_article_icon }
+				or { text = C_("Wikipedia", "Full article") },
+			weight = full_article_icon and 0.85 or 1.75,
+			callback = function()
+				return self:openFullWikipediaArticleFromState(state)
+			end,
+		}
 
 		buttons[#buttons + 1] = {
 			spec = { plugin_icon = ICON_DETAILS, icon = ICON_DETAILS_FALLBACK },

@@ -150,11 +150,11 @@ return function(ctx)
 		return html, css
 	end
 
-	local function buildSubtitle(dict_name, result_index, result_count, no_result)
+	local function buildSubtitle(dict_name, result_count, no_result)
 		if no_result or not result_count or result_count <= 1 then
 			return dict_name
 		end
-		return string.format("%s · %d/%d ▾", dict_name, result_index or 1, result_count)
+		return string.format("%s ▾", dict_name)
 	end
 
 	local function closePreviewBeforeExternalAction(self, state)
@@ -168,7 +168,7 @@ return function(ctx)
 		end
 	end
 
-	function LookupPreview:buildDictionaryPayload(word, result, result_index, result_count)
+	function LookupPreview:buildDictionaryPayload(word, result, _result_index, result_count)
 		result = result or {}
 
 		local shown_word = result.word or word or _("Dictionary")
@@ -178,7 +178,7 @@ return function(ctx)
 		return {
 			page_type = PAGE_DICTIONARY,
 			title = tostring(shown_word or _("Dictionary")),
-			subtitle = buildSubtitle(dict_name, result_index, result_count, result.no_result),
+			subtitle = buildSubtitle(dict_name, result_count, result.no_result),
 			html_body = definition_html,
 			css = css,
 			html_resource_directory = result.dictionary_resource_directory,
@@ -201,13 +201,6 @@ return function(ctx)
 					return self:highlightSelection(state.dict_self, state.dict_close_callback)
 				end,
 			},
-			{
-				spec = self:getLeftButtonSpec(LEFT_ACTION_SEARCH_BOOK),
-				callback = function()
-					closePreviewBeforeExternalAction(self, state)
-					return self:showSearchDialog(search_text)
-				end,
-			},
 		}
 
 		if state.preview_count and state.preview_count > 1 then
@@ -218,12 +211,29 @@ return function(ctx)
 				end,
 			}
 			button_specs[#button_specs + 1] = {
+				spec = {
+					text = string.format("%d/%d", state.dictionary_index or 1, state.preview_count),
+					bold = false,
+				},
+				weight = 0.8,
+				separator_before = false,
+			}
+			button_specs[#button_specs + 1] = {
 				spec = { icon = ICON_NEXT },
+				separator_before = false,
 				callback = function()
 					return self:switchDictionaryResult((state.dictionary_index or 1) + 1)
 				end,
 			}
 		end
+
+		button_specs[#button_specs + 1] = {
+			spec = self:getLeftButtonSpec(LEFT_ACTION_SEARCH_BOOK),
+			callback = function()
+				closePreviewBeforeExternalAction(self, state)
+				return self:showSearchDialog(search_text)
+			end,
+		}
 
 		button_specs[#button_specs + 1] = {
 			spec = { plugin_icon = ICON_DETAILS, icon = ICON_DETAILS_FALLBACK },

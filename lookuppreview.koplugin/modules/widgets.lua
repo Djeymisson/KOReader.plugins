@@ -581,6 +581,7 @@ return function(ctx)
 
 	DictionaryCardButton = InputContainer:extend({
 		text = nil,
+		bold = true,
 		icon = nil,
 		icon_file = nil,
 		width = nil,
@@ -611,7 +612,7 @@ return function(ctx)
 			})
 		end
 
-		return makeTextLabel(self.text, DICTIONARY_BUTTON_FACE, inner_width, true)
+		return makeTextLabel(self.text, DICTIONARY_BUTTON_FACE, inner_width, self.bold ~= false)
 	end
 
 	function DictionaryCardButton:init()
@@ -1425,7 +1426,12 @@ return function(ctx)
 	end
 
 	function LookupPreviewPopup:getButtonWidths(button_specs, content_width)
-		local separator_count = math.max(0, #button_specs - 1)
+		local separator_count = 0
+		for index = 2, #button_specs do
+			if button_specs[index].separator_before ~= false then
+				separator_count = separator_count + 1
+			end
+		end
 		local safe_content_width = math.max(1, content_width - BUTTON_ROW_SAFETY_WIDTH)
 		local available_width = math.max(1, safe_content_width - DICTIONARY_BUTTON_SEPARATOR_WIDTH * separator_count)
 		local weights = {}
@@ -1463,7 +1469,7 @@ return function(ctx)
 		local widths = self:getButtonWidths(button_specs, content_width)
 		local widgets = {}
 		for index, item in ipairs(button_specs) do
-			if index > 1 then
+			if index > 1 and item.separator_before ~= false then
 				widgets[#widgets + 1] = LineWidget:new({
 					background = Blitbuffer.COLOR_GRAY,
 					dimen = Geom:new({ w = DICTIONARY_BUTTON_SEPARATOR_WIDTH, h = DICTIONARY_BUTTON_HEIGHT }),
@@ -1482,6 +1488,7 @@ return function(ctx)
 			end
 			widgets[#widgets + 1] = DictionaryCardButton:new({
 				text = spec.text,
+				bold = spec.bold,
 				icon = spec.icon,
 				icon_file = icon_file,
 				width = widths[index],
