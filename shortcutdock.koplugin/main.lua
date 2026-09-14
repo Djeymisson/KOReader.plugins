@@ -1,18 +1,24 @@
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local Button = require("ui/widget/button")
 local ButtonDialog = require("ui/widget/buttondialog")
+local Blitbuffer = require("ffi/blitbuffer")
 local DataStorage = require("datastorage")
 local Device = require("device")
 local Dispatcher = require("dispatcher")
 local Geom = require("ui/geometry")
+local GestureRange = require("ui/gesturerange")
+local HorizontalGroup = require("ui/widget/horizontalgroup")
+local HorizontalSpan = require("ui/widget/horizontalspan")
 local IconWidget = require("ui/widget/iconwidget")
 local InfoMessage = require("ui/widget/infomessage")
+local InputContainer = require("ui/widget/container/inputcontainer")
 local NetworkMgr = require("ui/network/manager")
 local Size = require("ui/size")
 local UIManager = require("ui/uimanager")
 local VerticalGroup = require("ui/widget/verticalgroup")
 local VerticalSpan = require("ui/widget/verticalspan")
 local lfs = require("libs/libkoreader-lfs")
+local time = require("ui/time")
 local util = require("util")
 local _ = require("gettext")
 
@@ -21,7 +27,7 @@ local math_floor = math.floor
 local math_max = math.max
 local math_min = math.min
 
-local PLUGIN_VERSION = "v0.7.1"
+local PLUGIN_VERSION = "v0.8.1"
 local SETTING_ACTIONS = "shortcutdock_actions"
 local SETTING_ACTION_CONTEXTS = "shortcutdock_action_contexts"
 local SETTING_AUTO_VISIBILITY = "shortcutdock_auto_visibility"
@@ -29,6 +35,7 @@ local SETTING_SIDE = "shortcutdock_side"
 local SETTING_SIDE_MODE = "shortcutdock_side_mode"
 local SETTING_SHOW_SIDE_BUTTON = "shortcutdock_show_side_button"
 local SETTING_SHOW_CONTEXT_BUTTON = "shortcutdock_show_context_button"
+local SETTING_SHOW_FRONTLIGHT_SLIDER = "shortcutdock_show_frontlight_slider"
 
 local SIDE_MODE_FIXED = "fixed"
 local SIDE_MODE_GESTURE = "gesture"
@@ -50,6 +57,11 @@ local SIDE_BUTTON_OUTER_HEIGHT = SIDE_BUTTON_HEIGHT
     + 2 * SIDE_BUTTON_PADDING
     + 2 * Size.border.button
 local SIDE_BUTTON_GAP = Size.padding.default
+local FRONTLIGHT_SLIDER_WIDTH = BUTTON_WIDTH
+local FRONTLIGHT_SLIDER_GAP = Size.padding.default
+local FRONTLIGHT_SLIDER_PADDING = Screen:scaleBySize(8)
+local FRONTLIGHT_TRACK_WIDTH = math_max(2, Screen:scaleBySize(3))
+local FRONTLIGHT_KNOB_RADIUS = math_max(5, Screen:scaleBySize(8))
 
 local ACTION_HOME = "shortcutdock_context_home"
 local ACTION_SEARCH = "shortcutdock_context_search"
@@ -294,24 +306,274 @@ local function applyButtonMetrics(button)
     return button
 end
 
+local FrontlightSlider = InputContainer:extend({})
+
+function FrontlightSlider:init()
+    self.width = self.width or FRONTLIGHT_SLIDER_WIDTH
+    self.height = math_max(1, self.height or Screen:getHeight() / 2)
+    self.powerd = self.powerd or Device:getPowerDevice()
+    self.minimum = tonumber(self.powerd and self.powerd.fl_min) or 0
+    self.maximum = tonumber(self.powerd and self.powerd.fl_max) or 100
+    if self.maximum <= self.minimum then
+        self.maximum = self.minimum + 1
+    end
+
+    self.value = self.minimum
+    self.enabled = false
+    self:syncFromPower()
+    self.last_refresh_time = 0
+    self.dimen = Geom:new({ x = 0, y = 0, w = self.width, h = self.height })
+
+    if Device:isTouchDevice() then
+        self.ges_events = {
+            TapFrontlightSlider = {
+                GestureRange:new({ ges = "tap", range = self.dimen }),
+            },
+            PanFrontlightSlider = {
+                GestureRange:new({ ges = "pan", range = self.dimen }),
+            },
+            PanReleaseFrontlightSlider = {
+                GestureRange:new({ ges = "pan_release", range = self.dimen }),
+            },
+        }
+    end
+end
+
+function FrontlightSlider:syncFromPower(notify_state_change)
+    local was_enabled = self.enabled
+    local level_ok, level = pcall(function()
+        return self.powerd:frontlightIntensity()
+    end)
+    if level_ok then
+        self.value = tonumber(level) or self.minimum
+        self.value = math_max(self.minimum, math_min(self.maximum, self.value))
+    end
+
+    local state_ok, light_on = pcall(function()
+        return self.powerd:isFrontlightOn()
+    end)
+    if state_ok then
+        self.enabled = light_on == true
+    else
+        self.enabled = self.value > self.minimum
+    end
+    if
+        notify_state_change
+        and was_enabled ~= self.enabled
+        and self.state_changed_callback
+    then
+        self.state_changed_callback(self.enabled)
+    end
+    return self.enabled
+end
+
+function FrontlightSlider:getSize()
+    return self.dimen
+end
+
+function FrontlightSlider:getTrackBounds()
+    local inset = FRONTLIGHT_SLIDER_PADDING + FRONTLIGHT_KNOB_RADIUS
+    local top = inset
+    local bottom = math_max(top + 1, self.height - inset)
+    return top, bottom
+end
+
+function FrontlightSlider:getLevelFromPosition(pos)
+    if not pos or not self.dimen then
+        return nil
+    end
+
+    local track_top, track_bottom = self:getTrackBounds()
+    local relative_y = math_max(track_top, math_min(track_bottom, pos.y - (self.dimen.y or 0)))
+    local percentage = (track_bottom - relative_y) / math_max(1, track_bottom - track_top)
+    return math_floor(self.minimum + percentage * (self.maximum - self.minimum) + 0.5)
+end
+
+function FrontlightSlider:refreshSlider(force)
+    local now = time.now()
+    if Screen.low_pan_rate and not force then
+        local min_interval = time.s(1 / 3)
+        if now - self.last_refresh_time < min_interval then
+            return
+        end
+    end
+    self.last_refresh_time = now
+    UIManager:setDirty(self.show_parent or self, "fast", self.dimen)
+end
+
+function FrontlightSlider:setLevelFromPosition(pos, force_refresh)
+    if not self.enabled then
+        return true
+    end
+
+    local level = self:getLevelFromPosition(pos)
+    if level == nil then
+        return true
+    end
+
+    if level ~= self.value then
+        local ok = pcall(function()
+            -- KOReader reserves the minimum frontlight level (normally zero)
+            -- for toggling the light, which lets device-specific PowerD
+            -- implementations use their proper on/off path.
+            if level == self.minimum and type(self.powerd.toggleFrontlight) == "function" then
+                self.powerd:toggleFrontlight()
+            else
+                self.powerd:setIntensity(level)
+            end
+            self.powerd:updateResumeFrontlightState()
+        end)
+        if ok then
+            self:syncFromPower(true)
+        end
+    end
+    self:refreshSlider(force_refresh)
+    return true
+end
+
+function FrontlightSlider:onTapFrontlightSlider(_arg, gesture)
+    return self:setLevelFromPosition(gesture and gesture.pos, true)
+end
+
+function FrontlightSlider:onPanFrontlightSlider(_arg, gesture)
+    return self:setLevelFromPosition(gesture and gesture.pos, false)
+end
+
+function FrontlightSlider:onPanReleaseFrontlightSlider(_arg, gesture)
+    return self:setLevelFromPosition(gesture and (gesture.pos or gesture.end_pos), true)
+end
+
+function FrontlightSlider:paintTo(bb, x, y)
+    self.dimen.x = x
+    self.dimen.y = y
+    self:syncFromPower()
+
+    local border = Size.border.button
+    local radius = Size.radius.button
+    local background = Blitbuffer.COLOR_WHITE
+    local paint_rounded_rect = Blitbuffer.isColor8(background) and bb.paintRoundedRect or bb.paintRoundedRectRGB32
+    paint_rounded_rect(bb, x, y, self.width, self.height, background, radius + border)
+    bb:paintBorder(
+        x,
+        y,
+        self.width,
+        self.height,
+        border,
+        Blitbuffer.COLOR_BLACK,
+        radius,
+        G_reader_settings:nilOrTrue("anti_alias_ui")
+    )
+
+    local track_top, track_bottom = self:getTrackBounds()
+    local track_height = math_max(1, track_bottom - track_top)
+    local percentage = (self.value - self.minimum) / (self.maximum - self.minimum)
+    local knob_y = y + track_bottom - math_floor(percentage * track_height + 0.5)
+    local center_x = x + math_floor(self.width / 2)
+    local track_x = center_x - math_floor(FRONTLIGHT_TRACK_WIDTH / 2)
+
+    local track_color = self.enabled and Blitbuffer.COLOR_GRAY or Blitbuffer.COLOR_LIGHT_GRAY
+    local active_color = self.enabled and Blitbuffer.COLOR_BLACK or Blitbuffer.COLOR_DARK_GRAY
+    bb:paintRect(track_x, y + track_top, FRONTLIGHT_TRACK_WIDTH, track_height, track_color)
+    if knob_y < y + track_bottom then
+        bb:paintRect(
+            track_x,
+            knob_y,
+            FRONTLIGHT_TRACK_WIDTH,
+            y + track_bottom - knob_y,
+            active_color
+        )
+    end
+    bb:paintCircle(center_x, knob_y, FRONTLIGHT_KNOB_RADIUS, active_color)
+end
+
+local FrontlightToggleButton = Button:extend({})
+
+function FrontlightToggleButton:paintTo(bb, x, y)
+    self.slider:syncFromPower()
+    local icon = self.icon_provider(self.slider.enabled)
+    if icon then
+        if icon ~= self.icon or self.text ~= nil then
+            self.text = nil
+            self.icon = nil
+            self:setIcon(icon, self.width)
+        end
+    else
+        local text = self.slider.enabled and _("On") or _("Off")
+        if text ~= self.text or self.icon ~= nil then
+            self.icon = nil
+            self:setText(text, self.width)
+        end
+    end
+    Button.paintTo(self, bb, x, y)
+end
+
 local FloatingControlButtonDialog = ButtonDialog:extend({})
 
 function FloatingControlButtonDialog:init()
     ButtonDialog.init(self)
-    if not self.side_button_factory then
+    if not self.side_button_factory and not self.frontlight_slider_factory then
         return
     end
 
     local dock_frame = self.movable[1]
-    local side_button = self.side_button_factory(dock_frame:getSize().w, self)
-    self.movable[1] = VerticalGroup:new({
-        side_button,
-        VerticalSpan:new({ width = SIDE_BUTTON_GAP }),
-        dock_frame,
-    })
+    local dock_size = dock_frame:getSize()
+    local dock_column = dock_frame
+    local side_button
+    local frontlight_column
+    if self.side_button_factory then
+        side_button = self.side_button_factory(dock_size.w, self)
+        dock_column = VerticalGroup:new({
+            side_button,
+            VerticalSpan:new({ width = SIDE_BUTTON_GAP }),
+            dock_frame,
+        })
+    end
 
-    if Device:hasDPad() and self.layout then
+    if self.frontlight_slider_factory then
+        frontlight_column = self.frontlight_slider_factory(dock_size.h, self)
+        local dock_column_height = dock_column:getSize().h
+        local slider_height = frontlight_column:getSize().h
+        local total_height = math_max(dock_column_height, slider_height)
+        local aligned_dock_column = VerticalGroup:new({
+            VerticalSpan:new({ width = total_height - dock_column_height }),
+            dock_column,
+        })
+        local aligned_slider = VerticalGroup:new({
+            VerticalSpan:new({ width = total_height - slider_height }),
+            frontlight_column,
+        })
+        local columns
+        if self.dock_side == "left" then
+            columns = {
+                aligned_dock_column,
+                HorizontalSpan:new({ width = FRONTLIGHT_SLIDER_GAP }),
+                aligned_slider,
+            }
+        else
+            columns = {
+                aligned_slider,
+                HorizontalSpan:new({ width = FRONTLIGHT_SLIDER_GAP }),
+                aligned_dock_column,
+            }
+        end
+        -- These are physical screen sides, so bidi mirroring must not swap the
+        -- dock and slider after their order has already been selected above.
+        columns.allow_mirroring = false
+        self.movable[1] = HorizontalGroup:new(columns)
+    else
+        self.movable[1] = dock_column
+    end
+
+    if side_button and Device:hasDPad() and self.layout then
         table.insert(self.layout, 1, { side_button })
+    end
+    if
+        frontlight_column
+        and frontlight_column.toggle_button
+        and Device:hasDPad()
+        and self.layout
+    then
+        table.insert(self.layout, 1, { frontlight_column.toggle_button })
     end
 end
 
@@ -541,6 +803,98 @@ end
 
 function ShortcutDock:setShowContextButton(enabled)
     G_reader_settings:saveSetting(SETTING_SHOW_CONTEXT_BUTTON, enabled and true or false)
+end
+
+function ShortcutDock:showFrontlightSlider()
+    return Device:hasFrontlight()
+        and G_reader_settings:readSetting(SETTING_SHOW_FRONTLIGHT_SLIDER) ~= false
+end
+
+function ShortcutDock:setShowFrontlightSlider(enabled)
+    G_reader_settings:saveSetting(SETTING_SHOW_FRONTLIGHT_SLIDER, enabled and true or false)
+end
+
+function ShortcutDock:getFrontlightSliderHeight(dock_height)
+    local screen_height = Screen:getHeight()
+    dock_height = math_max(1, tonumber(dock_height) or 1)
+    if dock_height < screen_height / 3 then
+        return math_floor(screen_height / 2)
+    end
+    return dock_height
+end
+
+function ShortcutDock:makeFrontlightToggleButton(width, dialog, slider)
+    local powerd = slider.powerd
+    local function getStateIcon()
+        return self:getIcon(slider.enabled and "light_on" or "light_off")
+    end
+
+    local icon = getStateIcon()
+    local config = {
+        id = "shortcutdock_toggle_frontlight",
+        width = width,
+        height = SIDE_BUTTON_HEIGHT,
+        padding = SIDE_BUTTON_PADDING,
+        margin = 0,
+        bordersize = Size.border.button,
+        radius = Size.radius.button,
+        icon_width = SIDE_BUTTON_ICON_SIZE,
+        icon_height = SIDE_BUTTON_ICON_SIZE,
+        enabled = true,
+        show_parent = dialog,
+        slider = slider,
+        icon_provider = function()
+            return getStateIcon()
+        end,
+        callback = function()
+            local toggled = pcall(function()
+                powerd:toggleFrontlight()
+                powerd:updateResumeFrontlightState()
+            end)
+            if toggled then
+                slider:syncFromPower(true)
+            end
+        end,
+        hold_callback = function()
+            local message = slider.enabled and _("Turn frontlight off") or _("Turn frontlight on")
+            UIManager:show(InfoMessage:new({ text = message }))
+        end,
+    }
+    if icon then
+        config.icon = icon
+    else
+        config.text = slider.enabled and _("On") or _("Off")
+    end
+    return FrontlightToggleButton:new(config)
+end
+
+function ShortcutDock:makeFrontlightSlider(dock_height, dialog)
+    local column_height = self:getFrontlightSliderHeight(dock_height)
+    local slider_height = math_max(
+        1,
+        column_height - SIDE_BUTTON_OUTER_HEIGHT - SIDE_BUTTON_GAP
+    )
+    local slider = FrontlightSlider:new({
+        width = FRONTLIGHT_SLIDER_WIDTH,
+        height = slider_height,
+        powerd = Device:getPowerDevice(),
+        show_parent = dialog,
+    })
+    local toggle_button = self:makeFrontlightToggleButton(
+        FRONTLIGHT_SLIDER_WIDTH,
+        dialog,
+        slider
+    )
+    slider.state_changed_callback = function()
+        UIManager:setDirty(dialog, "ui")
+    end
+    local column = VerticalGroup:new({
+        slider,
+        VerticalSpan:new({ width = SIDE_BUTTON_GAP }),
+        toggle_button,
+    })
+    column.toggle_button = toggle_button
+    return column
 end
 
 function ShortcutDock:isReaderContext()
@@ -1072,6 +1426,12 @@ function ShortcutDock:showDock(page, side)
             return self:makeSideButton(width, parent)
         end
     end
+    local frontlight_slider_factory
+    if self:showFrontlightSlider() then
+        frontlight_slider_factory = function(dock_height, parent)
+            return self:makeFrontlightSlider(dock_height, parent)
+        end
+    end
     dialog = FloatingControlButtonDialog:new({
         buttons = rows,
         width = BUTTON_WIDTH + 2 * Size.border.window + 2 * Size.padding.button,
@@ -1079,6 +1439,8 @@ function ShortcutDock:showDock(page, side)
         shrink_min_width = BUTTON_WIDTH,
         dismissable = true,
         side_button_factory = side_button_factory,
+        frontlight_slider_factory = frontlight_slider_factory,
+        dock_side = side,
         anchor = function()
             local dialog_size = dialog:getContentSize()
             local left
@@ -1223,7 +1585,18 @@ function ShortcutDock:getActionVisibilityMenu()
 end
 
 function ShortcutDock:getIconFilenamesMenu()
-    local menu = {}
+    local light_icon_details = _("Frontlight toggle")
+        .. "\n\n" .. _("Frontlight on") .. ": light_on.svg / light_on.png"
+        .. "\n" .. _("Frontlight off") .. ": light_off.svg / light_off.png"
+    local menu = {
+        {
+            text = _("Frontlight toggle") .. ": light_on.svg / light_off.svg",
+            help_text = _("Uses a different icon for the active and inactive frontlight states."),
+            callback = function()
+                UIManager:show(InfoMessage:new({ text = light_icon_details }))
+            end,
+        },
+    }
     local actions = self:getConfiguredActions()
     table.insert(actions, 1, {
         key = ACTION_HOME,
@@ -1330,6 +1703,28 @@ function ShortcutDock:addToMainMenu(menu_items)
                         },
                     },
                     {
+                        text = _("Show frontlight slider"),
+                        help_text = _("Shows a vertical brightness slider beside the dock on devices with a frontlight."),
+                        enabled_func = function()
+                            return Device:hasFrontlight()
+                        end,
+                        checked_func = function()
+                            return self:showFrontlightSlider()
+                        end,
+                        callback = function(touchmenu_instance)
+                            self:setShowFrontlightSlider(not self:showFrontlightSlider())
+                            if touchmenu_instance and touchmenu_instance.updateItems then
+                                touchmenu_instance:updateItems()
+                            end
+                        end,
+                        keep_menu_open = true,
+                    },
+                },
+            },
+            {
+                text = _("Buttons"),
+                sub_item_table = {
+                    {
                         text = _("Show side-switch button"),
                         help_text = _("Shows a separate chevron button above the dock for changing sides without opening the settings."),
                         checked_func = function()
@@ -1343,11 +1738,6 @@ function ShortcutDock:addToMainMenu(menu_items)
                         end,
                         keep_menu_open = true,
                     },
-                },
-            },
-            {
-                text = _("Buttons"),
-                sub_item_table = {
                     {
                         text = _("Show fixed context button"),
                         help_text = _("Shows File browser while reading, Return to reader in Bookshelf, and Open last document in the file browser."),
