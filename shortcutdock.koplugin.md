@@ -1,10 +1,11 @@
-# Shortcut Dock ![Version](https://img.shields.io/badge/version-v0.8.1-blue)
+# Shortcut Dock ![Version](https://img.shields.io/badge/version-v0.8.2-blue)
 
 Shortcut Dock adds a floating, vertical shortcut bar to KOReader. It is designed for touch devices and can be assigned to any gesture supported by KOReader.
 
 ## Features
 
 - Floating dock anchored near the lower-left or lower-right corner, without touching the screen edges.
+- Fixed placement while open: dragging over the dock does not move it away from its selected side.
 - Optional gesture-following position mode that opens the dock on the same half of the screen where the assigned gesture started.
 - Compact icon buttons using the same scaled dimensions and standard `ButtonDialog` corner radius as Selection Toolbar.
 - Unlimited configurable actions through KOReader's native Dispatcher action picker.
@@ -60,7 +61,7 @@ The settings follow the same grouped layout as the other plugins in this reposit
   - `Visibility by context`: displays the automatic result and controls manual overrides for each action.
   - `Expected icon filenames`: lists the custom SVG and PNG names accepted for every action.
 - `Gesture setup`: displays instructions for assigning the dock to a KOReader gesture.
-- `Version: v0.8.1`: shows the installed plugin version.
+- `Version: v0.8.2`: shows the installed plugin version.
 
 The side selector and visibility options keep their menu open after a change, making it easier to review related settings.
 
@@ -153,4 +154,4 @@ Extract `shortcutdock.koplugin` into KOReader's `plugins` directory and restart 
 
 ## Version
 
-v0.8.1
+v0.8.2

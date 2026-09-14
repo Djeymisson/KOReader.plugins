@@ -27,7 +27,7 @@ local math_floor = math.floor
 local math_max = math.max
 local math_min = math.min
 
-local PLUGIN_VERSION = "v0.8.1"
+local PLUGIN_VERSION = "v0.8.2"
 local SETTING_ACTIONS = "shortcutdock_actions"
 local SETTING_ACTION_CONTEXTS = "shortcutdock_action_contexts"
 local SETTING_AUTO_VISIBILITY = "shortcutdock_auto_visibility"
@@ -511,6 +511,26 @@ local FloatingControlButtonDialog = ButtonDialog:extend({})
 
 function FloatingControlButtonDialog:init()
     ButtonDialog.init(self)
+
+    -- ButtonDialog normally wraps its content in a MovableContainer. Keep its
+    -- anchor positioning, but remove only the gestures and shortcuts that can
+    -- move it so touches still reach the dock buttons and frontlight slider.
+    self.movable.unmovable = true
+    self.movable.is_movable_with_keys = false
+    if self.movable.ges_events then
+        self.movable.ges_events.MovableTouch = nil
+        self.movable.ges_events.MovableSwipe = nil
+        self.movable.ges_events.MovableHold = nil
+        self.movable.ges_events.MovableHoldPan = nil
+        self.movable.ges_events.MovableHoldRelease = nil
+        self.movable.ges_events.MovablePan = nil
+        self.movable.ges_events.MovablePanRelease = nil
+    end
+    if self.movable.key_events then
+        self.movable.key_events.MovePositionTop = nil
+        self.movable.key_events.MovePositionBottom = nil
+    end
+
     if not self.side_button_factory and not self.frontlight_slider_factory then
         return
     end
