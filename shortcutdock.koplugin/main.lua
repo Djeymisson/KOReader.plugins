@@ -21,7 +21,7 @@ local math_floor = math.floor
 local math_max = math.max
 local math_min = math.min
 
-local PLUGIN_VERSION = "v0.6.1"
+local PLUGIN_VERSION = "v0.6.2"
 local SETTING_ACTIONS = "shortcutdock_actions"
 local SETTING_ACTION_CONTEXTS = "shortcutdock_action_contexts"
 local SETTING_AUTO_VISIBILITY = "shortcutdock_auto_visibility"
@@ -830,8 +830,9 @@ end
 
 function ShortcutDock:getPages(action_count)
     local fixed_rows = self:showContextButton() and 1 or 0
-    local max_rows = self:getMaxPageRows() - fixed_rows
-    if action_count <= max_rows then
+    local max_rows = self:getMaxPageRows()
+    local first_page_capacity = max_rows - fixed_rows
+    if action_count <= first_page_capacity then
         return { { first = 1, last = action_count } }
     end
 
@@ -841,8 +842,9 @@ function ShortcutDock:getPages(action_count)
         local remaining = action_count - first + 1
         local action_capacity
         if #pages == 0 then
-            -- The first page only needs the next-page arrow.
-            action_capacity = max_rows - 1
+            -- The fixed context button belongs only to the first page, which
+            -- also needs the next-page arrow when pagination is active.
+            action_capacity = max_rows - fixed_rows - 1
         elseif remaining <= max_rows - 1 then
             -- The last page only needs the previous-page arrow.
             action_capacity = remaining
@@ -1020,7 +1022,7 @@ function ShortcutDock:showDock(page)
     if self.current_page < page_count then
         table.insert(rows, 1, { self:makePageButton("next", self.current_page + 1) })
     end
-    if self:showContextButton() then
+    if self.current_page == 1 and self:showContextButton() then
         rows[#rows + 1] = { self:makeContextButton() }
     end
     if self.current_page > 1 then

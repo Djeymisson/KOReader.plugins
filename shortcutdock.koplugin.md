@@ -1,4 +1,4 @@
-# Shortcut Dock ![Version](https://img.shields.io/badge/version-v0.6.1-blue)
+# Shortcut Dock ![Version](https://img.shields.io/badge/version-v0.6.2-blue)
 
 Shortcut Dock adds a floating, vertical shortcut bar to KOReader. It is designed for touch devices and can be assigned to any gesture supported by KOReader.
 
@@ -15,7 +15,7 @@ Shortcut Dock adds a floating, vertical shortcut bar to KOReader. It is designed
   - opens the previous document from the file browser;
   - returns to the file browser while reading;
   - resumes the parked reader when Bookshelf is open over it.
-- The context-aware home button is fixed at the beginning of the action group and can be hidden in the plugin settings. Its icon changes between a home and an open document according to the current screen, including the Bookshelf overlay.
+- The context-aware home button is fixed at the beginning of the action group on the first pagination page and can be hidden in the plugin settings. It is not repeated on later pages. Its icon changes between a home and an open document according to the current screen, including the Bookshelf overlay.
 - Context-aware search button:
   - opens file search in the file browser;
   - opens full-text search while reading;
@@ -57,7 +57,7 @@ The settings follow the same grouped layout as the other plugins in this reposit
   - `Visibility by context`: displays the automatic result and controls manual overrides for each action.
   - `Expected icon filenames`: lists the custom SVG and PNG names accepted for every action.
 - `Gesture setup`: displays instructions for assigning the dock to a KOReader gesture.
-- `Version: v0.6.1`: shows the installed plugin version.
+- `Version: v0.6.2`: shows the installed plugin version.
 
 The side selector and visibility options keep their menu open after a change, making it easier to review related settings.
 
@@ -138,4 +138,4 @@ Extract `shortcutdock.koplugin` into KOReader's `plugins` directory and restart 
 
 ## Version
 
-v0.6.1
+v0.6.2
