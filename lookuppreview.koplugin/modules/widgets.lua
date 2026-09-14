@@ -33,7 +33,6 @@ return function(ctx)
 		})
 	end
 
-	local PAGE_DOT_FACE = Font:getFace("cfont", math.max(14, (HEADER_BUTTON_FONT_SIZE or UI_FONT_SIZE or 20) - 5))
 	local BUTTON_ROW_SAFETY_WIDTH = math.max(1, Screen:scaleBySize(2))
 	local BASE_TAB_HEIGHT = SIDE_TAB_HEIGHT or HEADER_MENU_HEIGHT or Screen:scaleBySize(28)
 	local TAB_TOUCH_HEIGHT = BASE_TAB_HEIGHT + math.max(2, Screen:scaleBySize(6))
@@ -375,45 +374,52 @@ return function(ctx)
 		return runCallback(self.callback)
 	end
 
-	HeaderPageDotsButton = InputContainer:extend({
-		active_index = PAGE_DICTIONARY,
+	HeaderPageMenuButton = InputContainer:extend({
+		icon = "appbar.menu",
+		icon_file = nil,
 		width = nil,
 		height = HEADER_MENU_HEIGHT,
 		callback = nil,
 		show_parent = nil,
 	})
 
-	function HeaderPageDotsButton:init()
-		local width = self.width or Screen:scaleBySize(66)
+	function HeaderPageMenuButton:init()
+		local width = self.width or HEADER_MENU_WIDTH
 		local height = self.height or HEADER_MENU_HEIGHT
-		local active_index = tonumber(self.active_index) or PAGE_DICTIONARY
-		local dot_width = math.max(1, math.floor(width / 3))
-		local widgets = {}
-
-		for index = PAGE_DICTIONARY, PAGE_WIKIPEDIA do
-			widgets[#widgets + 1] = CenterContainer:new({
-				dimen = Geom:new({ w = dot_width, h = height }),
-				makeTextLabel(index == active_index and "●" or "○", PAGE_DOT_FACE, dot_width, false),
+		local icon_size = math.max(1, math.min(DICTIONARY_ICON_SIZE, height))
+		local icon_widget
+		if self.icon_file then
+			icon_widget = IconWidget:new({
+				file = self.icon_file,
+				width = icon_size,
+				height = icon_size,
+				alpha = true,
+				is_icon = true,
+			})
+		else
+			icon_widget = IconWidget:new({
+				icon = self.icon,
+				width = icon_size,
+				height = icon_size,
+				alpha = true,
 			})
 		end
 
-		self.frame = FrameContainer:new({
-			show_parent = self.show_parent,
-			bordersize = 0,
-			background = Blitbuffer.COLOR_WHITE,
-			padding = 0,
-			CenterContainer:new({
-				dimen = Geom:new({ w = width, h = height }),
-				HorizontalGroup:new(widgets),
-			}),
-		})
+		self.frame = makeCenteredFrame(
+			icon_widget,
+			width,
+			height,
+			HEADER_MENU_PADDING_H,
+			HEADER_MENU_PADDING_V,
+			self.show_parent
+		)
 
 		self.dimen = Geom:new({ x = 0, y = 0, w = width, h = height })
 		self[1] = self.frame
-		self.ges_events = tapEvent("TapHeaderPageDots", self.dimen)
+		self.ges_events = tapEvent("TapHeaderPageMenu", self.dimen)
 	end
 
-	function HeaderPageDotsButton:onTapHeaderPageDots()
+	function HeaderPageMenuButton:onTapHeaderPageMenu()
 		return runCallback(self.callback)
 	end
 
@@ -1356,10 +1362,10 @@ return function(ctx)
 		local menu_button
 		local menu_width = 0
 		if not self:useTabsMode() then
-			local active_page = payload.page_type or self.active_index or PAGE_DICTIONARY
-			menu_width = math.max(HEADER_MENU_WIDTH, Screen:scaleBySize(66))
-			menu_button = HeaderPageDotsButton:new({
-				active_index = active_page,
+			local menu_icon_file = self.plugin and self.plugin:getPluginIconFile(ICON_MENU)
+			menu_width = HEADER_MENU_WIDTH
+			menu_button = HeaderPageMenuButton:new({
+				icon_file = menu_icon_file,
 				width = menu_width,
 				show_parent = self,
 				callback = function()

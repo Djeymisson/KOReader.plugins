@@ -194,6 +194,7 @@ ICON_COPY = "copy"
 ICON_ADD_NOTE = "add_note"
 ICON_WIKIPEDIA = "wikipedia"
 ICON_LOADING = "loading"
+ICON_MENU = "menu"
 
 PLUGIN_ICON_DEFINITIONS = {
 	{
@@ -240,6 +241,11 @@ PLUGIN_ICON_DEFINITIONS = {
 		id = ICON_LOADING,
 		label = _("Loading"),
 		basenames = { "loading" },
+	},
+	{
+		id = ICON_MENU,
+		label = _("Card selector"),
+		basenames = { "menu" },
 	},
 }
 

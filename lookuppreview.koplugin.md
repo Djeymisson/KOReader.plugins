@@ -1,4 +1,4 @@
-# KOReader Lookup Preview ![Version](https://img.shields.io/badge/version-v1.0.18-blue)
+# KOReader Lookup Preview ![Version](https://img.shields.io/badge/version-v1.0.19-blue)
 
 **Lookup Preview** is a KOReader reader plugin that changes the lookup flow for selected text. Instead of opening each native lookup window immediately, it first shows a compact floating carousel with preview cards for **Dictionary**, **Translate**, and **Wikipedia**.
 
@@ -17,7 +17,7 @@ The plugin metadata registers it as `lookuppreview` with the display name **Look
 - Supports horizontal swipes to move between Dictionary, Translate, and Wikipedia.
 - Automatically positions the floating carousel near the top or bottom of the screen to avoid covering the selected text when possible.
 - Uses a compact header with title and subtitle for each card.
-- Provides a card selector button in the header to jump directly between cards.
+- Uses `menu.svg` for the card selector button in the header; tapping it opens the same card list used by the previous page indicators.
 - Keeps KOReader's original native lookup widgets available through compact action buttons.
 - Uses lazy loading for Translate and Wikipedia cards, avoiding unnecessary network requests until those cards are opened.
 - Reuses the current popup while switching content, reducing unnecessary carousel rebuilds.
@@ -92,6 +92,7 @@ lookuppreview.koplugin/
 │   ├── copy.svg
 │   ├── highlight.svg
 │   ├── loading.svg
+│   ├── menu.svg
 │   ├── read_more.svg
 │   ├── search.svg
 │   └── wikipedia.svg
@@ -122,8 +123,9 @@ Expected primary filenames:
 | Add translation note | `add_note.svg` | `add_note.png` |
 | Full Wikipedia article | `wikipedia.svg` | `wikipedia.png` |
 | Loading feedback | `loading.svg` | `loading.png` |
+| Card selector | `menu.svg` | `menu.png` |
 
-The Highlight action also accepts `lookuppreview.highlight` and `dictionarypreview.highlight`; search also accepts `appbar.search`; and Full Wikipedia article also accepts `lookuppreview.wikipedia` and `dictionarypreview.wikipedia`, each with an `.svg` or `.png` extension. If `read_more` is absent, Open native details falls back to KOReader's `chevron.up` icon. Highlight, Copy translation, Add translation note, and Full Wikipedia article fall back to their text labels when their local icons are absent.
+The Highlight action also accepts `lookuppreview.highlight` and `dictionarypreview.highlight`; search also accepts `appbar.search`; and Full Wikipedia article also accepts `lookuppreview.wikipedia` and `dictionarypreview.wikipedia`, each with an `.svg` or `.png` extension. If `read_more` is absent, Open native details falls back to KOReader's `chevron.up` icon. If `menu` is absent, the card selector falls back to KOReader's `appbar.menu` icon. Highlight, Copy translation, Add translation note, and Full Wikipedia article fall back to their text labels when their local icons are absent.
 
 The same list is available on the device under **Lookup preview → Appearance → Expected icon filenames**.
 
@@ -187,7 +189,7 @@ Translate and Wikipedia are loaded lazily. This means the plugin does not query 
 |---|---|
 | Card title | Shows the current card type |
 | Card subtitle | Opens the related selector when available |
-| `☰` | Opens the card selector menu |
+| Menu icon (`menu.svg`) | Opens the card selector menu |
 
 ### Card selector
 
