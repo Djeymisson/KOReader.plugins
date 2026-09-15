@@ -410,7 +410,7 @@ return function(ctx)
 			}
 			buttons[#buttons + 1] = {
 				spec = {
-					text = string.format("%d/%d", state.wikipedia_index or 1, count),
+					text = string.format("%d / %d", state.wikipedia_index or 1, count),
 					bold = false,
 				},
 				weight = 0.8,

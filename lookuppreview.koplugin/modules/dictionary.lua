@@ -212,7 +212,7 @@ return function(ctx)
 			}
 			button_specs[#button_specs + 1] = {
 				spec = {
-					text = string.format("%d/%d", state.dictionary_index or 1, state.preview_count),
+					text = string.format("%d / %d", state.dictionary_index or 1, state.preview_count),
 					bold = false,
 				},
 				weight = 0.8,
