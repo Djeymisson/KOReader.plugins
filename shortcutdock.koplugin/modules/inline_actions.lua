@@ -19,6 +19,7 @@ function ShortcutDock:closeStatusPanel(expected_widget)
         return
     end
     self.status_panel_widget = nil
+    self.status_panel_text = nil
     if status_panel_widget then
         UIManager:close(status_panel_widget)
     end
@@ -28,9 +29,23 @@ function ShortcutDock:showStatusPanel(text, timeout)
     if not self.dialog then
         return
     end
+    text = tostring(text or "")
+    local status_panel_widget = self.status_panel_widget
+    if status_panel_widget and self.status_panel_text == text then
+        -- Native Wi-Fi backends may announce the same connection phase many
+        -- times while forcing a repaint after each scan/authentication step.
+        -- Keep the existing overlay so those repaints have no widget teardown
+        -- or underlying screen region to flush.
+        if timeout then
+            UIManager:scheduleIn(timeout, function()
+                self:closeStatusPanel(status_panel_widget)
+            end)
+        end
+        return status_panel_widget
+    end
     self:closeStatusPanel()
     local side = self.current_dock_side == "left" and "right" or "left"
-    local status_panel_widget = InfoPanel.createStatusOverlay(
+    status_panel_widget = InfoPanel.createStatusOverlay(
         self:getDockMetrics(),
         side,
         dock_margin,
@@ -38,12 +53,14 @@ function ShortcutDock:showStatusPanel(text, timeout)
         self.info_panel_widget
     )
     self.status_panel_widget = status_panel_widget
+    self.status_panel_text = text
     UIManager:show(status_panel_widget, "ui")
     if timeout then
         UIManager:scheduleIn(timeout, function()
             self:closeStatusPanel(status_panel_widget)
         end)
     end
+    return status_panel_widget
 end
 
 function ShortcutDock:scheduleWifiStatusTimeout()
@@ -131,7 +148,10 @@ function ShortcutDock:toggleWifiInline()
         return true
     end
 
-    self:showStatusPanel(_("Turning on Wi-Fi…"))
+    -- Start with the persistent state used throughout native scanning and
+    -- authentication, avoiding an immediate status-widget replacement before
+    -- the backend's first forced repaint.
+    self:showStatusPanel(_("Connecting to Wi-Fi…"))
     UIManager:forceRePaint()
     local status = self:runWithWifiInfoRedirect(function()
         return NetworkMgr:enableWifi(nil, true)

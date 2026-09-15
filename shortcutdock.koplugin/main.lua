@@ -21,7 +21,7 @@ local function scaleMetric(value, factor, minimum)
     return math_max(minimum or 1, math_floor(value * factor + 0.5))
 end
 
-local PLUGIN_VERSION = "v0.20.5"
+local PLUGIN_VERSION = "v0.20.6"
 local SETTING_ACTIONS = "shortcutdock_actions"
 local SETTING_ACTION_CONTEXTS = "shortcutdock_action_contexts"
 local SETTING_AUTO_VISIBILITY = "shortcutdock_auto_visibility"
@@ -435,6 +435,7 @@ function ShortcutDock:init()
     self.info_panel_data = nil
     self.info_panel_cover_cache = nil
     self.status_panel_widget = nil
+    self.status_panel_text = nil
     self.wifi_status_generation = 0
     self.current_page = 1
 
@@ -1048,6 +1049,7 @@ function ShortcutDock:closeDock()
     self.info_panel_widget = nil
     self.info_panel_data = nil
     self.status_panel_widget = nil
+    self.status_panel_text = nil
 
     local widgets = {}
     if status_panel_widget then
