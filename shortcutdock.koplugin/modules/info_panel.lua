@@ -424,14 +424,14 @@ local function collect(plugin, metrics, screen_margin, include_cover)
     return data
 end
 
-local function makeText(text, face, width, bold, color)
+local function makeText(text, face, width, bold, color, alignment)
     return TextBoxWidget:new({
         text = text,
         face = face,
         bold = bold,
         fgcolor = color or Blitbuffer.COLOR_BLACK,
         width = width,
-        alignment = "left",
+        alignment = alignment or "left",
         line_height = 0.15,
     })
 end
@@ -449,13 +449,25 @@ local function addSeparator(items, width, gap)
     addGap(items, gap)
 end
 
-local function build(plugin, metrics, parent, maximum_outer_width, data)
+local function build(plugin, metrics, parent, maximum_outer_width, data, panel_side)
     local factor = tonumber(metrics and metrics.scale_factor) or 1
     local padding = math_max(Size.padding.small, math_floor(Screen:scaleBySize(8) * factor + 0.5))
     local gap = math_max(1, math_floor(Screen:scaleBySize(3) * factor + 0.5))
     local content_width = panelContentWidth(metrics, maximum_outer_width)
     local title_face = Font:getFace("infofont", math_floor(16 * factor + 0.5))
     local body_face = Font:getFace("smallinfofont", math_floor(13 * factor + 0.5))
+    local alignment_setting = plugin.getInfoPanelTextAlignment
+        and plugin:getInfoPanelTextAlignment()
+        or "left"
+    local text_alignment = alignment_setting
+    if alignment_setting == "screen_edge" then
+        text_alignment = panel_side == "right" and "right" or "left"
+    elseif alignment_setting ~= "center" then
+        text_alignment = "left"
+    end
+    local function makePanelText(text, face, bold, color)
+        return makeText(text, face, content_width, bold, color, text_alignment)
+    end
     data = data or collect(plugin)
     local items = {}
 
@@ -472,13 +484,12 @@ local function build(plugin, metrics, parent, maximum_outer_width, data)
             })
             addSeparator(items, content_width, gap)
         end
-        items[#items + 1] = makeText(data.document.title, title_face, content_width, true)
+        items[#items + 1] = makePanelText(data.document.title, title_face, true)
         if data.document.author ~= "" then
             addGap(items, gap)
-            items[#items + 1] = makeText(
+            items[#items + 1] = makePanelText(
                 data.document.author,
                 body_face,
-                content_width,
                 false,
                 Blitbuffer.COLOR_DARK_GRAY
             )
@@ -494,13 +505,13 @@ local function build(plugin, metrics, parent, maximum_outer_width, data)
         if data.statistics and data.statistics.book_time_left then
             book_lines[2] = _("Remaining") .. ": " .. data.statistics.book_time_left
         end
-        items[#items + 1] = makeText(table.concat(book_lines, "\n"), body_face, content_width)
+        items[#items + 1] = makePanelText(table.concat(book_lines, "\n"), body_face)
 
         if data.chapter then
             addSeparator(items, content_width, gap)
             local chapter_title = data.chapter.title ~= ""
                 and data.chapter.title or _("Chapter")
-            items[#items + 1] = makeText(chapter_title, body_face, content_width, true)
+            items[#items + 1] = makePanelText(chapter_title, body_face, true)
             addGap(items, gap)
             local chapter_lines = {
                 _("Page") .. ": " .. tostring(data.chapter.page)
@@ -511,15 +522,14 @@ local function build(plugin, metrics, parent, maximum_outer_width, data)
                 chapter_lines[2] = _("Remaining")
                     .. ": " .. data.statistics.chapter_time_left
             end
-            items[#items + 1] = makeText(table.concat(chapter_lines, "\n"), body_face, content_width)
+            items[#items + 1] = makePanelText(table.concat(chapter_lines, "\n"), body_face)
         end
     else
-        items[#items + 1] = makeText(_("Reading today"), title_face, content_width, true)
+        items[#items + 1] = makePanelText(_("Reading today"), title_face, true)
         addGap(items, gap)
-        items[#items + 1] = makeText(
+        items[#items + 1] = makePanelText(
             _("No document is currently open."),
             body_face,
-            content_width,
             false,
             Blitbuffer.COLOR_DARK_GRAY
         )
@@ -531,7 +541,7 @@ local function build(plugin, metrics, parent, maximum_outer_width, data)
         if data.statistics.today_duration then
             today = today .. "  ·  " .. data.statistics.today_duration
         end
-        items[#items + 1] = makeText(today, body_face, content_width)
+        items[#items + 1] = makePanelText(today, body_face)
     end
 
     addSeparator(items, content_width, gap)
@@ -539,7 +549,11 @@ local function build(plugin, metrics, parent, maximum_outer_width, data)
     if data.battery then
         status[#status + 1] = data.battery
     end
-    items[#items + 1] = makeText(table.concat(status, "  ·  "), body_face, content_width, true)
+    items[#items + 1] = makePanelText(
+        table.concat(status, "  ·  "),
+        body_face,
+        true
+    )
 
     return FrameContainer:new({
         show_parent = parent,
@@ -557,7 +571,7 @@ end
 local function createOverlay(plugin, metrics, panel_side, screen_margin, data)
     screen_margin = math_max(0, tonumber(screen_margin) or Size.padding.large)
     local maximum_width = maximumPanelWidth(screen_margin)
-    local panel = build(plugin, metrics, nil, maximum_width, data)
+    local panel = build(plugin, metrics, nil, maximum_width, data, panel_side)
     local overlay = InfoPanelOverlay:new({
         panel = panel,
         panel_side = panel_side == "left" and "left" or "right",

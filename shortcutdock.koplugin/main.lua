@@ -21,7 +21,7 @@ local function scaleMetric(value, factor, minimum)
     return math_max(minimum or 1, math_floor(value * factor + 0.5))
 end
 
-local PLUGIN_VERSION = "v0.20.6"
+local PLUGIN_VERSION = "v0.21.4"
 local SETTING_ACTIONS = "shortcutdock_actions"
 local SETTING_ACTION_CONTEXTS = "shortcutdock_action_contexts"
 local SETTING_AUTO_VISIBILITY = "shortcutdock_auto_visibility"
@@ -34,12 +34,24 @@ local SETTING_SHOW_FRONTLIGHT_SLIDER = "shortcutdock_show_frontlight_slider"
 local SETTING_SHOW_WARMTH_SLIDER = "shortcutdock_show_warmth_slider"
 local SETTING_SHOW_INFO_PANEL = "shortcutdock_show_info_panel"
 local SETTING_SHOW_INFO_PANEL_COVER = "shortcutdock_show_info_panel_cover"
+local SETTING_CENTER_INFO_PANEL_TEXT = "shortcutdock_center_info_panel_text"
+local SETTING_INFO_PANEL_TEXT_ALIGNMENT = "shortcutdock_info_panel_text_alignment"
 local SETTING_DOCK_SIZE = "shortcutdock_dock_size"
+local SETTING_MAX_ACTION_DOCK_HEIGHT = "shortcutdock_max_action_dock_height"
 local SETTING_KEEP_OPEN_AFTER_ACTION = "shortcutdock_keep_open_after_action"
 local SETTING_CLOSE_TOGETHER = "shortcutdock_close_together"
 
 local SIDE_MODE_FIXED = "fixed"
 local SIDE_MODE_GESTURE = "gesture"
+
+local INFO_PANEL_TEXT_LEFT = "left"
+local INFO_PANEL_TEXT_CENTER = "center"
+local INFO_PANEL_TEXT_SCREEN_EDGE = "screen_edge"
+local INFO_PANEL_TEXT_ALIGNMENTS = {
+    [INFO_PANEL_TEXT_LEFT] = true,
+    [INFO_PANEL_TEXT_CENTER] = true,
+    [INFO_PANEL_TEXT_SCREEN_EDGE] = true,
+}
 
 local DOCK_SIZE_SMALL = "small"
 local DOCK_SIZE_MEDIUM = "medium"
@@ -48,6 +60,14 @@ local DOCK_SIZE_FACTORS = {
     [DOCK_SIZE_SMALL] = 1,
     [DOCK_SIZE_MEDIUM] = 1.2,
     [DOCK_SIZE_LARGE] = 1.4,
+}
+local MAX_ACTION_DOCK_HEIGHT_100 = "100"
+local MAX_ACTION_DOCK_HEIGHT_60 = "60"
+local MAX_ACTION_DOCK_HEIGHT_33 = "33"
+local MAX_ACTION_DOCK_HEIGHT_FACTORS = {
+    [MAX_ACTION_DOCK_HEIGHT_100] = 1,
+    [MAX_ACTION_DOCK_HEIGHT_60] = 0.6,
+    [MAX_ACTION_DOCK_HEIGHT_33] = 0.33,
 }
 local DOCK_METRICS_CACHE = {}
 
@@ -289,6 +309,12 @@ local MODULE_CONSTANTS = {
     DOCK_SIZE_SMALL = DOCK_SIZE_SMALL,
     DOCK_SIZE_MEDIUM = DOCK_SIZE_MEDIUM,
     DOCK_SIZE_LARGE = DOCK_SIZE_LARGE,
+    MAX_ACTION_DOCK_HEIGHT_100 = MAX_ACTION_DOCK_HEIGHT_100,
+    MAX_ACTION_DOCK_HEIGHT_60 = MAX_ACTION_DOCK_HEIGHT_60,
+    MAX_ACTION_DOCK_HEIGHT_33 = MAX_ACTION_DOCK_HEIGHT_33,
+    INFO_PANEL_TEXT_LEFT = INFO_PANEL_TEXT_LEFT,
+    INFO_PANEL_TEXT_CENTER = INFO_PANEL_TEXT_CENTER,
+    INFO_PANEL_TEXT_SCREEN_EDGE = INFO_PANEL_TEXT_SCREEN_EDGE,
 }
 
 local function pluginDir()
@@ -677,6 +703,22 @@ function ShortcutDock:setDockSize(size)
     )
 end
 
+function ShortcutDock:getMaxActionDockHeight()
+    local height = G_reader_settings:readSetting(SETTING_MAX_ACTION_DOCK_HEIGHT)
+    return MAX_ACTION_DOCK_HEIGHT_FACTORS[height]
+        and height
+        or MAX_ACTION_DOCK_HEIGHT_100
+end
+
+function ShortcutDock:setMaxActionDockHeight(height)
+    G_reader_settings:saveSetting(
+        SETTING_MAX_ACTION_DOCK_HEIGHT,
+        MAX_ACTION_DOCK_HEIGHT_FACTORS[height]
+            and height
+            or MAX_ACTION_DOCK_HEIGHT_100
+    )
+end
+
 function ShortcutDock:getDockMetrics()
     local dock_size = self:getDockSize()
     if DOCK_METRICS_CACHE[dock_size] then
@@ -776,6 +818,27 @@ function ShortcutDock:setShowInfoPanelCover(enabled)
     end
 end
 
+function ShortcutDock:getInfoPanelTextAlignment()
+    local alignment = G_reader_settings:readSetting(SETTING_INFO_PANEL_TEXT_ALIGNMENT)
+    if INFO_PANEL_TEXT_ALIGNMENTS[alignment] then
+        return alignment
+    end
+    -- Preserve the preference used before the three-way alignment setting.
+    if G_reader_settings:readSetting(SETTING_CENTER_INFO_PANEL_TEXT) == true then
+        return INFO_PANEL_TEXT_CENTER
+    end
+    return INFO_PANEL_TEXT_LEFT
+end
+
+function ShortcutDock:setInfoPanelTextAlignment(alignment)
+    G_reader_settings:saveSetting(
+        SETTING_INFO_PANEL_TEXT_ALIGNMENT,
+        INFO_PANEL_TEXT_ALIGNMENTS[alignment]
+            and alignment
+            or INFO_PANEL_TEXT_LEFT
+    )
+end
+
 function ShortcutDock:keepOpenAfterAction()
     return G_reader_settings:readSetting(SETTING_KEEP_OPEN_AFTER_ACTION) ~= false
 end
@@ -793,12 +856,7 @@ function ShortcutDock:setCloseDockTogether(enabled)
 end
 
 function ShortcutDock:getFrontlightSliderHeight(dock_height)
-    local screen_height = Screen:getHeight()
-    dock_height = math_max(1, tonumber(dock_height) or 1)
-    if dock_height < screen_height / 3 then
-        return math_floor(screen_height / 2)
-    end
-    return dock_height
+    return math_max(1, tonumber(dock_height) or 1)
 end
 
 function ShortcutDock:makeFrontlightToggleButton(width, dialog, slider, metrics)
@@ -974,15 +1032,23 @@ function ShortcutDock:getMaxPageRows(metrics)
     local dialog_height = Screen:getHeight()
         - 2 * Size.padding.buttontable
         - 2 * Size.margin.default
-    local dock_height = Screen:getHeight()
+    local screen_available_height = Screen:getHeight()
         - 2 * DOCK_MARGIN
         - 2 * Size.border.window
     local external_button_count = (self:showSideButton() and 1 or 0)
         + (self:showCloseButton() and 1 or 0)
-    dock_height = dock_height
+    screen_available_height = screen_available_height
         - external_button_count * metrics.side_button_outer_height
         - external_button_count * metrics.side_button_gap
-    local available_height = math_min(dialog_height, dock_height)
+    local configured_height = math_floor(
+        Screen:getHeight()
+            * MAX_ACTION_DOCK_HEIGHT_FACTORS[self:getMaxActionDockHeight()]
+    ) - 2 * Size.border.window
+    local available_height = math_min(
+        dialog_height,
+        screen_available_height,
+        configured_height
+    )
 
     local minimum_rows = self:showContextButton() and 4 or 3
     return math_max(minimum_rows, math_floor(

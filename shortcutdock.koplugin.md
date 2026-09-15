@@ -1,4 +1,4 @@
-# Shortcut Dock ![Version](https://img.shields.io/badge/version-v0.20.6-blue)
+# Shortcut Dock ![Version](https://img.shields.io/badge/version-v0.21.4-blue)
 
 Shortcut Dock adds a floating, vertical shortcut bar to KOReader. It is designed for touch devices and can be assigned to any gesture supported by KOReader.
 
@@ -13,7 +13,7 @@ Shortcut Dock adds a floating, vertical shortcut bar to KOReader. It is designed
 - Unlimited configurable actions through KOReader's native Dispatcher action picker.
 - Configurable button order.
 - Optional automatic context visibility for native KOReader actions, with per-action manual overrides.
-- Automatic pagination before the enabled buttons would overflow: the up arrow opens the next page and the down arrow returns to the previous page, without a scrollbar.
+- Automatic pagination before the enabled buttons would overflow the configured maximum dock height (100%, 60%, or 33% of the screen): the up arrow opens the next page and the down arrow returns to the previous page, without a scrollbar. The lighting columns follow the resulting action-dock height.
 - An optional separate button above the dock moves it immediately between the left and right sides.
 - An optional separate close button can be placed at the top of the dock's external controls. It uses `close.svg`, is disabled by default, and has the same height as the side-switch and frontlight toggle buttons.
 - Configurable closing method: one block at a time by default, or all blocks at once using the smallest encompassing rectangle and a non-flashing UI update.
@@ -62,7 +62,7 @@ The settings follow the same grouped layout as the other plugins in this reposit
 - `Behavior`: controls where the dock opens and what happens after an action.
   - `Dock side: <current side>`: selects `Left`, `Right`, or `Follow gesture side`. Following the gesture is enabled by default, and the configured fixed side is used as a fallback when the dock is opened without gesture coordinates.
   - `Keep dock open after actions`: enabled by default; keeps the same dock open for night mode, Wi-Fi, and full refresh, reopens it after other compatible actions, and leaves it closed when an action opens another screen or dialog.
-  - `Closing method`: selects `One block at a time` (the default sequential behavior) or `All blocks at once` (one non-flashing update over the smallest rectangle containing the visible elements).
+  - `Dock and panel closing`: selects `One block at a time` (the default sequential behavior) or `All blocks at once` (one non-flashing update over the smallest rectangle containing the visible elements).
 - `Actions and buttons`: controls configurable actions, fixed buttons, and context visibility.
   - `Buttons and order`: opens KOReader's native action selector and shows the current number of configured actions.
   - `Fixed buttons`:
@@ -73,10 +73,12 @@ The settings follow the same grouped layout as the other plugins in this reposit
     - `Automatic visibility`: automatically separates native reader and file-browser actions.
     - `Per-action visibility`: displays the automatic result and controls manual overrides for each action.
 - `Appearance`: controls scale, visible panels and columns, and icon customization.
-  - `Dock size: <current size>`: selects `Small`, `Medium`, or `Large`. The selected scale applies to the buttons, icons, chevrons, lighting columns, information panel, and pagination calculation.
+  - `Dock scale: <current scale>`: selects `Small`, `Medium`, or `Large`. The selected scale applies to the buttons, icons, chevrons, lighting columns, information panel, and pagination calculation.
+  - `Maximum dock height: <current percentage>`: limits the action, brightness, and warmth columns to approximately `100%`, `60%`, or `33%` of the screen height. Buttons are paginated when they reach the selected limit; the exact height can vary slightly to preserve complete button rows and usable navigation controls. The default is `100%`.
   - `Reading information panel`:
     - `Show panel`: shows or hides the Mini Receipt-inspired information block.
     - `Show book cover at the top`: shows or hides the open document's cover above the reading information.
+    - `Panel text alignment`: aligns every line, including the clock and battery, to the `Left`, `Center`, or `Nearest screen edge`. The last option aligns left when the panel is on the left and right when it is on the right. `Left` is the default.
   - `Lighting controls`:
     - `Show frontlight control`: shows or hides the brightness slider and light toggle on devices with a frontlight.
     - `Show warmth control`: shows or hides the optional warmth slider on devices with natural-light support.
@@ -86,7 +88,7 @@ The settings follow the same grouped layout as the other plugins in this reposit
   - `Reset buttons to defaults`: restores the initial buttons and their order after confirmation without changing the other plugin settings.
   - `Reset behavior and buttons`: additionally restores fixed buttons, default actions, order, and visibility while preserving appearance.
 - `Gesture setup`: displays instructions for assigning the dock to a KOReader gesture.
-- `Version: v0.20.6`: shows the installed plugin version.
+- `Version: v0.21.4`: shows the installed plugin version.
 
 The side selector and visibility options keep their menu open after a change, making it easier to review related settings.
 
@@ -143,7 +145,7 @@ On devices with a frontlight, the slider is enabled by default and appears in it
 
 A separate compact button at the bottom of this column toggles the frontlight. It uses `icons/light_on.svg` while the light is active and `icons/light_off.svg` while it is off. Turning the light off disables and dims the slider until the same button turns it back on.
 
-The frontlight column normally has the same total height as the action-button dock. When the action dock is shorter than one third of the screen, the column uses half of the screen height so it remains comfortable to operate. The slider fills the space above the toggle button, and the column's bottom edge stays aligned with the action dock. Disable **Tools > Shortcut Dock > Appearance > Lighting controls > Show frontlight control** to remove both controls.
+The frontlight and warmth columns have the same total height as the rendered action-button dock, including when its maximum height is set to 60% or 33%. Each slider fills the space above its bottom button, and all columns remain aligned along the bottom edge. Disable **Tools > Shortcut Dock > Appearance > Lighting controls > Show frontlight control** to remove the brightness controls.
 
 On devices with natural-light support, **Show warmth control** adds a second optional column. Tap or drag upward for a warmer tone and downward for a cooler tone. Shortcut Dock uses KOReader's native warmth conversion, so devices with ranges such as 0–10, 0–24, or 0–100 retain their actual hardware steps. The control is disabled while the frontlight is off and reads the value only while being drawn or operated; it does not poll in the background.
 
@@ -196,7 +198,9 @@ Shortcut Dock stores its preferences through KOReader's reader settings using th
 | `shortcutdock_show_warmth_slider` | Visibility of the frontlight warmth column; enabled by default on supported devices |
 | `shortcutdock_show_info_panel` | Visibility of the reading-information panel; enabled by default |
 | `shortcutdock_show_info_panel_cover` | Visibility of the open book's cover at the top of the information panel; enabled by default |
+| `shortcutdock_info_panel_text_alignment` | Left, centered, or nearest-screen-edge alignment for all information-panel text |
 | `shortcutdock_dock_size` | Selected Small, Medium, or Large dock scale |
+| `shortcutdock_max_action_dock_height` | Maximum dock-column height as 100%, 60%, or 33% of the screen; defaults to 100% |
 | `shortcutdock_keep_open_after_action` | Reopens the dock after compatible inline actions; enabled by default |
 | `shortcutdock_close_together` | Closes all blocks in one non-flashing update over their smallest encompassing rectangle; disabled by default |
 
@@ -220,4 +224,4 @@ Extract `shortcutdock.koplugin` into KOReader's `plugins` directory and restart 
 
 ## Version
 
-v0.20.6
+v0.21.4

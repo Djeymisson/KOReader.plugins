@@ -16,6 +16,12 @@ return function(ShortcutDock, constants)
     local DOCK_SIZE_SMALL = constants.DOCK_SIZE_SMALL
     local DOCK_SIZE_MEDIUM = constants.DOCK_SIZE_MEDIUM
     local DOCK_SIZE_LARGE = constants.DOCK_SIZE_LARGE
+    local MAX_ACTION_DOCK_HEIGHT_100 = constants.MAX_ACTION_DOCK_HEIGHT_100
+    local MAX_ACTION_DOCK_HEIGHT_60 = constants.MAX_ACTION_DOCK_HEIGHT_60
+    local MAX_ACTION_DOCK_HEIGHT_33 = constants.MAX_ACTION_DOCK_HEIGHT_33
+    local INFO_PANEL_TEXT_LEFT = constants.INFO_PANEL_TEXT_LEFT
+    local INFO_PANEL_TEXT_CENTER = constants.INFO_PANEL_TEXT_CENTER
+    local INFO_PANEL_TEXT_SCREEN_EDGE = constants.INFO_PANEL_TEXT_SCREEN_EDGE
     local PLUGIN_VERSION = constants.PLUGIN_VERSION
 
 function ShortcutDock:showResetButtonsConfirmation(touchmenu_instance)
@@ -312,7 +318,7 @@ function ShortcutDock:addToMainMenu(menu_items)
                     [DOCK_SIZE_MEDIUM] = _("Medium"),
                     [DOCK_SIZE_LARGE] = _("Large"),
                 }
-                return _("Dock size") .. ": " .. labels[self:getDockSize()]
+                return _("Dock scale") .. ": " .. labels[self:getDockSize()]
             end,
             help_text = _("Change the size of the buttons, icons, pagination controls, and frontlight column."),
             sub_item_table = {
@@ -382,7 +388,7 @@ function ShortcutDock:addToMainMenu(menu_items)
                 local mode = self:closeDockTogether()
                     and _("All blocks at once")
                     or _("One block at a time")
-                return _("Closing method") .. ": " .. mode
+                return _("Dock and panel closing") .. ": " .. mode
             end,
             help_text = _("Choose whether the dock and its panels disappear in the same repaint cycle or close separately."),
             sub_item_table = {
@@ -495,6 +501,66 @@ function ShortcutDock:addToMainMenu(menu_items)
             keep_menu_open = true,
         },
         {
+            text_func = function()
+                local labels = {
+                    [INFO_PANEL_TEXT_LEFT] = _("Left"),
+                    [INFO_PANEL_TEXT_CENTER] = _("Center"),
+                    [INFO_PANEL_TEXT_SCREEN_EDGE] = _("Nearest screen edge"),
+                }
+                return _("Panel text alignment")
+                    .. ": " .. labels[self:getInfoPanelTextAlignment()]
+            end,
+            help_text = _("Aligns every line in the reading information panel, including the clock and battery."),
+            enabled_func = function()
+                return self:showInfoPanel()
+            end,
+            sub_item_table = {
+                {
+                    text = _("Left"),
+                    checked_func = function()
+                        return self:getInfoPanelTextAlignment() == INFO_PANEL_TEXT_LEFT
+                    end,
+                    callback = function(touchmenu_instance)
+                        self:setInfoPanelTextAlignment(INFO_PANEL_TEXT_LEFT)
+                        if touchmenu_instance and touchmenu_instance.updateItems then
+                            touchmenu_instance:updateItems()
+                        end
+                    end,
+                    keep_menu_open = true,
+                    radio = true,
+                },
+                {
+                    text = _("Center"),
+                    checked_func = function()
+                        return self:getInfoPanelTextAlignment() == INFO_PANEL_TEXT_CENTER
+                    end,
+                    callback = function(touchmenu_instance)
+                        self:setInfoPanelTextAlignment(INFO_PANEL_TEXT_CENTER)
+                        if touchmenu_instance and touchmenu_instance.updateItems then
+                            touchmenu_instance:updateItems()
+                        end
+                    end,
+                    keep_menu_open = true,
+                    radio = true,
+                },
+                {
+                    text = _("Nearest screen edge"),
+                    help_text = _("Aligns left on the left edge and right on the right edge."),
+                    checked_func = function()
+                        return self:getInfoPanelTextAlignment() == INFO_PANEL_TEXT_SCREEN_EDGE
+                    end,
+                    callback = function(touchmenu_instance)
+                        self:setInfoPanelTextAlignment(INFO_PANEL_TEXT_SCREEN_EDGE)
+                        if touchmenu_instance and touchmenu_instance.updateItems then
+                            touchmenu_instance:updateItems()
+                        end
+                    end,
+                    keep_menu_open = true,
+                    radio = true,
+                },
+            },
+        },
+        {
             text = _("Show frontlight control"),
             help_text = _("Shows the brightness slider and its light toggle button beside the dock on devices with a frontlight."),
             enabled_func = function()
@@ -531,6 +597,57 @@ function ShortcutDock:addToMainMenu(menu_items)
     }
 
     local dock_size_item = behavior_items[2]
+    local max_action_dock_height_item = {
+        text_func = function()
+            return _("Maximum dock height")
+                .. ": " .. self:getMaxActionDockHeight() .. "%"
+        end,
+        help_text = _("Limits the action and lighting columns to the selected percentage of the screen and paginates the buttons when necessary."),
+        sub_item_table = {
+            {
+                text = "100%",
+                checked_func = function()
+                    return self:getMaxActionDockHeight() == MAX_ACTION_DOCK_HEIGHT_100
+                end,
+                callback = function(touchmenu_instance)
+                    self:setMaxActionDockHeight(MAX_ACTION_DOCK_HEIGHT_100)
+                    if touchmenu_instance and touchmenu_instance.updateItems then
+                        touchmenu_instance:updateItems()
+                    end
+                end,
+                keep_menu_open = true,
+                radio = true,
+            },
+            {
+                text = "60%",
+                checked_func = function()
+                    return self:getMaxActionDockHeight() == MAX_ACTION_DOCK_HEIGHT_60
+                end,
+                callback = function(touchmenu_instance)
+                    self:setMaxActionDockHeight(MAX_ACTION_DOCK_HEIGHT_60)
+                    if touchmenu_instance and touchmenu_instance.updateItems then
+                        touchmenu_instance:updateItems()
+                    end
+                end,
+                keep_menu_open = true,
+                radio = true,
+            },
+            {
+                text = "33%",
+                checked_func = function()
+                    return self:getMaxActionDockHeight() == MAX_ACTION_DOCK_HEIGHT_33
+                end,
+                callback = function(touchmenu_instance)
+                    self:setMaxActionDockHeight(MAX_ACTION_DOCK_HEIGHT_33)
+                    if touchmenu_instance and touchmenu_instance.updateItems then
+                        touchmenu_instance:updateItems()
+                    end
+                end,
+                keep_menu_open = true,
+                radio = true,
+            },
+        },
+    }
     behavior_items = {
         behavior_items[1],
         behavior_items[3],
@@ -543,20 +660,22 @@ function ShortcutDock:addToMainMenu(menu_items)
     }
     local appearance_items = {
         dock_size_item,
+        max_action_dock_height_item,
         {
             text = _("Reading information panel"),
             help_text = _("Configure the opposite-edge reading summary and its book cover."),
             sub_item_table = {
                 additional_control_items[4],
                 additional_control_items[5],
+                additional_control_items[6],
             },
         },
         {
             text = _("Lighting controls"),
             help_text = _("Show or hide the frontlight brightness and warmth columns."),
             sub_item_table = {
-                additional_control_items[6],
                 additional_control_items[7],
+                additional_control_items[8],
             },
         },
         {
@@ -634,7 +753,7 @@ function ShortcutDock:addToMainMenu(menu_items)
             },
             {
                 text = _("Appearance"),
-                help_text = _("Controls dock size, visible panels, lighting columns, and custom icons."),
+                help_text = _("Controls dock scale and maximum height, visible panels, lighting columns, and custom icons."),
                 sub_item_table = appearance_items,
             },
             {
