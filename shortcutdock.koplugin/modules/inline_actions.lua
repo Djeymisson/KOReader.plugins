@@ -30,7 +30,11 @@ function ShortcutDock:showStatusPanel(text, timeout)
     end
     text = tostring(text or "")
     local status_panel_widget = self.status_panel_widget
-    if status_panel_widget and self.status_panel_text == text then
+    if
+        status_panel_widget
+        and self.status_panel_text == text
+        and status_panel_widget.lower_widget == self.info_panel_widget
+    then
         -- Native Wi-Fi backends may announce the same connection phase many
         -- times while forcing a repaint after each scan/authentication step.
         -- Keep the existing overlay so those repaints have no widget teardown
@@ -73,6 +77,7 @@ function ShortcutDock:scheduleWifiStatusTimeout()
         end
         if not NetworkMgr:isConnected() then
             self.wifi_status_generation = self.wifi_status_generation + 1
+            self:refreshVisibleNetworkInfoPanel("error")
             self:showStatusPanel(_("Error connecting to the network"), 3)
             self:refreshStatefulActionButton("toggle_wifi")
         end
@@ -157,6 +162,7 @@ function ShortcutDock:toggleWifiInline()
     end)
     if status == false then
         self.wifi_status_generation = self.wifi_status_generation + 1
+        self:refreshVisibleNetworkInfoPanel("error")
         self:showStatusPanel(_("Error connecting to the network"), 3)
         self:refreshStatefulActionButton("toggle_wifi")
     end
@@ -184,17 +190,20 @@ end
 function ShortcutDock:onNetworkConnected()
     self.wifi_status_generation = self.wifi_status_generation + 1
     self:refreshStatefulActionButton("toggle_wifi")
+    self:refreshVisibleNetworkInfoPanel("connected")
     self:showStatusPanel(_("Connected to Wi-Fi"), 2)
 end
 
 function ShortcutDock:onNetworkDisconnected()
     self.wifi_status_generation = self.wifi_status_generation + 1
     self:refreshStatefulActionButton("toggle_wifi")
+    self:refreshVisibleNetworkInfoPanel("disconnected")
     self:showStatusPanel(_("Wi-Fi off."), 2)
 end
 
 function ShortcutDock:onNetworkConnecting()
     self.wifi_status_generation = self.wifi_status_generation + 1
+    self:refreshVisibleNetworkInfoPanel("connecting")
     self:showStatusPanel(_("Connecting to Wi-Fi…"))
     self:scheduleWifiStatusTimeout()
 end

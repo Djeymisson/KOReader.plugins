@@ -928,6 +928,34 @@ function ShortcutDock:switchInfoPanel(kind)
     end
 end
 
+function ShortcutDock:refreshVisibleNetworkInfoPanel(network_state)
+    if
+        not self.dialog
+        or self.current_info_panel_kind ~= "network"
+        or not self.info_panel_widget
+    then
+        return false
+    end
+    if network_state and self.network_info_refresh_state == network_state then
+        return false
+    end
+
+    local previous_widget = self.info_panel_widget
+    local metrics = self:getDockMetrics()
+    local data = self:collectInfoPanelData("network", metrics)
+    local widget = self:createInfoPanelOverlay(data, metrics)
+
+    self.info_panel_widget = nil
+    self.info_panel_data = nil
+    UIManager:close(previous_widget)
+
+    self.info_panel_data = data
+    self.info_panel_widget = widget
+    self.network_info_refresh_state = network_state
+    UIManager:show(widget, "[ui]")
+    return true
+end
+
 function ShortcutDock:closeDockTogether()
     return G_reader_settings:readSetting(SETTING_CLOSE_TOGETHER) == true
 end
