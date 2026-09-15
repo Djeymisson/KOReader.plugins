@@ -31,6 +31,32 @@ function ShortcutDock:showResetButtonsConfirmation(touchmenu_instance)
     }))
 end
 
+function ShortcutDock:showResetBehaviorConfirmation(touchmenu_instance)
+    UIManager:show(ConfirmBox:new({
+        text = _("Reset Shortcut Dock behavior to its defaults? Your buttons and their order will be kept."),
+        ok_text = _("Reset"),
+        ok_callback = function()
+            self:resetBehavior()
+            if touchmenu_instance and touchmenu_instance.updateItems then
+                touchmenu_instance:updateItems()
+            end
+        end,
+    }))
+end
+
+function ShortcutDock:showResetBehaviorAndButtonsConfirmation(touchmenu_instance)
+    UIManager:show(ConfirmBox:new({
+        text = _("Reset Shortcut Dock behavior and buttons to their defaults? Appearance settings will be kept."),
+        ok_text = _("Reset all"),
+        ok_callback = function()
+            self:resetBehaviorAndButtons()
+            if touchmenu_instance and touchmenu_instance.updateItems then
+                touchmenu_instance:updateItems()
+            end
+        end,
+    }))
+end
+
 function ShortcutDock:getActionsMenu()
     local menu = {}
 
@@ -373,6 +399,37 @@ function ShortcutDock:addToMainMenu(menu_items)
             keep_menu_open = true,
         },
         {
+            text = _("Show panel"),
+            help_text = _("Shows book, chapter, daily reading, clock, and battery information on the screen edge opposite the dock."),
+            checked_func = function()
+                return self:showInfoPanel()
+            end,
+            callback = function(touchmenu_instance)
+                self:setShowInfoPanel(not self:showInfoPanel())
+                if touchmenu_instance and touchmenu_instance.updateItems then
+                    touchmenu_instance:updateItems()
+                end
+            end,
+            keep_menu_open = true,
+        },
+        {
+            text = _("Show book cover at the top"),
+            help_text = _("Shows the open book's cover above the reading information. The thumbnail is loaded once and reused while the document remains open."),
+            enabled_func = function()
+                return self:showInfoPanel()
+            end,
+            checked_func = function()
+                return self:showInfoPanelCover()
+            end,
+            callback = function(touchmenu_instance)
+                self:setShowInfoPanelCover(not self:showInfoPanelCover())
+                if touchmenu_instance and touchmenu_instance.updateItems then
+                    touchmenu_instance:updateItems()
+                end
+            end,
+            keep_menu_open = true,
+        },
+        {
             text = _("Show frontlight control"),
             help_text = _("Shows the brightness slider and its light toggle button beside the dock on devices with a frontlight."),
             enabled_func = function()
@@ -405,6 +462,42 @@ function ShortcutDock:addToMainMenu(menu_items)
                 end
             end,
             keep_menu_open = true,
+        },
+    }
+
+    local dock_size_item = behavior_items[2]
+    behavior_items = {
+        behavior_items[1],
+        behavior_items[3],
+    }
+    local action_button_items = {
+        additional_control_items[1],
+        additional_control_items[2],
+    }
+    local appearance_items = {
+        dock_size_item,
+        {
+            text = _("Reading information panel"),
+            help_text = _("Configure the opposite-edge reading summary and its book cover."),
+            sub_item_table = {
+                additional_control_items[3],
+                additional_control_items[4],
+            },
+        },
+        {
+            text = _("Lighting controls"),
+            help_text = _("Show or hide the frontlight brightness and warmth columns."),
+            sub_item_table = {
+                additional_control_items[5],
+                additional_control_items[6],
+            },
+        },
+        {
+            text = _("Expected icon filenames"),
+            help_text = _("Shows the custom SVG and PNG filenames expected for each dock action."),
+            sub_item_table_func = function()
+                return self:getIconFilenamesMenu()
+            end,
         },
     }
 
@@ -444,11 +537,12 @@ function ShortcutDock:addToMainMenu(menu_items)
             },
             {
                 text = _("Behavior"),
-                help_text = _("Controls where the dock opens, its size, and what happens after an action."),
+                help_text = _("Controls where the dock opens and what happens after an action."),
                 sub_item_table = behavior_items,
             },
             {
-                text = _("Buttons"),
+                text = _("Actions and buttons"),
+                help_text = _("Configure actions, fixed buttons, ordering, and contextual visibility."),
                 sub_item_table = {
                     {
                         text_func = function()
@@ -460,20 +554,31 @@ function ShortcutDock:addToMainMenu(menu_items)
                         end,
                     },
                     {
-                        text = _("Additional controls"),
-                        help_text = _("Show or hide the fixed context button, side-switch button, and lighting controls."),
-                        sub_item_table = additional_control_items,
+                        text = _("Fixed buttons"),
+                        help_text = _("Show or hide the context and side-switch buttons."),
+                        sub_item_table = action_button_items,
                     },
                     {
                         text = _("Context visibility"),
                         help_text = _("Control which actions appear in the reader, file browser, and Bookshelf."),
                         sub_item_table = context_visibility_items,
                     },
+                },
+            },
+            {
+                text = _("Appearance"),
+                help_text = _("Controls dock size, visible panels, lighting columns, and custom icons."),
+                sub_item_table = appearance_items,
+            },
+            {
+                text = _("Reset"),
+                help_text = _("Restore the default behavior, with or without resetting the buttons."),
+                sub_item_table = {
                     {
-                        text = _("Expected icon filenames"),
-                        help_text = _("Shows the custom SVG and PNG filenames expected for each dock action."),
-                        sub_item_table_func = function()
-                            return self:getIconFilenamesMenu()
+                        text = _("Reset behavior to defaults"),
+                        help_text = _("Restores gesture-following placement, right-side fallback, and keep-open behavior without changing actions, buttons, or appearance."),
+                        callback = function(touchmenu_instance)
+                            self:showResetBehaviorConfirmation(touchmenu_instance)
                         end,
                     },
                     {
@@ -482,7 +587,13 @@ function ShortcutDock:addToMainMenu(menu_items)
                         callback = function(touchmenu_instance)
                             self:showResetButtonsConfirmation(touchmenu_instance)
                         end,
-                        separator = true,
+                    },
+                    {
+                        text = _("Reset behavior and buttons"),
+                        help_text = _("Restores behavior, fixed buttons, default actions, order, and action visibility while keeping appearance settings."),
+                        callback = function(touchmenu_instance)
+                            self:showResetBehaviorAndButtonsConfirmation(touchmenu_instance)
+                        end,
                     },
                 },
             },

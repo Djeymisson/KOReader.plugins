@@ -21,7 +21,7 @@ local function scaleMetric(value, factor, minimum)
     return math_max(minimum or 1, math_floor(value * factor + 0.5))
 end
 
-local PLUGIN_VERSION = "v0.14.0"
+local PLUGIN_VERSION = "v0.18.0"
 local SETTING_ACTIONS = "shortcutdock_actions"
 local SETTING_ACTION_CONTEXTS = "shortcutdock_action_contexts"
 local SETTING_AUTO_VISIBILITY = "shortcutdock_auto_visibility"
@@ -31,6 +31,8 @@ local SETTING_SHOW_SIDE_BUTTON = "shortcutdock_show_side_button"
 local SETTING_SHOW_CONTEXT_BUTTON = "shortcutdock_show_context_button"
 local SETTING_SHOW_FRONTLIGHT_SLIDER = "shortcutdock_show_frontlight_slider"
 local SETTING_SHOW_WARMTH_SLIDER = "shortcutdock_show_warmth_slider"
+local SETTING_SHOW_INFO_PANEL = "shortcutdock_show_info_panel"
+local SETTING_SHOW_INFO_PANEL_COVER = "shortcutdock_show_info_panel_cover"
 local SETTING_DOCK_SIZE = "shortcutdock_dock_size"
 local SETTING_KEEP_OPEN_AFTER_ACTION = "shortcutdock_keep_open_after_action"
 
@@ -384,6 +386,7 @@ local function applyButtonMetrics(button, metrics)
 end
 
 local DockWidgets = dofile(PLUGIN_DIR .. "modules/widgets.lua")
+local InfoPanel = dofile(PLUGIN_DIR .. "modules/info_panel.lua")
 local LightSlider = DockWidgets.LightSlider
 local FrontlightToggleButton = DockWidgets.FrontlightToggleButton
 local FloatingControlButtonDialog = DockWidgets.FloatingControlButtonDialog
@@ -406,6 +409,9 @@ function ShortcutDock:init()
     self.auto_visibility = self:loadAutomaticVisibility()
     self.updated = false
     self.dialog = nil
+    self.info_panel_widget = nil
+    self.info_panel_data = nil
+    self.info_panel_cover_cache = nil
     self.current_page = 1
 
     self:patchIconWidget()
@@ -435,6 +441,7 @@ end
 
 function ShortcutDock:onClose()
     self:closeDock()
+    InfoPanel.clearCoverCache(self)
     self:saveActions()
     self:unpatchIconWidget()
 end
@@ -580,6 +587,23 @@ function ShortcutDock:resetActions()
     self:saveActions()
 end
 
+function ShortcutDock:resetBehavior()
+    self:setSide("right")
+    self:setSideMode(SIDE_MODE_GESTURE)
+    self:setKeepOpenAfterAction(true)
+    self.current_page = 1
+    self.current_dock_side = nil
+end
+
+function ShortcutDock:resetBehaviorAndButtons()
+    self:resetBehavior()
+    self:setShowContextButton(true)
+    self:setShowSideButton(true)
+    self:setAutomaticVisibility(false)
+    self:resetActionVisibility()
+    self:resetActions()
+end
+
 function ShortcutDock:getSide()
     return G_reader_settings:readSetting(SETTING_SIDE) == "left" and "left" or "right"
 end
@@ -655,6 +679,7 @@ function ShortcutDock:getDockMetrics()
         frontlight_slider_padding = scaleMetric(BASE_FRONTLIGHT_SLIDER_PADDING, factor),
         frontlight_track_width = scaleMetric(BASE_FRONTLIGHT_TRACK_WIDTH, factor, 2),
         frontlight_knob_radius = scaleMetric(BASE_FRONTLIGHT_KNOB_RADIUS, factor, 5),
+        scale_factor = factor,
     }
     DOCK_METRICS_CACHE[dock_size] = metrics
     return metrics
@@ -692,6 +717,28 @@ end
 
 function ShortcutDock:setShowWarmthSlider(enabled)
     G_reader_settings:saveSetting(SETTING_SHOW_WARMTH_SLIDER, enabled and true or false)
+end
+
+function ShortcutDock:showInfoPanel()
+    return G_reader_settings:readSetting(SETTING_SHOW_INFO_PANEL) ~= false
+end
+
+function ShortcutDock:setShowInfoPanel(enabled)
+    G_reader_settings:saveSetting(SETTING_SHOW_INFO_PANEL, enabled and true or false)
+    if not enabled then
+        InfoPanel.clearCoverCache(self)
+    end
+end
+
+function ShortcutDock:showInfoPanelCover()
+    return G_reader_settings:readSetting(SETTING_SHOW_INFO_PANEL_COVER) ~= false
+end
+
+function ShortcutDock:setShowInfoPanelCover(enabled)
+    G_reader_settings:saveSetting(SETTING_SHOW_INFO_PANEL_COVER, enabled and true or false)
+    if not enabled then
+        InfoPanel.clearCoverCache(self)
+    end
 end
 
 function ShortcutDock:keepOpenAfterAction()
@@ -948,10 +995,20 @@ function ShortcutDock:getPages(action_count, metrics)
     return pages
 end
 
+function ShortcutDock:closeInfoPanel()
+    local info_panel_widget = self.info_panel_widget
+    self.info_panel_widget = nil
+    self.info_panel_data = nil
+    if info_panel_widget then
+        UIManager:close(info_panel_widget)
+    end
+end
+
 function ShortcutDock:closeDock()
-    if self.dialog then
-        local dialog = self.dialog
-        self.dialog = nil
+    local dialog = self.dialog
+    self.dialog = nil
+    self:closeInfoPanel()
+    if dialog then
         UIManager:close(dialog)
     end
 end
@@ -1095,7 +1152,7 @@ function ShortcutDock:makePageButton(direction, target_page, metrics)
         id = is_next and "shortcutdock_next" or "shortcutdock_previous",
         enabled = true,
         callback = function()
-            self:showDock(target_page, self.current_dock_side)
+            self:showDock(target_page, self.current_dock_side, self.info_panel_data)
         end,
     }
     if icon then
@@ -1125,9 +1182,10 @@ function ShortcutDock:makeSideButton(width, dialog, metrics)
         show_parent = dialog,
         callback = function()
             local page = self.current_page
+            local info_panel_data = self.info_panel_data
             self:setSide(target_side)
             UIManager:scheduleIn(0.05, function()
-                self:showDock(page, target_side)
+                self:showDock(page, target_side, info_panel_data)
             end)
         end,
         hold_callback = function()
@@ -1147,7 +1205,7 @@ function ShortcutDock:makeSideButton(width, dialog, metrics)
     return Button:new(button)
 end
 
-function ShortcutDock:showDock(page, side)
+function ShortcutDock:showDock(page, side, info_panel_data)
     -- Another UI instance (reader or file browser) may have changed these
     -- shared preferences since this instance was created.
     self.action_contexts = self:loadActionContexts()
@@ -1202,6 +1260,17 @@ function ShortcutDock:showDock(page, side)
             return self:makeWarmthSlider(dock_height, parent, metrics)
         end
     end
+    if self:showInfoPanel() then
+        info_panel_data = info_panel_data or InfoPanel.collect(
+            self,
+            metrics,
+            DOCK_MARGIN,
+            self:showInfoPanelCover()
+        )
+    else
+        info_panel_data = nil
+        InfoPanel.clearCoverCache(self)
+    end
     dialog = FloatingControlButtonDialog:new({
         buttons = rows,
         width = metrics.button_width + 2 * Size.border.window + 2 * Size.padding.button,
@@ -1234,16 +1303,29 @@ function ShortcutDock:showDock(page, side)
         close_callback = function()
             if self.dialog == dialog then
                 self.dialog = nil
+                self:closeInfoPanel()
             end
         end,
         tap_close_callback = function()
             if self.dialog == dialog then
                 self.dialog = nil
+                self:closeInfoPanel()
             end
         end,
     })
 
     self.dialog = dialog
+    self.info_panel_data = info_panel_data
+    if info_panel_data then
+        self.info_panel_widget = InfoPanel.createOverlay(
+            self,
+            metrics,
+            side == "left" and "right" or "left",
+            DOCK_MARGIN,
+            info_panel_data
+        )
+        UIManager:show(self.info_panel_widget, "[ui]")
+    end
     UIManager:show(dialog, "[ui]")
 end
 
