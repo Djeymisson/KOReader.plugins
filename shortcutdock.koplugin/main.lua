@@ -2,6 +2,7 @@ local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local Button = require("ui/widget/button")
 local ButtonDialog = require("ui/widget/buttondialog")
 local Blitbuffer = require("ffi/blitbuffer")
+local ConfirmBox = require("ui/widget/confirmbox")
 local DataStorage = require("datastorage")
 local Device = require("device")
 local Dispatcher = require("dispatcher")
@@ -31,7 +32,7 @@ local function scaleMetric(value, factor, minimum)
     return math_max(minimum or 1, math_floor(value * factor + 0.5))
 end
 
-local PLUGIN_VERSION = "v0.11.1"
+local PLUGIN_VERSION = "v0.13.1"
 local SETTING_ACTIONS = "shortcutdock_actions"
 local SETTING_ACTION_CONTEXTS = "shortcutdock_action_contexts"
 local SETTING_AUTO_VISIBILITY = "shortcutdock_auto_visibility"
@@ -40,6 +41,7 @@ local SETTING_SIDE_MODE = "shortcutdock_side_mode"
 local SETTING_SHOW_SIDE_BUTTON = "shortcutdock_show_side_button"
 local SETTING_SHOW_CONTEXT_BUTTON = "shortcutdock_show_context_button"
 local SETTING_SHOW_FRONTLIGHT_SLIDER = "shortcutdock_show_frontlight_slider"
+local SETTING_SHOW_WARMTH_SLIDER = "shortcutdock_show_warmth_slider"
 local SETTING_DOCK_SIZE = "shortcutdock_dock_size"
 local SETTING_KEEP_OPEN_AFTER_ACTION = "shortcutdock_keep_open_after_action"
 
@@ -200,26 +202,32 @@ local DEFAULT_ACTIONS = {
         order = {
             "toggle_wifi",
             "night_mode",
-            "increase_frontlight",
-            "decrease_frontlight",
             ACTION_SEARCH,
             "history",
         },
     },
     toggle_wifi = true,
     night_mode = true,
-    increase_frontlight = 1,
-    decrease_frontlight = 1,
     [ACTION_SEARCH] = true,
     history = true,
 }
 
-local PREVIOUS_DEFAULT_ACTION_ORDER = {
-    "toggle_wifi",
-    "increase_frontlight",
-    "decrease_frontlight",
-    ACTION_SEARCH,
-    "history",
+local LEGACY_DEFAULT_ACTION_ORDERS = {
+    {
+        "toggle_wifi",
+        "increase_frontlight",
+        "decrease_frontlight",
+        ACTION_SEARCH,
+        "history",
+    },
+    {
+        "toggle_wifi",
+        "night_mode",
+        "increase_frontlight",
+        "decrease_frontlight",
+        ACTION_SEARCH,
+        "history",
+    },
 }
 
 local ACTION_ICONS = {
@@ -289,6 +297,45 @@ local function copyTable(value)
     return result
 end
 
+local function actionOrderMatches(order, expected)
+    if #order ~= #expected then
+        return false
+    end
+    for index = 1, #order do
+        if order[index] ~= expected[index] then
+            return false
+        end
+    end
+    return true
+end
+
+local function actionsMatchLegacyDefault(actions, order, expected_order)
+    if not actionOrderMatches(order, expected_order) then
+        return false
+    end
+    local expected_values = {
+        toggle_wifi = true,
+        increase_frontlight = 1,
+        decrease_frontlight = 1,
+        [ACTION_SEARCH] = true,
+        history = true,
+    }
+    if expected_order[2] == "night_mode" then
+        expected_values.night_mode = true
+    end
+    for action_id, expected_value in pairs(expected_values) do
+        if actions[action_id] ~= expected_value then
+            return false
+        end
+    end
+    for action_id, value in pairs(actions) do
+        if action_id ~= "settings" and value ~= nil and expected_values[action_id] == nil then
+            return false
+        end
+    end
+    return true
+end
+
 local function fileExists(path)
     return lfs.attributes(path, "mode") == "file"
 end
@@ -340,8 +387,12 @@ function FrontlightSlider:init()
     self.track_width = self.track_width or BASE_FRONTLIGHT_TRACK_WIDTH
     self.knob_radius = self.knob_radius or BASE_FRONTLIGHT_KNOB_RADIUS
     self.powerd = self.powerd or Device:getPowerDevice()
-    self.minimum = tonumber(self.powerd and self.powerd.fl_min) or 0
-    self.maximum = tonumber(self.powerd and self.powerd.fl_max) or 100
+    self.minimum = tonumber(self.minimum)
+        or tonumber(self.powerd and self.powerd.fl_min)
+        or 0
+    self.maximum = tonumber(self.maximum)
+        or tonumber(self.powerd and self.powerd.fl_max)
+        or 100
     if self.maximum <= self.minimum then
         self.maximum = self.minimum + 1
     end
@@ -369,9 +420,14 @@ end
 
 function FrontlightSlider:syncFromPower(notify_state_change)
     local was_enabled = self.enabled
-    local level_ok, level = pcall(function()
-        return self.powerd:frontlightIntensity()
-    end)
+    local level_ok, level
+    if self.value_reader then
+        level_ok, level = pcall(self.value_reader, self.powerd)
+    else
+        level_ok, level = pcall(function()
+            return self.powerd:frontlightIntensity()
+        end)
+    end
     if level_ok then
         self.value = tonumber(level) or self.minimum
         self.value = math_max(self.minimum, math_min(self.maximum, self.value))
@@ -441,15 +497,19 @@ function FrontlightSlider:setLevelFromPosition(pos, force_refresh)
 
     if level ~= self.value then
         local ok = pcall(function()
-            -- KOReader reserves the minimum frontlight level (normally zero)
-            -- for toggling the light, which lets device-specific PowerD
-            -- implementations use their proper on/off path.
-            if level == self.minimum and type(self.powerd.toggleFrontlight) == "function" then
-                self.powerd:toggleFrontlight()
+            if self.value_writer then
+                self.value_writer(self.powerd, level)
             else
-                self.powerd:setIntensity(level)
+                -- KOReader reserves the minimum frontlight level (normally
+                -- zero) for toggling the light, which lets device-specific
+                -- PowerD implementations use their proper on/off path.
+                if level == self.minimum and type(self.powerd.toggleFrontlight) == "function" then
+                    self.powerd:toggleFrontlight()
+                else
+                    self.powerd:setIntensity(level)
+                end
+                self.powerd:updateResumeFrontlightState()
             end
-            self.powerd:updateResumeFrontlightState()
         end)
         if ok then
             self:syncFromPower(true)
@@ -559,7 +619,11 @@ function FloatingControlButtonDialog:init()
         self.movable.key_events.MovePositionBottom = nil
     end
 
-    if not self.side_button_factory and not self.frontlight_slider_factory then
+    if
+        not self.side_button_factory
+        and not self.frontlight_slider_factory
+        and not self.warmth_slider_factory
+    then
         return
     end
 
@@ -568,6 +632,7 @@ function FloatingControlButtonDialog:init()
     local dock_column = dock_frame
     local side_button
     local frontlight_column
+    local warmth_column
     if self.side_button_factory then
         side_button = self.side_button_factory(dock_size.w, self)
         dock_column = VerticalGroup:new({
@@ -579,34 +644,55 @@ function FloatingControlButtonDialog:init()
 
     if self.frontlight_slider_factory then
         frontlight_column = self.frontlight_slider_factory(dock_size.h, self)
+    end
+    if self.warmth_slider_factory then
+        warmth_column = self.warmth_slider_factory(dock_size.h, self)
+    end
+
+    local accessory_columns = {}
+    if frontlight_column then
+        accessory_columns[#accessory_columns + 1] = frontlight_column
+    end
+    if warmth_column then
+        accessory_columns[#accessory_columns + 1] = warmth_column
+    end
+    if #accessory_columns > 0 then
         local dock_column_height = dock_column:getSize().h
-        local slider_height = frontlight_column:getSize().h
-        local total_height = math_max(dock_column_height, slider_height)
+        local total_height = dock_column_height
+        for index = 1, #accessory_columns do
+            total_height = math_max(total_height, accessory_columns[index]:getSize().h)
+        end
         local aligned_dock_column = VerticalGroup:new({
             VerticalSpan:new({ width = total_height - dock_column_height }),
             dock_column,
         })
-        local aligned_slider = VerticalGroup:new({
-            VerticalSpan:new({ width = total_height - slider_height }),
-            frontlight_column,
-        })
-        local columns
+        local aligned_accessories = {}
+        for index = 1, #accessory_columns do
+            local accessory = accessory_columns[index]
+            aligned_accessories[index] = VerticalGroup:new({
+                VerticalSpan:new({ width = total_height - accessory:getSize().h }),
+                accessory,
+            })
+        end
+        local columns = {}
+        local function addColumn(column)
+            if #columns > 0 then
+                columns[#columns + 1] = HorizontalSpan:new({
+                    width = self.frontlight_slider_gap or BASE_FRONTLIGHT_SLIDER_GAP,
+                })
+            end
+            columns[#columns + 1] = column
+        end
         if self.dock_side == "left" then
-            columns = {
-                aligned_dock_column,
-                HorizontalSpan:new({
-                    width = self.frontlight_slider_gap or BASE_FRONTLIGHT_SLIDER_GAP,
-                }),
-                aligned_slider,
-            }
+            addColumn(aligned_dock_column)
+            for index = 1, #aligned_accessories do
+                addColumn(aligned_accessories[index])
+            end
         else
-            columns = {
-                aligned_slider,
-                HorizontalSpan:new({
-                    width = self.frontlight_slider_gap or BASE_FRONTLIGHT_SLIDER_GAP,
-                }),
-                aligned_dock_column,
-            }
+            for index = #aligned_accessories, 1, -1 do
+                addColumn(aligned_accessories[index])
+            end
+            addColumn(aligned_dock_column)
         end
         -- These are physical screen sides, so bidi mirroring must not swap the
         -- dock and slider after their order has already been selected above.
@@ -626,6 +712,14 @@ function FloatingControlButtonDialog:init()
         and self.layout
     then
         table.insert(self.layout, 1, { frontlight_column.toggle_button })
+    end
+    if
+        warmth_column
+        and warmth_column.info_button
+        and Device:hasDPad()
+        and self.layout
+    then
+        table.insert(self.layout, 1, { warmth_column.info_button })
     end
 end
 
@@ -712,21 +806,18 @@ function ShortcutDock:loadActions()
             end
         end
 
-        -- Add the new night-mode button only to installations that still use
-        -- the previous default order. Customized and deliberately empty docks
-        -- remain untouched.
-        local uses_previous_defaults = #order == #PREVIOUS_DEFAULT_ACTION_ORDER
-        if uses_previous_defaults then
-            for index = 1, #order do
-                if order[index] ~= PREVIOUS_DEFAULT_ACTION_ORDER[index] then
-                    uses_previous_defaults = false
-                    break
-                end
+        -- Keep installations that still use either historical default in sync
+        -- with the new compact default. Deliberately empty and customized docks
+        -- remain untouched, including users who explicitly added light steps.
+        local uses_legacy_defaults = false
+        for index = 1, #LEGACY_DEFAULT_ACTION_ORDERS do
+            if actionsMatchLegacyDefault(actions, order, LEGACY_DEFAULT_ACTION_ORDERS[index]) then
+                uses_legacy_defaults = true
+                break
             end
         end
-        if uses_previous_defaults and actions.night_mode == nil then
-            table.insert(order, 2, "night_mode")
-            actions.night_mode = true
+        if uses_legacy_defaults then
+            actions = copyTable(DEFAULT_ACTIONS)
             G_reader_settings:saveSetting(SETTING_ACTIONS, actions)
         end
     end
@@ -825,6 +916,19 @@ function ShortcutDock:resetActions()
     self:saveActions()
 end
 
+function ShortcutDock:showResetButtonsConfirmation(touchmenu_instance)
+    UIManager:show(ConfirmBox:new({
+        text = _("Reset the Shortcut Dock buttons and their order to the defaults?"),
+        ok_text = _("Reset"),
+        ok_callback = function()
+            self:resetActions()
+            if touchmenu_instance and touchmenu_instance.updateItems then
+                touchmenu_instance:updateItems()
+            end
+        end,
+    }))
+end
+
 function ShortcutDock:getSide()
     return G_reader_settings:readSetting(SETTING_SIDE) == "left" and "left" or "right"
 end
@@ -834,9 +938,9 @@ function ShortcutDock:setSide(side)
 end
 
 function ShortcutDock:getSideMode()
-    return G_reader_settings:readSetting(SETTING_SIDE_MODE) == SIDE_MODE_GESTURE
-        and SIDE_MODE_GESTURE
-        or SIDE_MODE_FIXED
+    return G_reader_settings:readSetting(SETTING_SIDE_MODE) == SIDE_MODE_FIXED
+        and SIDE_MODE_FIXED
+        or SIDE_MODE_GESTURE
 end
 
 function ShortcutDock:setSideMode(mode)
@@ -924,8 +1028,17 @@ function ShortcutDock:setShowFrontlightSlider(enabled)
     G_reader_settings:saveSetting(SETTING_SHOW_FRONTLIGHT_SLIDER, enabled and true or false)
 end
 
+function ShortcutDock:showWarmthSlider()
+    return Device:hasNaturalLight()
+        and G_reader_settings:readSetting(SETTING_SHOW_WARMTH_SLIDER) ~= false
+end
+
+function ShortcutDock:setShowWarmthSlider(enabled)
+    G_reader_settings:saveSetting(SETTING_SHOW_WARMTH_SLIDER, enabled and true or false)
+end
+
 function ShortcutDock:keepOpenAfterAction()
-    return G_reader_settings:readSetting(SETTING_KEEP_OPEN_AFTER_ACTION) == true
+    return G_reader_settings:readSetting(SETTING_KEEP_OPEN_AFTER_ACTION) ~= false
 end
 
 function ShortcutDock:setKeepOpenAfterAction(enabled)
@@ -1016,6 +1129,76 @@ function ShortcutDock:makeFrontlightSlider(dock_height, dialog, metrics)
         toggle_button,
     })
     column.toggle_button = toggle_button
+    return column
+end
+
+function ShortcutDock:makeWarmthInfoButton(width, dialog, slider, metrics)
+    local function showWarmthLevel()
+        slider:syncFromPower()
+        UIManager:show(InfoMessage:new({
+            text = _("Warmth") .. ": " .. tostring(slider.value),
+        }))
+    end
+    local icon = self:getIcon("warmth")
+    local config = {
+        id = "shortcutdock_frontlight_warmth",
+        width = width,
+        height = metrics.side_button_height,
+        padding = metrics.side_button_padding,
+        margin = 0,
+        bordersize = Size.border.button,
+        radius = Size.radius.button,
+        icon_width = metrics.side_button_icon_size,
+        icon_height = metrics.side_button_icon_size,
+        enabled = true,
+        show_parent = dialog,
+        callback = showWarmthLevel,
+        hold_callback = showWarmthLevel,
+    }
+    if icon then
+        config.icon = icon
+    else
+        config.text = _("W")
+    end
+    return Button:new(config)
+end
+
+function ShortcutDock:makeWarmthSlider(dock_height, dialog, metrics)
+    local powerd = Device:getPowerDevice()
+    local column_height = self:getFrontlightSliderHeight(dock_height)
+    local slider_height = math_max(
+        1,
+        column_height - metrics.side_button_outer_height - metrics.side_button_gap
+    )
+    local slider = FrontlightSlider:new({
+        width = metrics.button_width,
+        height = slider_height,
+        slider_padding = metrics.frontlight_slider_padding,
+        track_width = metrics.frontlight_track_width,
+        knob_radius = metrics.frontlight_knob_radius,
+        powerd = powerd,
+        minimum = tonumber(powerd.fl_warmth_min) or 0,
+        maximum = tonumber(powerd.fl_warmth_max) or 100,
+        value_reader = function(active_powerd)
+            return active_powerd:toNativeWarmth(active_powerd:frontlightWarmth())
+        end,
+        value_writer = function(active_powerd, native_warmth)
+            active_powerd:setWarmth(active_powerd:fromNativeWarmth(native_warmth))
+        end,
+        show_parent = dialog,
+    })
+    local info_button = self:makeWarmthInfoButton(
+        metrics.button_width,
+        dialog,
+        slider,
+        metrics
+    )
+    local column = VerticalGroup:new({
+        slider,
+        VerticalSpan:new({ width = metrics.side_button_gap }),
+        info_button,
+    })
+    column.info_button = info_button
     return column
 end
 
@@ -1636,6 +1819,12 @@ function ShortcutDock:showDock(page, side)
             return self:makeFrontlightSlider(dock_height, parent, metrics)
         end
     end
+    local warmth_slider_factory
+    if self:showWarmthSlider() then
+        warmth_slider_factory = function(dock_height, parent)
+            return self:makeWarmthSlider(dock_height, parent, metrics)
+        end
+    end
     dialog = FloatingControlButtonDialog:new({
         buttons = rows,
         width = metrics.button_width + 2 * Size.border.window + 2 * Size.padding.button,
@@ -1644,6 +1833,7 @@ function ShortcutDock:showDock(page, side)
         dismissable = true,
         side_button_factory = side_button_factory,
         frontlight_slider_factory = frontlight_slider_factory,
+        warmth_slider_factory = warmth_slider_factory,
         side_button_gap = metrics.side_button_gap,
         frontlight_slider_gap = metrics.frontlight_slider_gap,
         dock_side = side,
@@ -1681,18 +1871,7 @@ function ShortcutDock:showDock(page, side)
 end
 
 function ShortcutDock:getActionsMenu()
-    local menu = {
-        {
-            text = _("Reset default buttons"),
-            callback = function(touchmenu_instance)
-                self:resetActions()
-                if touchmenu_instance and touchmenu_instance.updateItems then
-                    touchmenu_instance:updateItems()
-                end
-            end,
-            separator = true,
-        },
-    }
+    local menu = {}
 
     Dispatcher:addSubMenu(self, menu, self, "actions")
     return menu
@@ -1794,12 +1973,22 @@ function ShortcutDock:getIconFilenamesMenu()
     local light_icon_details = _("Frontlight toggle")
         .. "\n\n" .. _("Frontlight on") .. ": light_on.svg / light_on.png"
         .. "\n" .. _("Frontlight off") .. ": light_off.svg / light_off.png"
+    local warmth_icon_details = _("Warmth control")
+        .. "\n\nSVG: warmth.svg"
+        .. "\nPNG: warmth.png"
     local menu = {
         {
             text = _("Frontlight toggle") .. ": light_on.svg / light_off.svg",
             help_text = _("Uses a different icon for the active and inactive frontlight states."),
             callback = function()
                 UIManager:show(InfoMessage:new({ text = light_icon_details }))
+            end,
+        },
+        {
+            text = _("Warmth control") .. ": warmth.svg",
+            help_text = _("Icon shown below the frontlight warmth slider."),
+            callback = function()
+                UIManager:show(InfoMessage:new({ text = warmth_icon_details }))
             end,
         },
     }
@@ -2039,6 +2228,23 @@ function ShortcutDock:addToMainMenu(menu_items)
             end,
             keep_menu_open = true,
         },
+        {
+            text = _("Show warmth control"),
+            help_text = _("Shows a second slider for the frontlight warmth on supported devices."),
+            enabled_func = function()
+                return Device:hasNaturalLight()
+            end,
+            checked_func = function()
+                return self:showWarmthSlider()
+            end,
+            callback = function(touchmenu_instance)
+                self:setShowWarmthSlider(not self:showWarmthSlider())
+                if touchmenu_instance and touchmenu_instance.updateItems then
+                    touchmenu_instance:updateItems()
+                end
+            end,
+            keep_menu_open = true,
+        },
     }
 
     local context_visibility_items = {
@@ -2094,7 +2300,7 @@ function ShortcutDock:addToMainMenu(menu_items)
                     },
                     {
                         text = _("Additional controls"),
-                        help_text = _("Show or hide the fixed context button, side-switch button, and frontlight control."),
+                        help_text = _("Show or hide the fixed context button, side-switch button, and lighting controls."),
                         sub_item_table = additional_control_items,
                     },
                     {
@@ -2108,6 +2314,14 @@ function ShortcutDock:addToMainMenu(menu_items)
                         sub_item_table_func = function()
                             return self:getIconFilenamesMenu()
                         end,
+                    },
+                    {
+                        text = _("Reset buttons to defaults"),
+                        help_text = _("Restores the initial buttons and their order without changing other Shortcut Dock settings."),
+                        callback = function(touchmenu_instance)
+                            self:showResetButtonsConfirmation(touchmenu_instance)
+                        end,
+                        separator = true,
                     },
                 },
             },

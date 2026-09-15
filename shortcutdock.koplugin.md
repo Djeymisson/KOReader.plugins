@@ -1,4 +1,4 @@
-# Shortcut Dock ![Version](https://img.shields.io/badge/version-v0.11.1-blue)
+# Shortcut Dock ![Version](https://img.shields.io/badge/version-v0.13.1-blue)
 
 Shortcut Dock adds a floating, vertical shortcut bar to KOReader. It is designed for touch devices and can be assigned to any gesture supported by KOReader.
 
@@ -7,7 +7,7 @@ Shortcut Dock adds a floating, vertical shortcut bar to KOReader. It is designed
 - Floating dock anchored near the lower-left or lower-right corner, without touching the screen edges.
 - Fixed placement while open: dragging over the dock does not move it away from its selected side.
 - Optional keep-open behavior for inline actions. The dock safely closes for dispatch and reopens only when the action did not open another dialog or change context.
-- Optional gesture-following position mode that opens the dock on the same half of the screen where the assigned gesture started.
+- Gesture-following position enabled by default, opening the dock on the same half of the screen where the assigned gesture started.
 - Compact icon buttons using the same scaled dimensions and standard `ButtonDialog` corner radius as Selection Toolbar.
 - Three selectable dock scales: Small keeps the original dimensions, Medium increases them by 20%, and Large by 40%.
 - Unlimited configurable actions through KOReader's native Dispatcher action picker.
@@ -16,6 +16,7 @@ Shortcut Dock adds a floating, vertical shortcut bar to KOReader. It is designed
 - Automatic pagination before the enabled buttons would overflow: the up arrow opens the next page and the down arrow returns to the previous page, without a scrollbar.
 - An optional separate button above the dock moves it immediately between the left and right sides.
 - Optional vertical frontlight slider in a separate column beside the action buttons, with a circular thumb, live brightness adjustment, and a dedicated frontlight toggle button.
+- Optional second lighting column for frontlight warmth on supported devices, using each device's native warmth range.
 - Context-aware home button:
   - opens the previous document from the file browser;
   - returns to the file browser while reading;
@@ -39,12 +40,10 @@ From the bottom upward:
 1. Fixed context button: open previous document / file browser / return from Bookshelf to the reader
 2. Toggle Wi-Fi
 3. Toggle night mode
-4. Increase frontlight brightness
-5. Decrease frontlight brightness
-6. Search current context
-7. History
+4. Search current context
+5. History
 
-Unavailable device actions, such as frontlight controls on devices without a frontlight, are automatically omitted by KOReader.
+Brightness is controlled by the dedicated slider, so incremental brightness buttons are no longer part of the initial configuration. They remain available in KOReader's native action selector for users who prefer them. Unavailable device actions are automatically omitted by KOReader.
 
 ## Configuration
 
@@ -56,21 +55,23 @@ The settings follow the same grouped layout as the other plugins in this reposit
 
 - `Show Shortcut Dock`: opens the dock immediately.
 - `Behavior`: controls where the dock opens, its size, and what happens after an action.
-  - `Dock side: <current side>`: selects `Left`, `Right`, or `Follow gesture side`. The automatic option uses the configured fixed side as a fallback when the dock is opened without gesture coordinates.
+  - `Dock side: <current side>`: selects `Left`, `Right`, or `Follow gesture side`. Following the gesture is enabled by default, and the configured fixed side is used as a fallback when the dock is opened without gesture coordinates.
   - `Dock size: <current size>`: selects `Small`, `Medium`, or `Large`. The selected scale applies to the buttons, icons, chevrons, frontlight column, and pagination calculation.
-  - `Keep dock open after actions`: reopens the dock after inline actions while leaving it closed when an action opens another screen or dialog.
+  - `Keep dock open after actions`: enabled by default; reopens the dock after inline actions while leaving it closed when an action opens another screen or dialog.
 - `Buttons`: controls configurable actions, additional controls, context visibility, and icon customization.
   - `Buttons and order`: opens KOReader's native action selector and shows the current number of configured actions.
   - `Additional controls`:
     - `Show fixed context button`: enables the first contextual button in the main group.
     - `Show side-switch button`: shows a separate chevron above the dock that changes its side without opening the settings.
     - `Show frontlight control`: shows or hides the brightness slider and light toggle on devices with a frontlight.
+    - `Show warmth control`: shows or hides the optional warmth slider on devices with natural-light support.
   - `Context visibility`:
     - `Automatic visibility`: automatically separates native reader and file-browser actions.
     - `Per-action visibility`: displays the automatic result and controls manual overrides for each action.
   - `Expected icon filenames`: lists the custom SVG and PNG names accepted for every action.
+  - `Reset buttons to defaults`: restores the initial buttons and their order after confirmation without changing the other plugin settings.
 - `Gesture setup`: displays instructions for assigning the dock to a KOReader gesture.
-- `Version: v0.11.1`: shows the installed plugin version.
+- `Version: v0.13.1`: shows the installed plugin version.
 
 The side selector and visibility options keep their menu open after a change, making it easier to review related settings.
 
@@ -103,13 +104,17 @@ Manual selections always override the automatic result. Unknown actions and acti
 
 The **Show side-switch button** and **Show fixed context button** options independently control those fixed controls. Both are enabled by default. The frontlight toggle follows the visibility of the complete frontlight column.
 
-## Frontlight slider
+## Lighting controls
 
 On devices with a frontlight, the slider is enabled by default and appears in its own column on the inner side of the action dock. Drag or tap toward the top to increase brightness and toward the bottom to decrease it. The circular thumb follows the active brightness level.
 
 A separate compact button at the bottom of this column toggles the frontlight. It uses `icons/light_on.svg` while the light is active and `icons/light_off.svg` while it is off. Turning the light off disables and dims the slider until the same button turns it back on.
 
 The frontlight column normally has the same total height as the action-button dock. When the action dock is shorter than one third of the screen, the column uses half of the screen height so it remains comfortable to operate. The slider fills the space above the toggle button, and the column's bottom edge stays aligned with the action dock. Disable **Tools > Shortcut Dock > Buttons > Additional controls > Show frontlight control** to remove both controls.
+
+On devices with natural-light support, **Show warmth control** adds a second optional column. Tap or drag upward for a warmer tone and downward for a cooler tone. Shortcut Dock uses KOReader's native warmth conversion, so devices with ranges such as 0–10, 0–24, or 0–100 retain their actual hardware steps. The control is disabled while the frontlight is off and reads the value only while being drawn or operated; it does not poll in the background.
+
+The warmth column is enabled by default on supported devices. Its bottom button uses `icons/warmth.svg`; tapping it displays the current native warmth level. It can be hidden at **Tools > Shortcut Dock > Buttons > Additional controls > Show warmth control**. When both lighting columns are enabled, brightness remains next to the action buttons and warmth is placed beside brightness.
 
 Open **Tools > Shortcut Dock > Buttons > Expected icon filenames** to see the exact custom `.svg` and `.png` filenames for every dock action and fixed control, including the frontlight states.
 
@@ -136,7 +141,7 @@ Resolution order for regular actions:
 
 The two stateful actions use their state-specific names before the regular resolution order: `day_mode.svg` / `night_mode.svg` and `wifi_on.svg` / `wifi_off.svg`. These files are checked only when the dock is drawn or the corresponding action changes state; there is no periodic polling.
 
-Examples for regular actions include `history.svg`, `increase_frontlight.svg`, and `shortcutdock_context_search.svg`. The plugin also includes matching chevrons for pagination and changing the dock side, the dynamic home and document icons for the fixed context button, and `light_on.svg` / `light_off.svg` for the frontlight toggle.
+Examples for regular actions include `history.svg`, `increase_frontlight.svg`, and `shortcutdock_context_search.svg`. The plugin also includes matching chevrons for pagination and changing the dock side, the dynamic home and document icons for the fixed context button, `light_on.svg` / `light_off.svg` for the frontlight toggle, and `warmth.svg` for the warmth column.
 
 For the fixed context button, `shortcutdock_context_home.svg` overrides the icon in every context. To keep its icon dynamic, use `home.svg` while reading and `book.opened.svg` in the file browser or when Bookshelf is covering a parked reader. In that Bookshelf state, the button resumes the reader instead of sending another Home command. The same names with a `.png` extension are also accepted.
 
@@ -150,12 +155,13 @@ Shortcut Dock stores its preferences through KOReader's reader settings using th
 | `shortcutdock_action_contexts` | Per-action reader/browser visibility |
 | `shortcutdock_auto_visibility` | Enables automatic context classification |
 | `shortcutdock_side` | Left or right dock position |
-| `shortcutdock_side_mode` | Selects a fixed position or follows the gesture side |
+| `shortcutdock_side_mode` | Selects a fixed position or follows the gesture side; gesture following is the default |
 | `shortcutdock_show_side_button` | Visibility of the floating side-switch button |
 | `shortcutdock_show_context_button` | Visibility of the fixed contextual button |
 | `shortcutdock_show_frontlight_slider` | Visibility of the frontlight slider column |
+| `shortcutdock_show_warmth_slider` | Visibility of the frontlight warmth column; enabled by default on supported devices |
 | `shortcutdock_dock_size` | Selected Small, Medium, or Large dock scale |
-| `shortcutdock_keep_open_after_action` | Reopens the dock after compatible inline actions |
+| `shortcutdock_keep_open_after_action` | Reopens the dock after compatible inline actions; enabled by default |
 
 ## Installation
 
@@ -167,4 +173,4 @@ Extract `shortcutdock.koplugin` into KOReader's `plugins` directory and restart 
 
 ## Version
 
-v0.11.1
+v0.13.1
