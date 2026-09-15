@@ -157,6 +157,9 @@ function ShortcutDock:getActionVisibilityMenu()
 end
 
 function ShortcutDock:getIconFilenamesMenu()
+    local close_icon_details = _("Close button")
+        .. "\n\nSVG: close.svg"
+        .. "\nPNG: close.png"
     local light_icon_details = _("Frontlight toggle")
         .. "\n\n" .. _("Frontlight on") .. ": light_on.svg / light_on.png"
         .. "\n" .. _("Frontlight off") .. ": light_off.svg / light_off.png"
@@ -164,6 +167,13 @@ function ShortcutDock:getIconFilenamesMenu()
         .. "\n\nSVG: warmth.svg"
         .. "\nPNG: warmth.png"
     local menu = {
+        {
+            text = _("Close button") .. ": close.svg",
+            help_text = _("Icon shown in the separate button that closes the dock."),
+            callback = function()
+                UIManager:show(InfoMessage:new({ text = close_icon_details }))
+            end,
+        },
         {
             text = _("Frontlight toggle") .. ": light_on.svg / light_off.svg",
             help_text = _("Uses a different icon for the active and inactive frontlight states."),
@@ -367,6 +377,47 @@ function ShortcutDock:addToMainMenu(menu_items)
             end,
             keep_menu_open = true,
         },
+        {
+            text_func = function()
+                local mode = self:closeDockTogether()
+                    and _("All blocks at once")
+                    or _("One block at a time")
+                return _("Closing method") .. ": " .. mode
+            end,
+            help_text = _("Choose whether the dock and its panels disappear in the same repaint cycle or close separately."),
+            sub_item_table = {
+                {
+                    text = _("One block at a time"),
+                    help_text = _("Closes each visible block separately, using the original sequential behavior."),
+                    checked_func = function()
+                        return not self:closeDockTogether()
+                    end,
+                    callback = function(touchmenu_instance)
+                        self:setCloseDockTogether(false)
+                        if touchmenu_instance and touchmenu_instance.updateItems then
+                            touchmenu_instance:updateItems()
+                        end
+                    end,
+                    keep_menu_open = true,
+                    radio = true,
+                },
+                {
+                    text = _("All blocks at once"),
+                    help_text = _("Closes all blocks with one non-flashing update over the smallest rectangle that contains them."),
+                    checked_func = function()
+                        return self:closeDockTogether()
+                    end,
+                    callback = function(touchmenu_instance)
+                        self:setCloseDockTogether(true)
+                        if touchmenu_instance and touchmenu_instance.updateItems then
+                            touchmenu_instance:updateItems()
+                        end
+                    end,
+                    keep_menu_open = true,
+                    radio = true,
+                },
+            },
+        },
     }
 
     local additional_control_items = {
@@ -392,6 +443,20 @@ function ShortcutDock:addToMainMenu(menu_items)
             end,
             callback = function(touchmenu_instance)
                 self:setShowSideButton(not self:showSideButton())
+                if touchmenu_instance and touchmenu_instance.updateItems then
+                    touchmenu_instance:updateItems()
+                end
+            end,
+            keep_menu_open = true,
+        },
+        {
+            text = _("Show close button"),
+            help_text = _("Shows a separate close button above the dock using close.svg."),
+            checked_func = function()
+                return self:showCloseButton()
+            end,
+            callback = function(touchmenu_instance)
+                self:setShowCloseButton(not self:showCloseButton())
                 if touchmenu_instance and touchmenu_instance.updateItems then
                     touchmenu_instance:updateItems()
                 end
@@ -469,10 +534,12 @@ function ShortcutDock:addToMainMenu(menu_items)
     behavior_items = {
         behavior_items[1],
         behavior_items[3],
+        behavior_items[4],
     }
     local action_button_items = {
         additional_control_items[1],
         additional_control_items[2],
+        additional_control_items[3],
     }
     local appearance_items = {
         dock_size_item,
@@ -480,16 +547,16 @@ function ShortcutDock:addToMainMenu(menu_items)
             text = _("Reading information panel"),
             help_text = _("Configure the opposite-edge reading summary and its book cover."),
             sub_item_table = {
-                additional_control_items[3],
                 additional_control_items[4],
+                additional_control_items[5],
             },
         },
         {
             text = _("Lighting controls"),
             help_text = _("Show or hide the frontlight brightness and warmth columns."),
             sub_item_table = {
-                additional_control_items[5],
                 additional_control_items[6],
+                additional_control_items[7],
             },
         },
         {
@@ -537,7 +604,7 @@ function ShortcutDock:addToMainMenu(menu_items)
             },
             {
                 text = _("Behavior"),
-                help_text = _("Controls where the dock opens and what happens after an action."),
+                help_text = _("Controls where the dock opens, whether it remains after actions, and how its blocks close."),
                 sub_item_table = behavior_items,
             },
             {
@@ -555,7 +622,7 @@ function ShortcutDock:addToMainMenu(menu_items)
                     },
                     {
                         text = _("Fixed buttons"),
-                        help_text = _("Show or hide the context and side-switch buttons."),
+                        help_text = _("Show or hide the context, side-switch, and close buttons."),
                         sub_item_table = action_button_items,
                     },
                     {
@@ -576,7 +643,7 @@ function ShortcutDock:addToMainMenu(menu_items)
                 sub_item_table = {
                     {
                         text = _("Reset behavior to defaults"),
-                        help_text = _("Restores gesture-following placement, right-side fallback, and keep-open behavior without changing actions, buttons, or appearance."),
+                        help_text = _("Restores gesture-following placement, right-side fallback, keep-open behavior, and one-block-at-a-time closing without changing actions, buttons, or appearance."),
                         callback = function(touchmenu_instance)
                             self:showResetBehaviorConfirmation(touchmenu_instance)
                         end,

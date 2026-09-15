@@ -21,13 +21,14 @@ local function scaleMetric(value, factor, minimum)
     return math_max(minimum or 1, math_floor(value * factor + 0.5))
 end
 
-local PLUGIN_VERSION = "v0.19.1"
+local PLUGIN_VERSION = "v0.20.4"
 local SETTING_ACTIONS = "shortcutdock_actions"
 local SETTING_ACTION_CONTEXTS = "shortcutdock_action_contexts"
 local SETTING_AUTO_VISIBILITY = "shortcutdock_auto_visibility"
 local SETTING_SIDE = "shortcutdock_side"
 local SETTING_SIDE_MODE = "shortcutdock_side_mode"
 local SETTING_SHOW_SIDE_BUTTON = "shortcutdock_show_side_button"
+local SETTING_SHOW_CLOSE_BUTTON = "shortcutdock_show_close_button"
 local SETTING_SHOW_CONTEXT_BUTTON = "shortcutdock_show_context_button"
 local SETTING_SHOW_FRONTLIGHT_SLIDER = "shortcutdock_show_frontlight_slider"
 local SETTING_SHOW_WARMTH_SLIDER = "shortcutdock_show_warmth_slider"
@@ -35,6 +36,7 @@ local SETTING_SHOW_INFO_PANEL = "shortcutdock_show_info_panel"
 local SETTING_SHOW_INFO_PANEL_COVER = "shortcutdock_show_info_panel_cover"
 local SETTING_DOCK_SIZE = "shortcutdock_dock_size"
 local SETTING_KEEP_OPEN_AFTER_ACTION = "shortcutdock_keep_open_after_action"
+local SETTING_CLOSE_TOGETHER = "shortcutdock_close_together"
 
 local SIDE_MODE_FIXED = "fixed"
 local SIDE_MODE_GESTURE = "gesture"
@@ -240,6 +242,7 @@ local ACTION_ICONS = {
     restart = "restart",
     poweroff = "power",
     exit = "exit",
+    close = "close",
     toggle_wifi = "wifi",
     show_network_info = "wifi",
     show_frontlight_dialog = "frontlight",
@@ -382,6 +385,21 @@ local function applyButtonMetrics(button, metrics)
     button.width = metrics.button_width
     button.padding = metrics.button_side_padding
     button.margin = 0
+    return button
+end
+
+-- Keep every detached/highlighted control on the same geometry. In
+-- particular, the side-switch and close buttons must match the frontlight
+-- toggle instead of independently duplicating its dimensions.
+local function applyHighlightedButtonMetrics(button, width, metrics)
+    button.width = width
+    button.height = metrics.side_button_height
+    button.padding = metrics.side_button_padding
+    button.margin = 0
+    button.bordersize = Size.border.button
+    button.radius = Size.radius.button
+    button.icon_width = metrics.side_button_icon_size
+    button.icon_height = metrics.side_button_icon_size
     return button
 end
 
@@ -597,6 +615,7 @@ function ShortcutDock:resetBehavior()
     self:setSide("right")
     self:setSideMode(SIDE_MODE_GESTURE)
     self:setKeepOpenAfterAction(true)
+    self:setCloseDockTogether(false)
     self.current_page = 1
     self.current_dock_side = nil
 end
@@ -605,6 +624,7 @@ function ShortcutDock:resetBehaviorAndButtons()
     self:resetBehavior()
     self:setShowContextButton(true)
     self:setShowSideButton(true)
+    self:setShowCloseButton(false)
     self:setAutomaticVisibility(false)
     self:resetActionVisibility()
     self:resetActions()
@@ -699,6 +719,14 @@ function ShortcutDock:setShowSideButton(enabled)
     G_reader_settings:saveSetting(SETTING_SHOW_SIDE_BUTTON, enabled and true or false)
 end
 
+function ShortcutDock:showCloseButton()
+    return G_reader_settings:readSetting(SETTING_SHOW_CLOSE_BUTTON) == true
+end
+
+function ShortcutDock:setShowCloseButton(enabled)
+    G_reader_settings:saveSetting(SETTING_SHOW_CLOSE_BUTTON, enabled and true or false)
+end
+
 function ShortcutDock:showContextButton()
     return G_reader_settings:readSetting(SETTING_SHOW_CONTEXT_BUTTON) ~= false
 end
@@ -755,6 +783,14 @@ function ShortcutDock:setKeepOpenAfterAction(enabled)
     G_reader_settings:saveSetting(SETTING_KEEP_OPEN_AFTER_ACTION, enabled and true or false)
 end
 
+function ShortcutDock:closeDockTogether()
+    return G_reader_settings:readSetting(SETTING_CLOSE_TOGETHER) == true
+end
+
+function ShortcutDock:setCloseDockTogether(enabled)
+    G_reader_settings:saveSetting(SETTING_CLOSE_TOGETHER, enabled and true or false)
+end
+
 function ShortcutDock:getFrontlightSliderHeight(dock_height)
     local screen_height = Screen:getHeight()
     dock_height = math_max(1, tonumber(dock_height) or 1)
@@ -771,16 +807,8 @@ function ShortcutDock:makeFrontlightToggleButton(width, dialog, slider, metrics)
     end
 
     local icon = getStateIcon()
-    local config = {
+    local config = applyHighlightedButtonMetrics({
         id = "shortcutdock_toggle_frontlight",
-        width = width,
-        height = metrics.side_button_height,
-        padding = metrics.side_button_padding,
-        margin = 0,
-        bordersize = Size.border.button,
-        radius = Size.radius.button,
-        icon_width = metrics.side_button_icon_size,
-        icon_height = metrics.side_button_icon_size,
         enabled = true,
         show_parent = dialog,
         slider = slider,
@@ -800,7 +828,7 @@ function ShortcutDock:makeFrontlightToggleButton(width, dialog, slider, metrics)
             local message = slider.enabled and _("Turn frontlight off") or _("Turn frontlight on")
             UIManager:show(InfoMessage:new({ text = message }))
         end,
-    }
+    }, width, metrics)
     if icon then
         config.icon = icon
     else
@@ -850,21 +878,13 @@ function ShortcutDock:makeWarmthInfoButton(width, dialog, slider, metrics)
         }))
     end
     local icon = self:getIcon("warmth")
-    local config = {
+    local config = applyHighlightedButtonMetrics({
         id = "shortcutdock_frontlight_warmth",
-        width = width,
-        height = metrics.side_button_height,
-        padding = metrics.side_button_padding,
-        margin = 0,
-        bordersize = Size.border.button,
-        radius = Size.radius.button,
-        icon_width = metrics.side_button_icon_size,
-        icon_height = metrics.side_button_icon_size,
         enabled = true,
         show_parent = dialog,
         callback = showWarmthLevel,
         hold_callback = showWarmthLevel,
-    }
+    }, width, metrics)
     if icon then
         config.icon = icon
     else
@@ -956,11 +976,11 @@ function ShortcutDock:getMaxPageRows(metrics)
     local dock_height = Screen:getHeight()
         - 2 * DOCK_MARGIN
         - 2 * Size.border.window
-    if self:showSideButton() then
-        dock_height = dock_height
-            - metrics.side_button_outer_height
-            - metrics.side_button_gap
-    end
+    local external_button_count = (self:showSideButton() and 1 or 0)
+        + (self:showCloseButton() and 1 or 0)
+    dock_height = dock_height
+        - external_button_count * metrics.side_button_outer_height
+        - external_button_count * metrics.side_button_gap
     local available_height = math_min(dialog_height, dock_height)
 
     local minimum_rows = self:showContextButton() and 4 or 3
@@ -1012,11 +1032,62 @@ end
 
 function ShortcutDock:closeDock()
     local dialog = self.dialog
+    if not self:closeDockTogether() then
+        self.dialog = nil
+        self:closeStatusPanel()
+        self:closeInfoPanel()
+        if dialog then
+            UIManager:close(dialog)
+        end
+        return
+    end
+
+    local info_panel_widget = self.info_panel_widget
+    local status_panel_widget = self.status_panel_widget
     self.dialog = nil
-    self:closeStatusPanel()
-    self:closeInfoPanel()
+    self.info_panel_widget = nil
+    self.info_panel_data = nil
+    self.status_panel_widget = nil
+
+    local widgets = {}
+    if status_panel_widget then
+        widgets[#widgets + 1] = status_panel_widget
+    end
+    if info_panel_widget then
+        widgets[#widgets + 1] = info_panel_widget
+    end
     if dialog then
-        UIManager:close(dialog)
+        widgets[#widgets + 1] = dialog
+    end
+    local update_region
+    for index = 1, #widgets do
+        local widget = widgets[index]
+        if widget then
+            local dimen = widget.dimen
+                or (widget.movable and widget.movable.dimen)
+            if dimen and dimen.x and dimen.y and dimen.w and dimen.h then
+                local region = Geom:new({
+                    x = dimen.x,
+                    y = dimen.y,
+                    w = dimen.w,
+                    h = dimen.h,
+                })
+                update_region = update_region and update_region:combine(region) or region
+            end
+            -- These widgets normally enqueue their own close refresh. During
+            -- a grouped dock shutdown that would make the panels disappear
+            -- one at a time, so defer the refresh until all are unregistered.
+            widget._shortcutdock_suppress_close_refresh = true
+            UIManager:close(widget)
+        end
+    end
+    if update_region then
+        -- E-ink refresh backends accept rectangular regions. Separate regions
+        -- are separate hardware updates and appear sequentially on some
+        -- devices, so use the smallest bounding rectangle for an atomic close.
+        -- The non-flashing UI waveform avoids a large black/white flash across
+        -- the empty space between opposite-edge elements.
+        UIManager:setDirty("all", "ui", update_region)
     end
 end
 
@@ -1170,16 +1241,8 @@ function ShortcutDock:makeSideButton(width, dialog, metrics)
     local current_side = self.current_dock_side or self:getSide()
     local target_side = current_side == "left" and "right" or "left"
     local icon = self:getIcon("chevron-" .. target_side)
-    local button = {
+    local button = applyHighlightedButtonMetrics({
         id = "shortcutdock_switch_side",
-        width = width,
-        height = metrics.side_button_height,
-        padding = metrics.side_button_padding,
-        margin = 0,
-        bordersize = Size.border.button,
-        radius = Size.radius.button,
-        icon_width = metrics.side_button_icon_size,
-        icon_height = metrics.side_button_icon_size,
         enabled = true,
         show_parent = dialog,
         callback = function()
@@ -1196,12 +1259,35 @@ function ShortcutDock:makeSideButton(width, dialog, metrics)
                 or _("Move dock to the right")
             UIManager:show(InfoMessage:new({ text = message }))
         end,
-    }
+    }, width, metrics)
     if icon then
         button.icon = icon
     else
         button.text = target_side == "left" and "←" or "→"
         button.text_font_size = metrics.side_font_size
+        button.text_font_bold = true
+    end
+    return Button:new(button)
+end
+
+function ShortcutDock:makeCloseButton(width, dialog, metrics)
+    local icon = self:getIcon("close")
+    local button = applyHighlightedButtonMetrics({
+        id = "shortcutdock_close",
+        enabled = true,
+        show_parent = dialog,
+        callback = function()
+            self:closeDock()
+        end,
+        hold_callback = function()
+            UIManager:show(InfoMessage:new({ text = _("Close Shortcut Dock") }))
+        end,
+    }, width, metrics)
+    if icon then
+        button.icon = icon
+    else
+        button.text = _("Close")
+        button.text_font_size = metrics.fallback_font_size
         button.text_font_bold = true
     end
     return Button:new(button)
@@ -1250,6 +1336,12 @@ function ShortcutDock:showDock(page, side, info_panel_data)
             return self:makeSideButton(width, parent, metrics)
         end
     end
+    local close_button_factory
+    if self:showCloseButton() then
+        close_button_factory = function(width, parent)
+            return self:makeCloseButton(width, parent, metrics)
+        end
+    end
     local frontlight_slider_factory
     if self:showFrontlightSlider() then
         frontlight_slider_factory = function(dock_height, parent)
@@ -1280,6 +1372,7 @@ function ShortcutDock:showDock(page, side, info_panel_data)
         shrink_min_width = metrics.button_width,
         dismissable = true,
         side_button_factory = side_button_factory,
+        close_button_factory = close_button_factory,
         frontlight_slider_factory = frontlight_slider_factory,
         warmth_slider_factory = warmth_slider_factory,
         side_button_gap = metrics.side_button_gap,
@@ -1302,19 +1395,12 @@ function ShortcutDock:showDock(page, side, info_panel_data)
                 h = 0,
             }), false
         end,
-        close_callback = function()
+        close_all_callback = function()
             if self.dialog == dialog then
-                self.dialog = nil
-                self:closeStatusPanel()
-                self:closeInfoPanel()
+                self:closeDock()
+                return true
             end
-        end,
-        tap_close_callback = function()
-            if self.dialog == dialog then
-                self.dialog = nil
-                self:closeStatusPanel()
-                self:closeInfoPanel()
-            end
+            return false
         end,
     })
 

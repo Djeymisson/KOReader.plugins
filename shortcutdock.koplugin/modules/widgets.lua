@@ -246,6 +246,22 @@ end
 
 local FloatingControlButtonDialog = ButtonDialog:extend({})
 
+function FloatingControlButtonDialog:onCloseWidget()
+    if self._shortcutdock_suppress_close_refresh then
+        return
+    end
+    ButtonDialog.onCloseWidget(self)
+end
+
+function FloatingControlButtonDialog:onClose()
+    if self.close_all_callback then
+        if self.close_all_callback() ~= false then
+            return true
+        end
+    end
+    return ButtonDialog.onClose(self)
+end
+
 function FloatingControlButtonDialog:init()
     ButtonDialog.init(self)
 
@@ -269,6 +285,7 @@ function FloatingControlButtonDialog:init()
 
     if
         not self.side_button_factory
+        and not self.close_button_factory
         and not self.frontlight_slider_factory
         and not self.warmth_slider_factory
     then
@@ -279,15 +296,28 @@ function FloatingControlButtonDialog:init()
     local dock_size = dock_frame:getSize()
     local dock_column = dock_frame
     local side_button
+    local close_button
     local frontlight_column
     local warmth_column
+    if self.close_button_factory then
+        close_button = self.close_button_factory(dock_size.w, self)
+    end
     if self.side_button_factory then
         side_button = self.side_button_factory(dock_size.w, self)
-        dock_column = VerticalGroup:new({
-            side_button,
-            VerticalSpan:new({ width = self.side_button_gap or BASE_SIDE_BUTTON_GAP }),
-            dock_frame,
-        })
+    end
+    if close_button or side_button then
+        local external_buttons = {}
+        local gap = self.side_button_gap or BASE_SIDE_BUTTON_GAP
+        if close_button then
+            external_buttons[#external_buttons + 1] = close_button
+            external_buttons[#external_buttons + 1] = VerticalSpan:new({ width = gap })
+        end
+        if side_button then
+            external_buttons[#external_buttons + 1] = side_button
+            external_buttons[#external_buttons + 1] = VerticalSpan:new({ width = gap })
+        end
+        external_buttons[#external_buttons + 1] = dock_frame
+        dock_column = VerticalGroup:new(external_buttons)
     end
 
     if self.frontlight_slider_factory then
@@ -350,6 +380,9 @@ function FloatingControlButtonDialog:init()
 
     if side_button and Device:hasDPad() and self.layout then
         table.insert(self.layout, 1, { side_button })
+    end
+    if close_button and Device:hasDPad() and self.layout then
+        table.insert(self.layout, 1, { close_button })
     end
     if
         frontlight_column
