@@ -994,7 +994,7 @@ function ShortcutDock:makeFrontlightToggleButton(width, dialog, slider, metrics)
         end,
         hold_callback = function()
             local message = slider.enabled and _("Turn frontlight off") or _("Turn frontlight on")
-            UIManager:show(InfoMessage:new({ text = message }))
+            self:showButtonHelp(message)
         end,
     }, width, metrics)
     if icon then
@@ -1041,9 +1041,7 @@ end
 function ShortcutDock:makeWarmthInfoButton(width, dialog, slider, metrics)
     local function showWarmthLevel()
         slider:syncFromPower()
-        UIManager:show(InfoMessage:new({
-            text = _("Warmth") .. ": " .. tostring(slider.value),
-        }))
+        self:showButtonHelp(_("Warmth") .. ": " .. tostring(slider.value))
     end
     local icon = self:getIcon("warmth")
     local config = applyHighlightedButtonMetrics({
@@ -1319,7 +1317,7 @@ function ShortcutDock:makeActionButton(item, metrics)
             self:executeAction(item.key)
         end,
         hold_callback = function()
-            UIManager:show(InfoMessage:new({ text = item.text }))
+            self:showButtonHelp(item.text)
         end,
     }
     if icon then
@@ -1354,7 +1352,7 @@ function ShortcutDock:makeContextButton(metrics)
             end)
         end,
         hold_callback = function()
-            UIManager:show(InfoMessage:new({ text = text }))
+            self:showButtonHelp(text)
         end,
     }
     if icon then
@@ -1375,6 +1373,11 @@ function ShortcutDock:makePageButton(direction, target_page, metrics)
         enabled = true,
         callback = function()
             self:showDock(target_page, self.current_dock_side, self.info_panel_data)
+        end,
+        hold_callback = function()
+            self:showButtonHelp(
+                is_next and _("Show next dock page") or _("Show previous dock page")
+            )
         end,
     }
     if icon then
@@ -1406,7 +1409,7 @@ function ShortcutDock:makeSideButton(width, dialog, metrics)
             local message = target_side == "left"
                 and _("Move dock to the left")
                 or _("Move dock to the right")
-            UIManager:show(InfoMessage:new({ text = message }))
+            self:showButtonHelp(message)
         end,
     }, width, metrics)
     if icon then
@@ -1429,7 +1432,7 @@ function ShortcutDock:makeCloseButton(width, dialog, metrics)
             self:closeDock()
         end,
         hold_callback = function()
-            UIManager:show(InfoMessage:new({ text = _("Close Shortcut Dock") }))
+            self:showButtonHelp(_("Close Shortcut Dock"))
         end,
     }, width, metrics)
     if icon then
@@ -1468,7 +1471,7 @@ function ShortcutDock:makeInfoPanelToggleButton(width, dialog, metrics)
             local message = self.current_info_panel_kind == "network"
                 and _("Showing network information. Tap to show reading information.")
                 or _("Showing reading information. Tap to show network information.")
-            UIManager:show(InfoMessage:new({ text = message }))
+            self:showButtonHelp(message)
         end,
     }, width, metrics)
     if icon then

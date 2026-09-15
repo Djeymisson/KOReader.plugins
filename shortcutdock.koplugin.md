@@ -20,6 +20,7 @@ Shortcut Dock adds a floating, vertical shortcut bar to KOReader. It is designed
 - Optional vertical frontlight slider in a separate column beside the action buttons, with a circular thumb, live brightness adjustment, and a dedicated frontlight toggle button.
 - Optional second lighting column for frontlight warmth on supported devices, using each device's native warmth range.
 - Optional information panel on the screen edge opposite the dock. It can show reading information, network information, or both; when both are enabled, one highlighted button immediately above the action dock switches its content without closing the dock.
+- Holding a dock button shows its help text in the compact opposite-edge status block above the information panel instead of opening a modal message.
 - Night mode and Wi-Fi execute in place without destroying and rebuilding the dock.
 - Wi-Fi progress appears in a compact opposite-edge status panel instead of KOReader's informational popups during inline toggles.
 - Reader/browser button:
@@ -138,6 +139,8 @@ The network panel displays the current Wi-Fi state and uses KOReader's native ne
 **Toggle night mode** and **Toggle Wi-Fi** always run without closing or rebuilding the dock. Night mode is sent directly to the active KOReader device listener, while Wi-Fi uses the inline flow described below. Every other configurable action, including **Full screen refresh**, closes the dock before being sent through KOReader's Dispatcher and is not reopened automatically.
 
 Wi-Fi uses KOReader's native network manager and its standard connection events, but replaces informational progress popups from an inline toggle with a dock-styled status block. When either information panel is visible, the status block appears directly above it on the same opposite screen edge. When both panels are disabled, the status block uses its bottom-aligned position. Turning on, scanning, connecting, connected, turning off, offline, and timeout/error states are covered. While KOReader reports a pending connection, the connecting status has no display timeout and remains until the connection succeeds, fails, or the dock is closed. Repeated native scan and authentication messages reuse this same overlay instead of closing and recreating it before each forced repaint. Native network selection, password, and confirmation dialogs remain available because they require user interaction; errors raised later inside those interactive dialogs retain KOReader's native presentation.
+
+The same status block displays button help for three seconds when a dock button is held, including pagination arrows and the fixed controls. These messages are non-modal and do not block touches on the dock, lighting sliders, or the underlying screen. A newer Wi-Fi state always replaces an older help message safely.
 
 Shortcut Dock does not add a second connectivity polling loop. It relies on KOReader's existing checks and schedules only one final timeout check for an attempted connection. Closing the dock also closes its Wi-Fi status block; the underlying network operation continues normally.
 

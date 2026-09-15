@@ -7,6 +7,7 @@ local INLINE_ACTIONS = {
     night_mode = true,
     toggle_wifi = true,
 }
+local BUTTON_HELP_TIMEOUT = 3
 
 return function(ShortcutDock, options)
     local InfoPanel = options.InfoPanel
@@ -64,6 +65,10 @@ function ShortcutDock:showStatusPanel(text, timeout)
         end)
     end
     return status_panel_widget
+end
+
+function ShortcutDock:showButtonHelp(text)
+    return self:showStatusPanel(text, BUTTON_HELP_TIMEOUT)
 end
 
 function ShortcutDock:scheduleWifiStatusTimeout()
