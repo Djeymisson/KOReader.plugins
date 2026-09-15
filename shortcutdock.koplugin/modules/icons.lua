@@ -91,11 +91,9 @@ function ShortcutDock:getStockIcon(action_id)
     end
     if action_id == ACTION_HOME then
         if self:getParkedBookshelfContext() then
-            return "book.opened"
+            return "last_doc"
         end
-        if self:isReaderContext() then
-            return "home"
-        end
+        return self:isReaderContext() and "exit_reader" or "last_doc"
     end
     return ACTION_ICONS[action_id]
 end
@@ -123,7 +121,8 @@ function ShortcutDock:getIcon(action_id)
     end
 
     local candidates = {}
-    if STATEFUL_ACTIONS[action_id] then
+    local context_specific = action_id == ACTION_HOME
+    if STATEFUL_ACTIONS[action_id] or context_specific then
         if stock_icon then
             candidates[#candidates + 1] = self.icons_path .. stock_icon .. ".svg"
             candidates[#candidates + 1] = self.icons_path .. stock_icon .. ".png"
@@ -132,7 +131,7 @@ function ShortcutDock:getIcon(action_id)
         candidates[#candidates + 1] = self.icons_path .. action_id .. ".svg"
         candidates[#candidates + 1] = self.icons_path .. action_id .. ".png"
     end
-    if stock_icon and not STATEFUL_ACTIONS[action_id] then
+    if stock_icon and not STATEFUL_ACTIONS[action_id] and not context_specific then
         candidates[#candidates + 1] = self.icons_path .. stock_icon .. ".svg"
         candidates[#candidates + 1] = self.icons_path .. stock_icon .. ".png"
     end

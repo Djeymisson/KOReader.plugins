@@ -11,7 +11,7 @@ function ShortcutDock:isReaderContext()
     return self.ui and self.ui.document ~= nil
 end
 
-function ShortcutDock:getActiveBookshelfWidget()
+function ShortcutDock:getLoadedBookshelfWidget()
     -- Use already-loaded Bookshelf modules to keep this integration optional
     -- and avoid loading the plugin merely because Shortcut Dock is opened.
     local BookshelfWidget = package.loaded["lib/bookshelf_widget"]
@@ -29,11 +29,20 @@ function ShortcutDock:getActiveBookshelfWidget()
         return nil
     end
 
+    return live_widget
+end
+
+function ShortcutDock:getActiveBookshelfWidget()
+    local live_widget = self:getLoadedBookshelfWidget()
+    if not live_widget then
+        return nil
+    end
+
     -- Bookshelf deliberately remains in UIManager's stack after a parked
     -- reader is resumed. In that state isWidgetShown() is still true, but the
     -- ReaderUI that owns this plugin is above Bookshelf and is the active
-    -- context. Compare both positions so search and history target the screen
-    -- actually in the foreground.
+    -- context. Compare both positions so context-sensitive search targets the
+    -- screen actually in the foreground.
     local stack = UIManager._window_stack
     if type(stack) == "table" then
         local bookshelf_index
@@ -138,13 +147,31 @@ function ShortcutDock:onShortcutDockContextSearch()
 end
 
 function ShortcutDock:openBookshelfRecent()
-    local bookshelf = self:getActiveBookshelfWidget()
+    local active_bookshelf = self:getActiveBookshelfWidget()
+    local bookshelf = active_bookshelf
+
+    -- When a book was opened from Bookshelf, its widget remains alive below
+    -- ReaderUI. History should return to that same widget and select Recent,
+    -- instead of falling through to KOReader's native history screen.
+    local show_bookshelf = false
+    if not bookshelf and self:isReaderContext() then
+        bookshelf = self:getLoadedBookshelfWidget()
+        if not bookshelf then
+            return false
+        end
+        show_bookshelf = true
+    end
+
     if not bookshelf then
         return false
     end
 
-    local select_chip = bookshelf._selectChip or bookshelf._setActiveChip
-    if type(select_chip) ~= "function" then
+    local scoped_select_chip = bookshelf._setActiveChip
+    local full_select_chip = bookshelf._selectChip
+    if
+        type(scoped_select_chip) ~= "function"
+        and type(full_select_chip) ~= "function"
+    then
         return false
     end
 
@@ -167,8 +194,38 @@ function ShortcutDock:openBookshelfRecent()
         end
     end
 
-    local ok = pcall(select_chip, bookshelf, recent_id)
-    return ok
+    local function selectRecentChip()
+        -- Prefer Bookshelf's scoped refresh, then retry with the older full
+        -- selector if this version cannot use the scoped method in its current
+        -- widget state.
+        if type(scoped_select_chip) == "function" then
+            local ok = pcall(scoped_select_chip, bookshelf, recent_id)
+            if ok then
+                return true
+            end
+        end
+        if type(full_select_chip) == "function" and full_select_chip ~= scoped_select_chip then
+            return pcall(full_select_chip, bookshelf, recent_id)
+        end
+        return false
+    end
+
+    if show_bookshelf then
+        -- Follow the same Home event path as the fixed context button. The
+        -- Bookshelf reader plugin consumes this event before ReaderUI and
+        -- raises its widget through the parking fast path. Broadcasting is
+        -- more reliable than looking for the plugin instance on self.ui,
+        -- whose registration key varies across KOReader/Bookshelf versions.
+        UIManager:broadcastEvent(Event:new("Home"))
+
+        -- Bookshelf's parking path schedules its own warm refresh on the next
+        -- UI tick. Queue the tab switch after it, so selection happens with
+        -- the shelf in front and both refreshes can be coalesced.
+        UIManager:nextTick(selectRecentChip)
+        return true
+    end
+
+    return selectRecentChip()
 end
 
 end

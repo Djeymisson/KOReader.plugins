@@ -39,7 +39,6 @@ local SETTING_CENTER_INFO_PANEL_TEXT = "shortcutdock_center_info_panel_text"
 local SETTING_INFO_PANEL_TEXT_ALIGNMENT = "shortcutdock_info_panel_text_alignment"
 local SETTING_DOCK_SIZE = "shortcutdock_dock_size"
 local SETTING_MAX_ACTION_DOCK_HEIGHT = "shortcutdock_max_action_dock_height"
-local SETTING_KEEP_OPEN_AFTER_ACTION = "shortcutdock_keep_open_after_action"
 local SETTING_CLOSE_TOGETHER = "shortcutdock_close_together"
 
 local SIDE_MODE_FIXED = "fixed"
@@ -265,7 +264,8 @@ local ACTION_ICONS = {
     exit = "exit",
     close = "close",
     toggle_wifi = "wifi",
-    info_panel_reading = "book.opened",
+    reading_info = "book.opened",
+    network_info = "wifi",
     show_network_info = "wifi",
     show_frontlight_dialog = "frontlight",
     toggle_frontlight = "frontlight",
@@ -645,7 +645,6 @@ end
 function ShortcutDock:resetBehavior()
     self:setSide("right")
     self:setSideMode(SIDE_MODE_GESTURE)
-    self:setKeepOpenAfterAction(true)
     self:setCloseDockTogether(false)
     self.current_page = 1
     self.current_dock_side = nil
@@ -927,14 +926,6 @@ function ShortcutDock:switchInfoPanel(kind)
     if toggle_button and toggle_button.dimen then
         UIManager:setDirty(self.dialog, "ui", toggle_button.dimen)
     end
-end
-
-function ShortcutDock:keepOpenAfterAction()
-    return G_reader_settings:readSetting(SETTING_KEEP_OPEN_AFTER_ACTION) ~= false
-end
-
-function ShortcutDock:setKeepOpenAfterAction(enabled)
-    G_reader_settings:saveSetting(SETTING_KEEP_OPEN_AFTER_ACTION, enabled and true or false)
 end
 
 function ShortcutDock:closeDockTogether()
@@ -1250,52 +1241,24 @@ function ShortcutDock:closeDock()
     end
 end
 
-function ShortcutDock:getTopmostActionHost()
-    if type(UIManager.topdown_widgets_iter) == "function" then
-        for widget in UIManager:topdown_widgets_iter() do
-            if not widget.invisible and not widget.toast then
-                return widget
-            end
-        end
-    elseif type(UIManager.getTopmostVisibleWidget) == "function" then
-        return UIManager:getTopmostVisibleWidget()
-    end
-end
-
 function ShortcutDock:executeAction(action_id)
     local value = self.actions[action_id]
     if value == nil then
         return
     end
 
-    local reopen_dock = self:keepOpenAfterAction()
-    if reopen_dock and self:executeInlineAction(action_id) then
+    -- Wi-Fi and night mode are the only Dispatcher actions designed to run
+    -- in place. Every other action closes the dock before dispatch so dialogs
+    -- and context changes always start from a clean widget stack.
+    if self:executeInlineAction(action_id) then
         return
     end
-    local page = self.current_page or 1
-    local side = self.current_dock_side or self:getSide()
     self:closeDock()
     UIManager:scheduleIn(0.05, function()
-        -- Capture the real Dispatcher target after the dock (and any menu used
-        -- to open it) has had time to leave the widget stack.
-        local action_host = reopen_dock and self:getTopmostActionHost() or nil
         if action_id == "history" and self:openBookshelfRecent() then
             -- Bookshelf handled the action directly.
         else
             Dispatcher:execute({ [action_id] = value })
-        end
-
-        if reopen_dock and action_host then
-            -- A single deferred check is enough: inline actions leave the same
-            -- host on top, while dialogs and context changes replace it.
-            UIManager:scheduleIn(0.05, function()
-                if
-                    not self.dialog
-                    and self:getTopmostActionHost() == action_host
-                then
-                    self:showDock(page, side)
-                end
-            end)
         end
     end)
 end
@@ -1323,9 +1286,8 @@ function ShortcutDock:makeActionButton(item, metrics)
         id = "shortcutdock_" .. item.key,
         enabled = true,
         callback = function()
-            -- Compatible device actions run against the active host without
-            -- replacing the dock. Other Dispatcher actions use the safer
-            -- close, dispatch, and conditional-reopen path.
+            -- Wi-Fi and night mode run against the active host without
+            -- replacing the dock. Every other Dispatcher action closes it.
             self:executeAction(item.key)
         end,
         hold_callback = function()
@@ -1454,9 +1416,9 @@ end
 
 function ShortcutDock:getInfoPanelToggleDisplay()
     if self.current_info_panel_kind == "network" then
-        return self:getIcon("toggle_wifi"), _("N")
+        return self:getIcon("network_info"), _("N")
     end
-    return self:getIcon("info_panel_reading"), _("R")
+    return self:getIcon("reading_info"), _("R")
 end
 
 function ShortcutDock:makeInfoPanelToggleButton(width, dialog, metrics)

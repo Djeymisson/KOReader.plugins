@@ -6,7 +6,6 @@ local _ = require("gettext")
 local INLINE_ACTIONS = {
     night_mode = true,
     toggle_wifi = true,
-    full_refresh = true,
 }
 
 return function(ShortcutDock, options)
@@ -173,8 +172,7 @@ function ShortcutDock:executeInlineAction(action_id)
     end
 
     local listener = self.ui and self.ui.devicelistener
-    local method_name = action_id == "night_mode" and "onToggleNightMode" or "onFullRefresh"
-    local method = listener and listener[method_name]
+    local method = listener and listener.onToggleNightMode
     if type(method) ~= "function" then
         return false
     end

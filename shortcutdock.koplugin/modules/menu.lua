@@ -174,9 +174,9 @@ function ShortcutDock:getIconFilenamesMenu()
         .. "\nPNG: warmth.png"
     local panel_toggle_icon_details = _("Information panel switch")
         .. "\n\n" .. _("Reading information")
-        .. ": info_panel_reading.svg / info_panel_reading.png"
+        .. ": reading_info.svg / reading_info.png"
         .. "\n" .. _("Network information")
-        .. ": wifi_on.svg / wifi_on.png, wifi_off.svg / wifi_off.png"
+        .. ": network_info.svg / network_info.png"
     local menu = {
         {
             text = _("Close button") .. ": close.svg",
@@ -201,8 +201,8 @@ function ShortcutDock:getIconFilenamesMenu()
         },
         {
             text = _("Information panel switch")
-                .. ": info_panel_reading.svg / wifi_on.svg / wifi_off.svg",
-            help_text = _("Uses the reading icon or the current Wi-Fi state icon according to the visible information panel."),
+                .. ": reading_info.svg / network_info.svg",
+            help_text = _("Uses a dedicated icon for the visible reading or network information panel."),
             callback = function()
                 UIManager:show(InfoMessage:new({ text = panel_toggle_icon_details }))
             end,
@@ -237,14 +237,14 @@ function ShortcutDock:getIconFilenamesMenu()
                 .. "\n\n" .. _("Wi-Fi on") .. ": wifi_on.svg / wifi_on.png"
                 .. "\n" .. _("Wi-Fi off") .. ": wifi_off.svg / wifi_off.png"
         elseif item.key == ACTION_HOME then
-            help_text = help_text
-                .. "\n" .. _("Context-specific SVG filenames")
-                .. ": home.svg / book.opened.svg"
-            details = details
-                .. "\n\n" .. _("While reading") .. ": home.svg / home.png"
-                .. "\n" .. _("In the file browser") .. ": book.opened.svg / book.opened.png"
+            svg_name = "exit_reader.svg / last_doc.svg"
+            png_name = "exit_reader.png / last_doc.png"
+            help_text = _("Uses a different icon inside and outside the reader.")
+            details = tostring(item.text or basename)
+                .. "\n\n" .. _("While reading") .. ": exit_reader.svg / exit_reader.png"
+                .. "\n" .. _("In the file browser") .. ": last_doc.svg / last_doc.png"
                 .. "\n" .. _("In Bookshelf with a parked reader")
-                .. ": book.opened.svg / book.opened.png"
+                .. ": last_doc.svg / last_doc.png"
         end
         menu[#menu + 1] = {
             text = tostring(item.text or basename) .. ": " .. svg_name,
@@ -381,20 +381,6 @@ function ShortcutDock:addToMainMenu(menu_items)
                     radio = true,
                 },
             },
-        },
-        {
-            text = _("Keep dock open after actions"),
-            help_text = _("Keeps the dock in place for compatible device actions and reopens it after other actions that do not open another screen or dialog."),
-            checked_func = function()
-                return self:keepOpenAfterAction()
-            end,
-            callback = function(touchmenu_instance)
-                self:setKeepOpenAfterAction(not self:keepOpenAfterAction())
-                if touchmenu_instance and touchmenu_instance.updateItems then
-                    touchmenu_instance:updateItems()
-                end
-            end,
-            keep_menu_open = true,
         },
         {
             text_func = function()
@@ -678,7 +664,6 @@ function ShortcutDock:addToMainMenu(menu_items)
     behavior_items = {
         behavior_items[1],
         behavior_items[3],
-        behavior_items[4],
     }
     local action_button_items = {
         additional_control_items[1],
@@ -751,7 +736,7 @@ function ShortcutDock:addToMainMenu(menu_items)
             },
             {
                 text = _("Behavior"),
-                help_text = _("Controls where the dock opens, whether it remains after actions, and how its blocks close."),
+                help_text = _("Controls where the dock opens and how its blocks close."),
                 sub_item_table = behavior_items,
             },
             {
@@ -790,7 +775,7 @@ function ShortcutDock:addToMainMenu(menu_items)
                 sub_item_table = {
                     {
                         text = _("Reset behavior to defaults"),
-                        help_text = _("Restores gesture-following placement, right-side fallback, keep-open behavior, and one-block-at-a-time closing without changing actions, buttons, or appearance."),
+                        help_text = _("Restores gesture-following placement, right-side fallback, and one-block-at-a-time closing without changing actions, buttons, or appearance."),
                         callback = function(touchmenu_instance)
                             self:showResetBehaviorConfirmation(touchmenu_instance)
                         end,
