@@ -27,6 +27,14 @@ local InfoPanelOverlay = WidgetContainer:extend({
     modal = false,
 })
 
+local StatusPanelOverlay = WidgetContainer:extend({
+    -- Toasts are ignored while UIManager looks for the input target. This
+    -- keeps the status block visually above the dock without intercepting its
+    -- taps or the controls of a network-selection dialog.
+    modal = false,
+    toast = true,
+})
+
 function InfoPanelOverlay:init()
     local panel_size = self.panel:getSize()
     local margin = math_max(0, tonumber(self.screen_margin) or Size.padding.large)
@@ -49,6 +57,37 @@ function InfoPanelOverlay:onShow()
 end
 
 function InfoPanelOverlay:onCloseWidget()
+    UIManager:setDirty(nil, "ui", self.dimen)
+end
+
+function StatusPanelOverlay:init()
+    local panel_size = self.panel:getSize()
+    local margin = math_max(0, tonumber(self.screen_margin) or Size.padding.large)
+    local left = margin
+    if self.panel_side == "right" then
+        left = Screen:getWidth() - margin - panel_size.w
+    end
+
+    local bottom = Screen:getHeight() - margin
+    local lower_dimen = self.lower_widget and self.lower_widget.dimen
+    if lower_dimen then
+        bottom = lower_dimen.y - (self.panel_gap or Size.padding.default)
+    end
+    self.dimen = Geom:new({
+        x = math_floor(left),
+        y = math_floor(math_max(margin, bottom - panel_size.h)),
+        w = panel_size.w,
+        h = panel_size.h,
+    })
+    self[1] = self.panel
+end
+
+function StatusPanelOverlay:onShow()
+    UIManager:setDirty(self, "ui", self.dimen)
+    return true
+end
+
+function StatusPanelOverlay:onCloseWidget()
     UIManager:setDirty(nil, "ui", self.dimen)
 end
 
@@ -523,9 +562,36 @@ local function createOverlay(plugin, metrics, panel_side, screen_margin, data)
     return overlay
 end
 
+local function createStatusOverlay(metrics, panel_side, screen_margin, text, lower_widget)
+    local factor = tonumber(metrics and metrics.scale_factor) or 1
+    local padding = math_max(Size.padding.small, math_floor(Screen:scaleBySize(8) * factor + 0.5))
+    local content_width = panelContentWidth(metrics, maximumPanelWidth(screen_margin))
+    local body_face = Font:getFace("smallinfofont", math_floor(13 * factor + 0.5))
+    local panel = FrameContainer:new({
+        background = Blitbuffer.COLOR_WHITE,
+        bordersize = Size.border.button,
+        color = Blitbuffer.COLOR_BLACK,
+        radius = Size.radius.button,
+        margin = 0,
+        padding = padding,
+        allow_mirroring = false,
+        makeText(tostring(text or ""), body_face, content_width, true),
+    })
+    local overlay = StatusPanelOverlay:new({
+        panel = panel,
+        panel_side = panel_side == "left" and "left" or "right",
+        screen_margin = screen_margin,
+        panel_gap = Size.padding.default,
+        lower_widget = lower_widget,
+    })
+    panel.show_parent = overlay
+    return overlay
+end
+
 return {
     build = build,
     clearCoverCache = clearCoverCache,
     collect = collect,
     createOverlay = createOverlay,
+    createStatusOverlay = createStatusOverlay,
 }

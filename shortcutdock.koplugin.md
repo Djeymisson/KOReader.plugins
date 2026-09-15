@@ -1,4 +1,4 @@
-# Shortcut Dock ![Version](https://img.shields.io/badge/version-v0.18.0-blue)
+# Shortcut Dock ![Version](https://img.shields.io/badge/version-v0.19.1-blue)
 
 Shortcut Dock adds a floating, vertical shortcut bar to KOReader. It is designed for touch devices and can be assigned to any gesture supported by KOReader.
 
@@ -18,6 +18,8 @@ Shortcut Dock adds a floating, vertical shortcut bar to KOReader. It is designed
 - Optional vertical frontlight slider in a separate column beside the action buttons, with a circular thumb, live brightness adjustment, and a dedicated frontlight toggle button.
 - Optional second lighting column for frontlight warmth on supported devices, using each device's native warmth range.
 - Optional reading-information panel on the screen edge opposite the dock, enabled by default, with an optional book cover, book and chapter progress, estimated time remaining, today's reading, clock, and battery status.
+- Night mode, Wi-Fi, and full-screen refresh execute in place when keep-open behavior is enabled, without destroying and rebuilding the dock.
+- Wi-Fi progress appears in a compact opposite-edge status panel instead of KOReader's informational popups during inline toggles.
 - Context-aware home button:
   - opens the previous document from the file browser;
   - returns to the file browser while reading;
@@ -57,7 +59,7 @@ The settings follow the same grouped layout as the other plugins in this reposit
 - `Show Shortcut Dock`: opens the dock immediately.
 - `Behavior`: controls where the dock opens and what happens after an action.
   - `Dock side: <current side>`: selects `Left`, `Right`, or `Follow gesture side`. Following the gesture is enabled by default, and the configured fixed side is used as a fallback when the dock is opened without gesture coordinates.
-  - `Keep dock open after actions`: enabled by default; reopens the dock after inline actions while leaving it closed when an action opens another screen or dialog.
+  - `Keep dock open after actions`: enabled by default; keeps the same dock open for night mode, Wi-Fi, and full refresh, reopens it after other compatible actions, and leaves it closed when an action opens another screen or dialog.
 - `Actions and buttons`: controls configurable actions, fixed buttons, and context visibility.
   - `Buttons and order`: opens KOReader's native action selector and shows the current number of configured actions.
   - `Fixed buttons`:
@@ -80,7 +82,7 @@ The settings follow the same grouped layout as the other plugins in this reposit
   - `Reset buttons to defaults`: restores the initial buttons and their order after confirmation without changing the other plugin settings.
   - `Reset behavior and buttons`: additionally restores fixed buttons, default actions, order, and visibility while preserving appearance.
 - `Gesture setup`: displays instructions for assigning the dock to a KOReader gesture.
-- `Version: v0.18.0`: shows the installed plugin version.
+- `Version: v0.19.1`: shows the installed plugin version.
 
 The side selector and visibility options keep their menu open after a change, making it easier to review related settings.
 
@@ -122,6 +124,14 @@ The open book's cover is also enabled by default and appears centered at the top
 While reading, the panel shows the document title and primary author, current/total page and book percentage, chapter title and progress, estimated time remaining for the book and chapter, today's pages and reading time, the clock, and battery state. It does not show remaining page counts. Stable page labels are used for the displayed book page numbers when enabled, while percentages and estimates continue to follow actual page turns.
 
 In the file browser or Bookshelf, no document-specific fields are invented: the panel shows the available daily reading summary, clock, and battery state. Reading-time fields appear only when KOReader's Statistics plugin is enabled and has data. The statistics API is queried once when the dock opens, and the same snapshot is reused across pagination and side changes; there is no timer, background polling, direct database access, or global ReaderUI/FileManager patch. Disable the block at **Tools > Shortcut Dock > Appearance > Reading information panel > Show panel**.
+
+## Inline actions and Wi-Fi status
+
+When **Keep dock open after actions** is enabled, **Toggle night mode**, **Toggle Wi-Fi**, and **Full screen refresh** run without closing the dock or rebuilding its widgets. Night mode and full refresh are sent directly to the active KOReader device listener; all other configurable actions retain the safer close, dispatch, and conditional-reopen flow when appropriate.
+
+Wi-Fi uses KOReader's native network manager and its standard connection events, but replaces informational progress popups from an inline toggle with a dock-styled status block. When the reading-information panel is visible, the status block appears directly above it on the same opposite screen edge. When that panel is disabled, the status block uses its bottom-aligned position. Turning on, scanning, connecting, connected, turning off, offline, and timeout/error states are covered. While KOReader reports a pending connection, the connecting status has no display timeout and remains until the connection succeeds, fails, or the dock is closed. Native network selection, password, and confirmation dialogs remain available because they require user interaction; errors raised later inside those interactive dialogs retain KOReader's native presentation.
+
+Shortcut Dock does not add a second connectivity polling loop. It relies on KOReader's existing checks and schedules only one final timeout check for an attempted connection. Closing the dock also closes its Wi-Fi status block; the underlying network operation continues normally.
 
 ## Lighting controls
 
@@ -188,7 +198,8 @@ Shortcut Dock stores its preferences through KOReader's reader settings using th
 
 - `main.lua`: plugin lifecycle, saved state, migrations, dock sizing, pagination, and action dispatch.
 - `modules/widgets.lua`: lighting sliders, stateful frontlight button, fixed positioning, and multi-column layout.
-- `modules/info_panel.lua`: safe collection and opposite-edge overlay rendering of reading progress, statistics, clock, and battery data.
+- `modules/info_panel.lua`: safe collection and opposite-edge rendering of reading progress, covers, statistics, clock, battery, and transient status panels.
+- `modules/inline_actions.lua`: in-place night mode, Wi-Fi, and full-refresh execution, including Wi-Fi progress redirection and timeout handling.
 - `modules/context.lua`: reader, file-browser, and optional Bookshelf integration.
 - `modules/icons.lua`: custom/system icon resolution, stateful icons, and safe shared IconWidget patching.
 - `modules/menu.lua`: settings menus, action visibility controls, icon-name help, and reset confirmation.
@@ -203,4 +214,4 @@ Extract `shortcutdock.koplugin` into KOReader's `plugins` directory and restart 
 
 ## Version
 
-v0.18.0
+v0.19.1

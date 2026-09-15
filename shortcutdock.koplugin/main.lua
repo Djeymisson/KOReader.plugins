@@ -21,7 +21,7 @@ local function scaleMetric(value, factor, minimum)
     return math_max(minimum or 1, math_floor(value * factor + 0.5))
 end
 
-local PLUGIN_VERSION = "v0.18.0"
+local PLUGIN_VERSION = "v0.19.1"
 local SETTING_ACTIONS = "shortcutdock_actions"
 local SETTING_ACTION_CONTEXTS = "shortcutdock_action_contexts"
 local SETTING_AUTO_VISIBILITY = "shortcutdock_auto_visibility"
@@ -393,6 +393,10 @@ local FloatingControlButtonDialog = DockWidgets.FloatingControlButtonDialog
 local ShortcutDock = WidgetContainer:extend({
     name = "shortcutdock",
 })
+dofile(PLUGIN_DIR .. "modules/inline_actions.lua")(ShortcutDock, {
+    InfoPanel = InfoPanel,
+    dock_margin = DOCK_MARGIN,
+})
 
 function ShortcutDock:init()
     self.plugin_path = PLUGIN_DIR
@@ -412,6 +416,8 @@ function ShortcutDock:init()
     self.info_panel_widget = nil
     self.info_panel_data = nil
     self.info_panel_cover_cache = nil
+    self.status_panel_widget = nil
+    self.wifi_status_generation = 0
     self.current_page = 1
 
     self:patchIconWidget()
@@ -1007,6 +1013,7 @@ end
 function ShortcutDock:closeDock()
     local dialog = self.dialog
     self.dialog = nil
+    self:closeStatusPanel()
     self:closeInfoPanel()
     if dialog then
         UIManager:close(dialog)
@@ -1032,6 +1039,9 @@ function ShortcutDock:executeAction(action_id)
     end
 
     local reopen_dock = self:keepOpenAfterAction()
+    if reopen_dock and self:executeInlineAction(action_id) then
+        return
+    end
     local page = self.current_page or 1
     local side = self.current_dock_side or self:getSide()
     self:closeDock()
@@ -1077,23 +1087,15 @@ function ShortcutDock:refreshStatefulActionButton(action_id)
     end
 end
 
-function ShortcutDock:onNetworkConnected()
-    self:refreshStatefulActionButton("toggle_wifi")
-end
-
-function ShortcutDock:onNetworkDisconnected()
-    self:refreshStatefulActionButton("toggle_wifi")
-end
-
 function ShortcutDock:makeActionButton(item, metrics)
     local icon = self:getIcon(item.key)
     local button = {
         id = "shortcutdock_" .. item.key,
         enabled = true,
         callback = function()
-            -- Dispatcher sends native actions to the topmost widget. Close the
-            -- dock first so ToggleNightMode and ToggleWifi reach the active
-            -- Reader, File Browser, or Bookshelf context instead of this dialog.
+            -- Compatible device actions run against the active host without
+            -- replacing the dock. Other Dispatcher actions use the safer
+            -- close, dispatch, and conditional-reopen path.
             self:executeAction(item.key)
         end,
         hold_callback = function()
@@ -1303,12 +1305,14 @@ function ShortcutDock:showDock(page, side, info_panel_data)
         close_callback = function()
             if self.dialog == dialog then
                 self.dialog = nil
+                self:closeStatusPanel()
                 self:closeInfoPanel()
             end
         end,
         tap_close_callback = function()
             if self.dialog == dialog then
                 self.dialog = nil
+                self:closeStatusPanel()
                 self:closeInfoPanel()
             end
         end,

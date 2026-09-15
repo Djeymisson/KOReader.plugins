@@ -355,7 +355,7 @@ function ShortcutDock:addToMainMenu(menu_items)
         },
         {
             text = _("Keep dock open after actions"),
-            help_text = _("Reopens the dock after actions that do not open another screen or dialog."),
+            help_text = _("Keeps the dock in place for compatible device actions and reopens it after other actions that do not open another screen or dialog."),
             checked_func = function()
                 return self:keepOpenAfterAction()
             end,
