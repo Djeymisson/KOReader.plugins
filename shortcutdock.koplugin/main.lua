@@ -1,25 +1,14 @@
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local Button = require("ui/widget/button")
-local ButtonDialog = require("ui/widget/buttondialog")
-local Blitbuffer = require("ffi/blitbuffer")
-local ConfirmBox = require("ui/widget/confirmbox")
 local DataStorage = require("datastorage")
 local Device = require("device")
 local Dispatcher = require("dispatcher")
 local Geom = require("ui/geometry")
-local GestureRange = require("ui/gesturerange")
-local HorizontalGroup = require("ui/widget/horizontalgroup")
-local HorizontalSpan = require("ui/widget/horizontalspan")
-local IconWidget = require("ui/widget/iconwidget")
 local InfoMessage = require("ui/widget/infomessage")
-local InputContainer = require("ui/widget/container/inputcontainer")
-local NetworkMgr = require("ui/network/manager")
 local Size = require("ui/size")
 local UIManager = require("ui/uimanager")
 local VerticalGroup = require("ui/widget/verticalgroup")
 local VerticalSpan = require("ui/widget/verticalspan")
-local lfs = require("libs/libkoreader-lfs")
-local time = require("ui/time")
 local util = require("util")
 local _ = require("gettext")
 
@@ -32,7 +21,7 @@ local function scaleMetric(value, factor, minimum)
     return math_max(minimum or 1, math_floor(value * factor + 0.5))
 end
 
-local PLUGIN_VERSION = "v0.13.1"
+local PLUGIN_VERSION = "v0.14.0"
 local SETTING_ACTIONS = "shortcutdock_actions"
 local SETTING_ACTION_CONTEXTS = "shortcutdock_action_contexts"
 local SETTING_AUTO_VISIBILITY = "shortcutdock_auto_visibility"
@@ -56,6 +45,7 @@ local DOCK_SIZE_FACTORS = {
     [DOCK_SIZE_MEDIUM] = 1.2,
     [DOCK_SIZE_LARGE] = 1.4,
 }
+local DOCK_METRICS_CACHE = {}
 
 local STATEFUL_ACTIONS = {
     night_mode = true,
@@ -279,11 +269,30 @@ local ACTION_ICONS = {
 
 local ICON_EXTENSIONS = { ".svg", ".png" }
 
+local MODULE_CONSTANTS = {
+    PLUGIN_VERSION = PLUGIN_VERSION,
+    ACTION_HOME = ACTION_HOME,
+    ACTION_ICONS = ACTION_ICONS,
+    ICON_EXTENSIONS = ICON_EXTENSIONS,
+    STATEFUL_ACTIONS = STATEFUL_ACTIONS,
+    ACTION_CONTEXT_ALL = ACTION_CONTEXT_ALL,
+    ACTION_CONTEXT_AUTOMATIC = ACTION_CONTEXT_AUTOMATIC,
+    ACTION_CONTEXT_READER = ACTION_CONTEXT_READER,
+    ACTION_CONTEXT_BROWSER = ACTION_CONTEXT_BROWSER,
+    SIDE_MODE_FIXED = SIDE_MODE_FIXED,
+    SIDE_MODE_GESTURE = SIDE_MODE_GESTURE,
+    DOCK_SIZE_SMALL = DOCK_SIZE_SMALL,
+    DOCK_SIZE_MEDIUM = DOCK_SIZE_MEDIUM,
+    DOCK_SIZE_LARGE = DOCK_SIZE_LARGE,
+}
+
 local function pluginDir()
     local source = debug.getinfo(1, "S").source or ""
     local path = source:match("^@(.*/)") or source:match("^(.*/)")
     return path or "plugins/shortcutdock.koplugin/"
 end
+
+local PLUGIN_DIR = pluginDir()
 
 local function copyTable(value)
     if type(value) ~= "table" then
@@ -336,10 +345,6 @@ local function actionsMatchLegacyDefault(actions, order, expected_order)
     return true
 end
 
-local function fileExists(path)
-    return lfs.attributes(path, "mode") == "file"
-end
-
 local function firstCharacters(text, count)
     local characters = util.splitToChars(text or "")
     local result = {}
@@ -378,357 +383,16 @@ local function applyButtonMetrics(button, metrics)
     return button
 end
 
-local FrontlightSlider = InputContainer:extend({})
-
-function FrontlightSlider:init()
-    self.width = self.width or Screen:scaleBySize(54)
-    self.height = math_max(1, self.height or Screen:getHeight() / 2)
-    self.slider_padding = self.slider_padding or BASE_FRONTLIGHT_SLIDER_PADDING
-    self.track_width = self.track_width or BASE_FRONTLIGHT_TRACK_WIDTH
-    self.knob_radius = self.knob_radius or BASE_FRONTLIGHT_KNOB_RADIUS
-    self.powerd = self.powerd or Device:getPowerDevice()
-    self.minimum = tonumber(self.minimum)
-        or tonumber(self.powerd and self.powerd.fl_min)
-        or 0
-    self.maximum = tonumber(self.maximum)
-        or tonumber(self.powerd and self.powerd.fl_max)
-        or 100
-    if self.maximum <= self.minimum then
-        self.maximum = self.minimum + 1
-    end
-
-    self.value = self.minimum
-    self.enabled = false
-    self:syncFromPower()
-    self.last_refresh_time = 0
-    self.dimen = Geom:new({ x = 0, y = 0, w = self.width, h = self.height })
-
-    if Device:isTouchDevice() then
-        self.ges_events = {
-            TapFrontlightSlider = {
-                GestureRange:new({ ges = "tap", range = self.dimen }),
-            },
-            PanFrontlightSlider = {
-                GestureRange:new({ ges = "pan", range = self.dimen }),
-            },
-            PanReleaseFrontlightSlider = {
-                GestureRange:new({ ges = "pan_release", range = self.dimen }),
-            },
-        }
-    end
-end
-
-function FrontlightSlider:syncFromPower(notify_state_change)
-    local was_enabled = self.enabled
-    local level_ok, level
-    if self.value_reader then
-        level_ok, level = pcall(self.value_reader, self.powerd)
-    else
-        level_ok, level = pcall(function()
-            return self.powerd:frontlightIntensity()
-        end)
-    end
-    if level_ok then
-        self.value = tonumber(level) or self.minimum
-        self.value = math_max(self.minimum, math_min(self.maximum, self.value))
-    end
-
-    local state_ok, light_on = pcall(function()
-        return self.powerd:isFrontlightOn()
-    end)
-    if state_ok then
-        self.enabled = light_on == true
-    else
-        self.enabled = self.value > self.minimum
-    end
-    if
-        notify_state_change
-        and was_enabled ~= self.enabled
-        and self.state_changed_callback
-    then
-        self.state_changed_callback(self.enabled)
-    end
-    return self.enabled
-end
-
-function FrontlightSlider:getSize()
-    return self.dimen
-end
-
-function FrontlightSlider:getTrackBounds()
-    local inset = self.slider_padding + self.knob_radius
-    local top = inset
-    local bottom = math_max(top + 1, self.height - inset)
-    return top, bottom
-end
-
-function FrontlightSlider:getLevelFromPosition(pos)
-    if not pos or not self.dimen then
-        return nil
-    end
-
-    local track_top, track_bottom = self:getTrackBounds()
-    local relative_y = math_max(track_top, math_min(track_bottom, pos.y - (self.dimen.y or 0)))
-    local percentage = (track_bottom - relative_y) / math_max(1, track_bottom - track_top)
-    return math_floor(self.minimum + percentage * (self.maximum - self.minimum) + 0.5)
-end
-
-function FrontlightSlider:refreshSlider(force)
-    local now = time.now()
-    if Screen.low_pan_rate and not force then
-        local min_interval = time.s(1 / 3)
-        if now - self.last_refresh_time < min_interval then
-            return
-        end
-    end
-    self.last_refresh_time = now
-    UIManager:setDirty(self.show_parent or self, "fast", self.dimen)
-end
-
-function FrontlightSlider:setLevelFromPosition(pos, force_refresh)
-    if not self.enabled then
-        return true
-    end
-
-    local level = self:getLevelFromPosition(pos)
-    if level == nil then
-        return true
-    end
-
-    if level ~= self.value then
-        local ok = pcall(function()
-            if self.value_writer then
-                self.value_writer(self.powerd, level)
-            else
-                -- KOReader reserves the minimum frontlight level (normally
-                -- zero) for toggling the light, which lets device-specific
-                -- PowerD implementations use their proper on/off path.
-                if level == self.minimum and type(self.powerd.toggleFrontlight) == "function" then
-                    self.powerd:toggleFrontlight()
-                else
-                    self.powerd:setIntensity(level)
-                end
-                self.powerd:updateResumeFrontlightState()
-            end
-        end)
-        if ok then
-            self:syncFromPower(true)
-        end
-    end
-    self:refreshSlider(force_refresh)
-    return true
-end
-
-function FrontlightSlider:onTapFrontlightSlider(_arg, gesture)
-    return self:setLevelFromPosition(gesture and gesture.pos, true)
-end
-
-function FrontlightSlider:onPanFrontlightSlider(_arg, gesture)
-    return self:setLevelFromPosition(gesture and gesture.pos, false)
-end
-
-function FrontlightSlider:onPanReleaseFrontlightSlider(_arg, gesture)
-    return self:setLevelFromPosition(gesture and (gesture.pos or gesture.end_pos), true)
-end
-
-function FrontlightSlider:paintTo(bb, x, y)
-    self.dimen.x = x
-    self.dimen.y = y
-    self:syncFromPower()
-
-    local border = Size.border.button
-    local radius = Size.radius.button
-    local background = Blitbuffer.COLOR_WHITE
-    local paint_rounded_rect = Blitbuffer.isColor8(background) and bb.paintRoundedRect or bb.paintRoundedRectRGB32
-    paint_rounded_rect(bb, x, y, self.width, self.height, background, radius + border)
-    bb:paintBorder(
-        x,
-        y,
-        self.width,
-        self.height,
-        border,
-        Blitbuffer.COLOR_BLACK,
-        radius,
-        G_reader_settings:nilOrTrue("anti_alias_ui")
-    )
-
-    local track_top, track_bottom = self:getTrackBounds()
-    local track_height = math_max(1, track_bottom - track_top)
-    local percentage = (self.value - self.minimum) / (self.maximum - self.minimum)
-    local knob_y = y + track_bottom - math_floor(percentage * track_height + 0.5)
-    local center_x = x + math_floor(self.width / 2)
-    local track_x = center_x - math_floor(self.track_width / 2)
-
-    local track_color = self.enabled and Blitbuffer.COLOR_GRAY or Blitbuffer.COLOR_LIGHT_GRAY
-    local active_color = self.enabled and Blitbuffer.COLOR_BLACK or Blitbuffer.COLOR_DARK_GRAY
-    bb:paintRect(track_x, y + track_top, self.track_width, track_height, track_color)
-    if knob_y < y + track_bottom then
-        bb:paintRect(
-            track_x,
-            knob_y,
-            self.track_width,
-            y + track_bottom - knob_y,
-            active_color
-        )
-    end
-    bb:paintCircle(center_x, knob_y, self.knob_radius, active_color)
-end
-
-local FrontlightToggleButton = Button:extend({})
-
-function FrontlightToggleButton:paintTo(bb, x, y)
-    self.slider:syncFromPower()
-    local icon = self.icon_provider(self.slider.enabled)
-    if icon then
-        if icon ~= self.icon or self.text ~= nil then
-            self.text = nil
-            self.icon = nil
-            self:setIcon(icon, self.width)
-        end
-    else
-        local text = self.slider.enabled and _("On") or _("Off")
-        if text ~= self.text or self.icon ~= nil then
-            self.icon = nil
-            self:setText(text, self.width)
-        end
-    end
-    Button.paintTo(self, bb, x, y)
-end
-
-local FloatingControlButtonDialog = ButtonDialog:extend({})
-
-function FloatingControlButtonDialog:init()
-    ButtonDialog.init(self)
-
-    -- ButtonDialog normally wraps its content in a MovableContainer. Keep its
-    -- anchor positioning, but remove only the gestures and shortcuts that can
-    -- move it so touches still reach the dock buttons and frontlight slider.
-    self.movable.unmovable = true
-    self.movable.is_movable_with_keys = false
-    if self.movable.ges_events then
-        self.movable.ges_events.MovableTouch = nil
-        self.movable.ges_events.MovableSwipe = nil
-        self.movable.ges_events.MovableHold = nil
-        self.movable.ges_events.MovableHoldPan = nil
-        self.movable.ges_events.MovableHoldRelease = nil
-        self.movable.ges_events.MovablePan = nil
-        self.movable.ges_events.MovablePanRelease = nil
-    end
-    if self.movable.key_events then
-        self.movable.key_events.MovePositionTop = nil
-        self.movable.key_events.MovePositionBottom = nil
-    end
-
-    if
-        not self.side_button_factory
-        and not self.frontlight_slider_factory
-        and not self.warmth_slider_factory
-    then
-        return
-    end
-
-    local dock_frame = self.movable[1]
-    local dock_size = dock_frame:getSize()
-    local dock_column = dock_frame
-    local side_button
-    local frontlight_column
-    local warmth_column
-    if self.side_button_factory then
-        side_button = self.side_button_factory(dock_size.w, self)
-        dock_column = VerticalGroup:new({
-            side_button,
-            VerticalSpan:new({ width = self.side_button_gap or BASE_SIDE_BUTTON_GAP }),
-            dock_frame,
-        })
-    end
-
-    if self.frontlight_slider_factory then
-        frontlight_column = self.frontlight_slider_factory(dock_size.h, self)
-    end
-    if self.warmth_slider_factory then
-        warmth_column = self.warmth_slider_factory(dock_size.h, self)
-    end
-
-    local accessory_columns = {}
-    if frontlight_column then
-        accessory_columns[#accessory_columns + 1] = frontlight_column
-    end
-    if warmth_column then
-        accessory_columns[#accessory_columns + 1] = warmth_column
-    end
-    if #accessory_columns > 0 then
-        local dock_column_height = dock_column:getSize().h
-        local total_height = dock_column_height
-        for index = 1, #accessory_columns do
-            total_height = math_max(total_height, accessory_columns[index]:getSize().h)
-        end
-        local aligned_dock_column = VerticalGroup:new({
-            VerticalSpan:new({ width = total_height - dock_column_height }),
-            dock_column,
-        })
-        local aligned_accessories = {}
-        for index = 1, #accessory_columns do
-            local accessory = accessory_columns[index]
-            aligned_accessories[index] = VerticalGroup:new({
-                VerticalSpan:new({ width = total_height - accessory:getSize().h }),
-                accessory,
-            })
-        end
-        local columns = {}
-        local function addColumn(column)
-            if #columns > 0 then
-                columns[#columns + 1] = HorizontalSpan:new({
-                    width = self.frontlight_slider_gap or BASE_FRONTLIGHT_SLIDER_GAP,
-                })
-            end
-            columns[#columns + 1] = column
-        end
-        if self.dock_side == "left" then
-            addColumn(aligned_dock_column)
-            for index = 1, #aligned_accessories do
-                addColumn(aligned_accessories[index])
-            end
-        else
-            for index = #aligned_accessories, 1, -1 do
-                addColumn(aligned_accessories[index])
-            end
-            addColumn(aligned_dock_column)
-        end
-        -- These are physical screen sides, so bidi mirroring must not swap the
-        -- dock and slider after their order has already been selected above.
-        columns.allow_mirroring = false
-        self.movable[1] = HorizontalGroup:new(columns)
-    else
-        self.movable[1] = dock_column
-    end
-
-    if side_button and Device:hasDPad() and self.layout then
-        table.insert(self.layout, 1, { side_button })
-    end
-    if
-        frontlight_column
-        and frontlight_column.toggle_button
-        and Device:hasDPad()
-        and self.layout
-    then
-        table.insert(self.layout, 1, { frontlight_column.toggle_button })
-    end
-    if
-        warmth_column
-        and warmth_column.info_button
-        and Device:hasDPad()
-        and self.layout
-    then
-        table.insert(self.layout, 1, { warmth_column.info_button })
-    end
-end
-
+local DockWidgets = dofile(PLUGIN_DIR .. "modules/widgets.lua")
+local LightSlider = DockWidgets.LightSlider
+local FrontlightToggleButton = DockWidgets.FrontlightToggleButton
+local FloatingControlButtonDialog = DockWidgets.FloatingControlButtonDialog
 local ShortcutDock = WidgetContainer:extend({
     name = "shortcutdock",
 })
 
 function ShortcutDock:init()
-    self.plugin_path = pluginDir()
+    self.plugin_path = PLUGIN_DIR
     self.icons_path = self.plugin_path .. "icons/"
     self.system_icon_paths = {
         DataStorage:getDataDir() .. "/icons/",
@@ -916,19 +580,6 @@ function ShortcutDock:resetActions()
     self:saveActions()
 end
 
-function ShortcutDock:showResetButtonsConfirmation(touchmenu_instance)
-    UIManager:show(ConfirmBox:new({
-        text = _("Reset the Shortcut Dock buttons and their order to the defaults?"),
-        ok_text = _("Reset"),
-        ok_callback = function()
-            self:resetActions()
-            if touchmenu_instance and touchmenu_instance.updateItems then
-                touchmenu_instance:updateItems()
-            end
-        end,
-    }))
-end
-
 function ShortcutDock:getSide()
     return G_reader_settings:readSetting(SETTING_SIDE) == "left" and "left" or "right"
 end
@@ -976,12 +627,16 @@ function ShortcutDock:setDockSize(size)
 end
 
 function ShortcutDock:getDockMetrics()
-    local factor = DOCK_SIZE_FACTORS[self:getDockSize()]
+    local dock_size = self:getDockSize()
+    if DOCK_METRICS_CACHE[dock_size] then
+        return DOCK_METRICS_CACHE[dock_size]
+    end
+    local factor = DOCK_SIZE_FACTORS[dock_size]
     local button_height = scaleMetric(BASE_BUTTON_HEIGHT, factor)
     local button_side_padding = scaleMetric(BASE_BUTTON_SIDE_PADDING, factor)
     local side_button_height = scaleMetric(BASE_SIDE_BUTTON_HEIGHT, factor)
     local side_button_padding = scaleMetric(BASE_SIDE_BUTTON_PADDING, factor)
-    return {
+    local metrics = {
         button_icon_size = scaleMetric(BASE_BUTTON_ICON_SIZE, factor),
         button_height = button_height,
         button_side_padding = button_side_padding,
@@ -1001,6 +656,8 @@ function ShortcutDock:getDockMetrics()
         frontlight_track_width = scaleMetric(BASE_FRONTLIGHT_TRACK_WIDTH, factor, 2),
         frontlight_knob_radius = scaleMetric(BASE_FRONTLIGHT_KNOB_RADIUS, factor, 5),
     }
+    DOCK_METRICS_CACHE[dock_size] = metrics
+    return metrics
 end
 
 function ShortcutDock:showSideButton()
@@ -1105,7 +762,7 @@ function ShortcutDock:makeFrontlightSlider(dock_height, dialog, metrics)
         1,
         column_height - metrics.side_button_outer_height - metrics.side_button_gap
     )
-    local slider = FrontlightSlider:new({
+    local slider = LightSlider:new({
         width = metrics.button_width,
         height = slider_height,
         slider_padding = metrics.frontlight_slider_padding,
@@ -1170,7 +827,7 @@ function ShortcutDock:makeWarmthSlider(dock_height, dialog, metrics)
         1,
         column_height - metrics.side_button_outer_height - metrics.side_button_gap
     )
-    local slider = FrontlightSlider:new({
+    local slider = LightSlider:new({
         width = metrics.button_width,
         height = slider_height,
         slider_padding = metrics.frontlight_slider_padding,
@@ -1202,293 +859,13 @@ function ShortcutDock:makeWarmthSlider(dock_height, dialog, metrics)
     return column
 end
 
-function ShortcutDock:isReaderContext()
-    return self.ui and self.ui.document ~= nil
-end
-
-function ShortcutDock:getActiveBookshelfWidget()
-    -- Use already-loaded Bookshelf modules to keep this integration optional
-    -- and avoid loading the plugin merely because Shortcut Dock is opened.
-    local BookshelfWidget = package.loaded["lib/bookshelf_widget"]
-        or package.loaded["bookshelf_widget"]
-    local live_widget = type(BookshelfWidget) == "table" and BookshelfWidget.live or nil
-    if
-        not live_widget
-        or type(UIManager.isWidgetShown) ~= "function"
-    then
-        return nil
-    end
-
-    local shown_ok, shown = pcall(UIManager.isWidgetShown, UIManager, live_widget)
-    if not shown_ok or not shown then
-        return nil
-    end
-
-    -- Bookshelf deliberately remains in UIManager's stack after a parked
-    -- reader is resumed. In that state isWidgetShown() is still true, but the
-    -- ReaderUI that owns this plugin is above Bookshelf and is the active
-    -- context. Compare both positions so search and history target the screen
-    -- actually in the foreground.
-    local stack = UIManager._window_stack
-    if type(stack) == "table" then
-        local bookshelf_index
-        local host_index
-        for index, window in ipairs(stack) do
-            local widget = type(window) == "table" and window.widget or nil
-            if widget == live_widget then
-                bookshelf_index = index
-            elseif widget == self.ui then
-                host_index = index
-            end
-        end
-
-        if not bookshelf_index then
-            return nil
-        elseif host_index then
-            return bookshelf_index > host_index and live_widget or nil
-        end
-    end
-
-    -- Compatibility fallback for UIManager implementations whose stack is
-    -- unavailable or does not expose the host widget. In reader context,
-    -- Bookshelf is active only while that reader is parked.
-    if self:isReaderContext() then
-        local Park = package.loaded["lib/bookshelf_reader_park"]
-            or package.loaded["bookshelf_reader_park"]
-        if type(Park) ~= "table" or type(Park.isParked) ~= "function" then
-            return nil
-        end
-        local parked_ok, parked = pcall(Park.isParked)
-        if not parked_ok or not parked then
-            return nil
-        end
-    end
-
-    return live_widget
-end
-
-function ShortcutDock:getParkedBookshelfContext()
-    -- Bookshelf keeps ReaderUI alive while showing its full-screen widget, so
-    -- self.ui.document alone cannot distinguish the shelf from the reader.
-    local live_widget = self:getActiveBookshelfWidget()
-    local Park = package.loaded["lib/bookshelf_reader_park"]
-        or package.loaded["bookshelf_reader_park"]
-    if
-        not live_widget
-        or type(Park) ~= "table"
-        or type(Park.isParked) ~= "function"
-        or type(Park.unpark) ~= "function"
-    then
-        return nil
-    end
-
-    local parked_ok, parked = pcall(Park.isParked)
-    if parked_ok and parked then
-        return {
-            park = Park,
-            widget = live_widget,
-        }
-    end
-end
-
-function ShortcutDock:getCurrentActionContext()
-    if self:getParkedBookshelfContext() then
-        return ACTION_CONTEXT_BROWSER
-    end
-    return self:isReaderContext() and ACTION_CONTEXT_READER or ACTION_CONTEXT_BROWSER
-end
-
-function ShortcutDock:onShortcutDockContextHome()
-    local bookshelf = self:getParkedBookshelfContext()
-    if bookshelf then
-        local ok, resumed = pcall(bookshelf.park.unpark, bookshelf.widget)
-        if not ok or resumed == false then
-            UIManager:show(InfoMessage:new({
-                text = _("Could not return to the reader."),
-            }))
-        end
-        return true
-    end
-
-    if self:isReaderContext() then
-        UIManager:broadcastEvent(require("ui/event"):new("Home"))
-    else
-        UIManager:broadcastEvent(require("ui/event"):new("OpenLastDoc"))
-    end
-    return true
-end
-
-function ShortcutDock:onShortcutDockContextSearch()
-    local bookshelf = self:getActiveBookshelfWidget()
-    if bookshelf and type(bookshelf._openSearchDialog) == "function" then
-        local ok = pcall(bookshelf._openSearchDialog, bookshelf)
-        if ok then
-            return true
-        end
-    end
-
-    local event = self:isReaderContext() and "ShowFulltextSearchInput" or "ShowFileSearch"
-    UIManager:broadcastEvent(require("ui/event"):new(event))
-    return true
-end
-
-function ShortcutDock:openBookshelfRecent()
-    local bookshelf = self:getActiveBookshelfWidget()
-    if not bookshelf then
-        return false
-    end
-
-    local select_chip = bookshelf._selectChip or bookshelf._setActiveChip
-    if type(select_chip) ~= "function" then
-        return false
-    end
-
-    local recent_id = "recent"
-    local TabModel = package.loaded["lib/bookshelf_tab_model"]
-        or package.loaded["bookshelf_tab_model"]
-    if type(TabModel) == "table" and type(TabModel.load) == "function" then
-        local loaded_ok, tabs = pcall(TabModel.load)
-        if loaded_ok and type(tabs) == "table" then
-            recent_id = nil
-            for _, tab in ipairs(tabs) do
-                if type(tab) == "table" and tab.source and tab.source.kind == "recent" then
-                    recent_id = tab.id
-                    break
-                end
-            end
-            if not recent_id then
-                return false
-            end
-        end
-    end
-
-    local ok = pcall(select_chip, bookshelf, recent_id)
-    return ok
-end
-
+dofile(PLUGIN_DIR .. "modules/context.lua")(ShortcutDock, MODULE_CONSTANTS)
 function ShortcutDock:onShowShortcutDock(gesture)
     self:showDock(1, self:getGestureSide(gesture))
     return true
 end
 
-function ShortcutDock:patchIconWidget()
-    if IconWidget._shortcutdock_original_init then
-        return
-    end
-
-    IconWidget._shortcutdock_original_init = IconWidget.init
-    local original_init = IconWidget.init
-
-    local patched_init = function(icon_widget)
-        local explicit_icon = rawget(icon_widget, "icon")
-        if type(explicit_icon) == "string" and explicit_icon:match("%.[%a%d]+$") and fileExists(explicit_icon) then
-            icon_widget.file = explicit_icon
-        end
-        return original_init(icon_widget)
-    end
-
-    IconWidget._shortcutdock_patched_init = patched_init
-    IconWidget.init = patched_init
-end
-
-function ShortcutDock:unpatchIconWidget()
-    if
-        IconWidget._shortcutdock_original_init
-        and IconWidget._shortcutdock_patched_init
-        and IconWidget.init == IconWidget._shortcutdock_patched_init
-    then
-        IconWidget.init = IconWidget._shortcutdock_original_init
-        IconWidget._shortcutdock_original_init = nil
-        IconWidget._shortcutdock_patched_init = nil
-    end
-end
-
-function ShortcutDock:isWifiOn()
-    local ok, enabled = pcall(function()
-        return NetworkMgr:isWifiOn()
-    end)
-    return ok and enabled == true
-end
-
-function ShortcutDock:isNightMode()
-    if type(Screen.night_mode) == "boolean" then
-        return Screen.night_mode
-    end
-    local ok, enabled = pcall(function()
-        return G_reader_settings:isTrue("night_mode")
-    end)
-    return ok and enabled == true
-end
-
-function ShortcutDock:getStockIcon(action_id)
-    if action_id == "toggle_wifi" then
-        return self:isWifiOn() and "wifi_on" or "wifi_off"
-    elseif action_id == "night_mode" then
-        return self:isNightMode() and "night_mode" or "day_mode"
-    end
-    if action_id == ACTION_HOME then
-        if self:getParkedBookshelfContext() then
-            return "book.opened"
-        end
-        if self:isReaderContext() then
-            return "home"
-        end
-    end
-    return ACTION_ICONS[action_id]
-end
-
-function ShortcutDock:systemIconExists(icon)
-    if not icon then
-        return false
-    end
-    for _, directory in ipairs(self.system_icon_paths) do
-        for _, extension in ipairs(ICON_EXTENSIONS) do
-            if fileExists(directory .. icon .. extension) then
-                return true
-            end
-        end
-    end
-    return false
-end
-
-function ShortcutDock:getIcon(action_id)
-    local stock_icon = self:getStockIcon(action_id)
-    local cache_key = action_id .. ":" .. (stock_icon or "")
-    local cached = self.icon_cache[cache_key]
-    if cached ~= nil then
-        return cached or nil
-    end
-
-    local candidates = {}
-    if STATEFUL_ACTIONS[action_id] then
-        if stock_icon then
-            candidates[#candidates + 1] = self.icons_path .. stock_icon .. ".svg"
-            candidates[#candidates + 1] = self.icons_path .. stock_icon .. ".png"
-        end
-    else
-        candidates[#candidates + 1] = self.icons_path .. action_id .. ".svg"
-        candidates[#candidates + 1] = self.icons_path .. action_id .. ".png"
-    end
-    if stock_icon and not STATEFUL_ACTIONS[action_id] then
-        candidates[#candidates + 1] = self.icons_path .. stock_icon .. ".svg"
-        candidates[#candidates + 1] = self.icons_path .. stock_icon .. ".png"
-    end
-
-    for _, path in ipairs(candidates) do
-        if fileExists(path) then
-            self.icon_cache[cache_key] = path
-            return path
-        end
-    end
-
-    if self:systemIconExists(stock_icon) then
-        self.icon_cache[cache_key] = stock_icon
-        return stock_icon
-    end
-
-    self.icon_cache[cache_key] = false
-end
-
+dofile(PLUGIN_DIR .. "modules/icons.lua")(ShortcutDock, MODULE_CONSTANTS)
 function ShortcutDock:getConfiguredActions()
     local configured_actions = {}
     for _, item in ipairs(Dispatcher.getDisplayList(self.actions)) do
@@ -1870,479 +1247,5 @@ function ShortcutDock:showDock(page, side)
     UIManager:show(dialog, "[ui]")
 end
 
-function ShortcutDock:getActionsMenu()
-    local menu = {}
-
-    Dispatcher:addSubMenu(self, menu, self, "actions")
-    return menu
-end
-
-function ShortcutDock:getActionVisibilityLabel(context)
-    if context == ACTION_CONTEXT_AUTOMATIC then
-        return _("Automatic")
-    elseif context == ACTION_CONTEXT_READER then
-        return _("Reader only")
-    elseif context == ACTION_CONTEXT_BROWSER then
-        return _("File browser and Bookshelf only")
-    end
-    return _("Everywhere")
-end
-
-function ShortcutDock:getActionVisibilitySummary(action_id)
-    local mode = self:getActionVisibilityMode(action_id)
-    if mode == ACTION_CONTEXT_AUTOMATIC then
-        return self:getActionVisibilityLabel(mode)
-            .. " (" .. self:getActionVisibilityLabel(self:getEffectiveActionVisibility(action_id)) .. ")"
-    end
-    return self:getActionVisibilityLabel(mode)
-end
-
-function ShortcutDock:makeActionVisibilityOption(action_id, context)
-    return {
-        text = self:getActionVisibilityLabel(context),
-        enabled_func = function()
-            return context ~= ACTION_CONTEXT_AUTOMATIC or self:automaticVisibilityEnabled()
-        end,
-        checked_func = function()
-            return self:getActionVisibilityMode(action_id) == context
-        end,
-        radio = true,
-        callback = function(touchmenu_instance)
-            self:setActionVisibility(action_id, context)
-            if touchmenu_instance and touchmenu_instance.updateItems then
-                touchmenu_instance:updateItems()
-            end
-        end,
-        keep_menu_open = true,
-    }
-end
-
-function ShortcutDock:getActionVisibilityMenu()
-    self.action_contexts = self:loadActionContexts()
-    self.auto_visibility = self:loadAutomaticVisibility()
-    local menu = {
-        {
-            text_func = function()
-                if self:automaticVisibilityEnabled() then
-                    return _("Use automatic visibility for all actions")
-                end
-                return _("Show all actions everywhere")
-            end,
-            checked_func = function()
-                return next(self.action_contexts) == nil
-            end,
-            callback = function(touchmenu_instance)
-                self:resetActionVisibility()
-                if touchmenu_instance and touchmenu_instance.updateItems then
-                    touchmenu_instance:updateItems()
-                end
-            end,
-            keep_menu_open = true,
-            separator = true,
-        },
-    }
-
-    local actions = self:getConfiguredActions()
-    if #actions == 0 then
-        menu[#menu + 1] = {
-            text = _("No Shortcut Dock actions are configured."),
-            enabled = false,
-        }
-        return menu
-    end
-
-    for _, item in ipairs(actions) do
-        local action_id = item.key
-        local action_text = tostring(item.text or action_id)
-        menu[#menu + 1] = {
-            text_func = function()
-                return action_text .. ": " .. self:getActionVisibilitySummary(action_id)
-            end,
-            sub_item_table = {
-                self:makeActionVisibilityOption(action_id, ACTION_CONTEXT_AUTOMATIC),
-                self:makeActionVisibilityOption(action_id, ACTION_CONTEXT_ALL),
-                self:makeActionVisibilityOption(action_id, ACTION_CONTEXT_READER),
-                self:makeActionVisibilityOption(action_id, ACTION_CONTEXT_BROWSER),
-            },
-        }
-    end
-    return menu
-end
-
-function ShortcutDock:getIconFilenamesMenu()
-    local light_icon_details = _("Frontlight toggle")
-        .. "\n\n" .. _("Frontlight on") .. ": light_on.svg / light_on.png"
-        .. "\n" .. _("Frontlight off") .. ": light_off.svg / light_off.png"
-    local warmth_icon_details = _("Warmth control")
-        .. "\n\nSVG: warmth.svg"
-        .. "\nPNG: warmth.png"
-    local menu = {
-        {
-            text = _("Frontlight toggle") .. ": light_on.svg / light_off.svg",
-            help_text = _("Uses a different icon for the active and inactive frontlight states."),
-            callback = function()
-                UIManager:show(InfoMessage:new({ text = light_icon_details }))
-            end,
-        },
-        {
-            text = _("Warmth control") .. ": warmth.svg",
-            help_text = _("Icon shown below the frontlight warmth slider."),
-            callback = function()
-                UIManager:show(InfoMessage:new({ text = warmth_icon_details }))
-            end,
-        },
-    }
-    local actions = self:getConfiguredActions()
-    table.insert(actions, 1, {
-        key = ACTION_HOME,
-        text = _("File browser / return to reader / open last document"),
-    })
-    for index = 1, #actions do
-        local item = actions[index]
-        local basename = tostring(item.key)
-        local svg_name = basename .. ".svg"
-        local png_name = basename .. ".png"
-        local help_text = _("Alternative PNG filename") .. ": " .. png_name
-        local details = tostring(item.text or basename)
-            .. "\n\nSVG: " .. svg_name
-            .. "\nPNG: " .. png_name
-        if item.key == "night_mode" then
-            svg_name = "day_mode.svg / night_mode.svg"
-            png_name = "day_mode.png / night_mode.png"
-            help_text = _("Uses a different icon for day and night modes.")
-            details = tostring(item.text or basename)
-                .. "\n\n" .. _("Day mode") .. ": day_mode.svg / day_mode.png"
-                .. "\n" .. _("Night mode") .. ": night_mode.svg / night_mode.png"
-        elseif item.key == "toggle_wifi" then
-            svg_name = "wifi_on.svg / wifi_off.svg"
-            png_name = "wifi_on.png / wifi_off.png"
-            help_text = _("Uses a different icon for the active and inactive Wi-Fi states.")
-            details = tostring(item.text or basename)
-                .. "\n\n" .. _("Wi-Fi on") .. ": wifi_on.svg / wifi_on.png"
-                .. "\n" .. _("Wi-Fi off") .. ": wifi_off.svg / wifi_off.png"
-        elseif item.key == ACTION_HOME then
-            help_text = help_text
-                .. "\n" .. _("Context-specific SVG filenames")
-                .. ": home.svg / book.opened.svg"
-            details = details
-                .. "\n\n" .. _("While reading") .. ": home.svg / home.png"
-                .. "\n" .. _("In the file browser") .. ": book.opened.svg / book.opened.png"
-                .. "\n" .. _("In Bookshelf with a parked reader")
-                .. ": book.opened.svg / book.opened.png"
-        end
-        menu[#menu + 1] = {
-            text = tostring(item.text or basename) .. ": " .. svg_name,
-            help_text = help_text,
-            callback = function()
-                UIManager:show(InfoMessage:new({ text = details }))
-            end,
-        }
-    end
-    if #menu == 0 then
-        menu[1] = {
-            text = _("No Shortcut Dock actions are configured."),
-            enabled = false,
-        }
-    end
-    return menu
-end
-
-function ShortcutDock:addToMainMenu(menu_items)
-    local behavior_items = {
-        {
-            text_func = function()
-                local side
-                if self:getSideMode() == SIDE_MODE_GESTURE then
-                    side = _("Follow gesture")
-                else
-                    side = self:getSide() == "left" and _("Left") or _("Right")
-                end
-                return _("Dock side") .. ": " .. side
-            end,
-            help_text = _("Choose a fixed side or place the dock on the side where its gesture started."),
-            sub_item_table = {
-                {
-                    text = _("Left"),
-                    checked_func = function()
-                        return self:getSideMode() == SIDE_MODE_FIXED and self:getSide() == "left"
-                    end,
-                    callback = function(touchmenu_instance)
-                        self:setSide("left")
-                        self:setSideMode(SIDE_MODE_FIXED)
-                        if touchmenu_instance and touchmenu_instance.updateItems then
-                            touchmenu_instance:updateItems()
-                        end
-                    end,
-                    keep_menu_open = true,
-                    radio = true,
-                },
-                {
-                    text = _("Right"),
-                    checked_func = function()
-                        return self:getSideMode() == SIDE_MODE_FIXED and self:getSide() == "right"
-                    end,
-                    callback = function(touchmenu_instance)
-                        self:setSide("right")
-                        self:setSideMode(SIDE_MODE_FIXED)
-                        if touchmenu_instance and touchmenu_instance.updateItems then
-                            touchmenu_instance:updateItems()
-                        end
-                    end,
-                    keep_menu_open = true,
-                    radio = true,
-                },
-                {
-                    text = _("Follow gesture side"),
-                    help_text = _("Places the dock on the half of the screen where the gesture started. Uses the fixed side when no gesture position is available."),
-                    checked_func = function()
-                        return self:getSideMode() == SIDE_MODE_GESTURE
-                    end,
-                    callback = function(touchmenu_instance)
-                        self:setSideMode(SIDE_MODE_GESTURE)
-                        if touchmenu_instance and touchmenu_instance.updateItems then
-                            touchmenu_instance:updateItems()
-                        end
-                    end,
-                    keep_menu_open = true,
-                    radio = true,
-                },
-            },
-        },
-        {
-            text_func = function()
-                local labels = {
-                    [DOCK_SIZE_SMALL] = _("Small"),
-                    [DOCK_SIZE_MEDIUM] = _("Medium"),
-                    [DOCK_SIZE_LARGE] = _("Large"),
-                }
-                return _("Dock size") .. ": " .. labels[self:getDockSize()]
-            end,
-            help_text = _("Change the size of the buttons, icons, pagination controls, and frontlight column."),
-            sub_item_table = {
-                {
-                    text = _("Small"),
-                    help_text = _("Uses the original Shortcut Dock dimensions."),
-                    checked_func = function()
-                        return self:getDockSize() == DOCK_SIZE_SMALL
-                    end,
-                    callback = function(touchmenu_instance)
-                        self:setDockSize(DOCK_SIZE_SMALL)
-                        if touchmenu_instance and touchmenu_instance.updateItems then
-                            touchmenu_instance:updateItems()
-                        end
-                    end,
-                    keep_menu_open = true,
-                    radio = true,
-                },
-                {
-                    text = _("Medium"),
-                    help_text = _("Increases the dock dimensions by 20 percent."),
-                    checked_func = function()
-                        return self:getDockSize() == DOCK_SIZE_MEDIUM
-                    end,
-                    callback = function(touchmenu_instance)
-                        self:setDockSize(DOCK_SIZE_MEDIUM)
-                        if touchmenu_instance and touchmenu_instance.updateItems then
-                            touchmenu_instance:updateItems()
-                        end
-                    end,
-                    keep_menu_open = true,
-                    radio = true,
-                },
-                {
-                    text = _("Large"),
-                    help_text = _("Increases the dock dimensions by 40 percent."),
-                    checked_func = function()
-                        return self:getDockSize() == DOCK_SIZE_LARGE
-                    end,
-                    callback = function(touchmenu_instance)
-                        self:setDockSize(DOCK_SIZE_LARGE)
-                        if touchmenu_instance and touchmenu_instance.updateItems then
-                            touchmenu_instance:updateItems()
-                        end
-                    end,
-                    keep_menu_open = true,
-                    radio = true,
-                },
-            },
-        },
-        {
-            text = _("Keep dock open after actions"),
-            help_text = _("Reopens the dock after actions that do not open another screen or dialog."),
-            checked_func = function()
-                return self:keepOpenAfterAction()
-            end,
-            callback = function(touchmenu_instance)
-                self:setKeepOpenAfterAction(not self:keepOpenAfterAction())
-                if touchmenu_instance and touchmenu_instance.updateItems then
-                    touchmenu_instance:updateItems()
-                end
-            end,
-            keep_menu_open = true,
-        },
-    }
-
-    local additional_control_items = {
-        {
-            text = _("Show fixed context button"),
-            help_text = _("Shows File browser while reading, Return to reader in Bookshelf, and Open last document in the file browser."),
-            checked_func = function()
-                return self:showContextButton()
-            end,
-            callback = function(touchmenu_instance)
-                self:setShowContextButton(not self:showContextButton())
-                if touchmenu_instance and touchmenu_instance.updateItems then
-                    touchmenu_instance:updateItems()
-                end
-            end,
-            keep_menu_open = true,
-        },
-        {
-            text = _("Show side-switch button"),
-            help_text = _("Shows a separate chevron button above the dock for changing sides without opening the settings."),
-            checked_func = function()
-                return self:showSideButton()
-            end,
-            callback = function(touchmenu_instance)
-                self:setShowSideButton(not self:showSideButton())
-                if touchmenu_instance and touchmenu_instance.updateItems then
-                    touchmenu_instance:updateItems()
-                end
-            end,
-            keep_menu_open = true,
-        },
-        {
-            text = _("Show frontlight control"),
-            help_text = _("Shows the brightness slider and its light toggle button beside the dock on devices with a frontlight."),
-            enabled_func = function()
-                return Device:hasFrontlight()
-            end,
-            checked_func = function()
-                return self:showFrontlightSlider()
-            end,
-            callback = function(touchmenu_instance)
-                self:setShowFrontlightSlider(not self:showFrontlightSlider())
-                if touchmenu_instance and touchmenu_instance.updateItems then
-                    touchmenu_instance:updateItems()
-                end
-            end,
-            keep_menu_open = true,
-        },
-        {
-            text = _("Show warmth control"),
-            help_text = _("Shows a second slider for the frontlight warmth on supported devices."),
-            enabled_func = function()
-                return Device:hasNaturalLight()
-            end,
-            checked_func = function()
-                return self:showWarmthSlider()
-            end,
-            callback = function(touchmenu_instance)
-                self:setShowWarmthSlider(not self:showWarmthSlider())
-                if touchmenu_instance and touchmenu_instance.updateItems then
-                    touchmenu_instance:updateItems()
-                end
-            end,
-            keep_menu_open = true,
-        },
-    }
-
-    local context_visibility_items = {
-        {
-            text = _("Automatic visibility"),
-            help_text = _("Automatically shows native reader and file-browser actions only in their relevant context. Manual choices override the automatic result."),
-            checked_func = function()
-                return self:automaticVisibilityEnabled()
-            end,
-            callback = function(touchmenu_instance)
-                self:setAutomaticVisibility(not self:automaticVisibilityEnabled())
-                if touchmenu_instance and touchmenu_instance.updateItems then
-                    touchmenu_instance:updateItems()
-                end
-            end,
-            keep_menu_open = true,
-        },
-        {
-            text = _("Per-action visibility"),
-            help_text = _("Review automatic results or override each action for all screens, the reader, or the file browser and Bookshelf."),
-            sub_item_table_func = function()
-                return self:getActionVisibilityMenu()
-            end,
-        },
-    }
-
-    menu_items.shortcutdock = {
-        text = _("Shortcut Dock"),
-        sorting_hint = "tools",
-        sub_item_table = {
-            {
-                text = _("Show Shortcut Dock"),
-                callback = function()
-                    self:showDock(1)
-                end,
-            },
-            {
-                text = _("Behavior"),
-                help_text = _("Controls where the dock opens, its size, and what happens after an action."),
-                sub_item_table = behavior_items,
-            },
-            {
-                text = _("Buttons"),
-                sub_item_table = {
-                    {
-                        text_func = function()
-                            return _("Buttons and order") .. ": " .. tostring(#self:getConfiguredActions())
-                        end,
-                        help_text = _("Choose the actions shown in the dock and arrange their order."),
-                        sub_item_table_func = function()
-                            return self:getActionsMenu()
-                        end,
-                    },
-                    {
-                        text = _("Additional controls"),
-                        help_text = _("Show or hide the fixed context button, side-switch button, and lighting controls."),
-                        sub_item_table = additional_control_items,
-                    },
-                    {
-                        text = _("Context visibility"),
-                        help_text = _("Control which actions appear in the reader, file browser, and Bookshelf."),
-                        sub_item_table = context_visibility_items,
-                    },
-                    {
-                        text = _("Expected icon filenames"),
-                        help_text = _("Shows the custom SVG and PNG filenames expected for each dock action."),
-                        sub_item_table_func = function()
-                            return self:getIconFilenamesMenu()
-                        end,
-                    },
-                    {
-                        text = _("Reset buttons to defaults"),
-                        help_text = _("Restores the initial buttons and their order without changing other Shortcut Dock settings."),
-                        callback = function(touchmenu_instance)
-                            self:showResetButtonsConfirmation(touchmenu_instance)
-                        end,
-                        separator = true,
-                    },
-                },
-            },
-            {
-                text = _("Gesture setup"),
-                help_text = _("Assign 'Show Shortcut Dock' to any gesture in KOReader's gesture manager."),
-                callback = function()
-                    UIManager:show(InfoMessage:new({
-                        text = _("Open Settings > Taps and gestures > Gesture manager, choose a gesture, then select Show Shortcut Dock."),
-                    }))
-                end,
-            },
-            {
-                text = _("Version") .. ": " .. PLUGIN_VERSION,
-                callback = function()
-                    UIManager:show(InfoMessage:new({ text = _("Shortcut Dock") .. " " .. PLUGIN_VERSION }))
-                end,
-                separator = true,
-            },
-        },
-    }
-end
-
+dofile(PLUGIN_DIR .. "modules/menu.lua")(ShortcutDock, MODULE_CONSTANTS)
 return ShortcutDock

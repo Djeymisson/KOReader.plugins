@@ -1,4 +1,4 @@
-# Shortcut Dock ![Version](https://img.shields.io/badge/version-v0.13.1-blue)
+# Shortcut Dock ![Version](https://img.shields.io/badge/version-v0.14.0-blue)
 
 Shortcut Dock adds a floating, vertical shortcut bar to KOReader. It is designed for touch devices and can be assigned to any gesture supported by KOReader.
 
@@ -71,7 +71,7 @@ The settings follow the same grouped layout as the other plugins in this reposit
   - `Expected icon filenames`: lists the custom SVG and PNG names accepted for every action.
   - `Reset buttons to defaults`: restores the initial buttons and their order after confirmation without changing the other plugin settings.
 - `Gesture setup`: displays instructions for assigning the dock to a KOReader gesture.
-- `Version: v0.13.1`: shows the installed plugin version.
+- `Version: v0.14.0`: shows the installed plugin version.
 
 The side selector and visibility options keep their menu open after a change, making it easier to review related settings.
 
@@ -163,6 +163,14 @@ Shortcut Dock stores its preferences through KOReader's reader settings using th
 | `shortcutdock_dock_size` | Selected Small, Medium, or Large dock scale |
 | `shortcutdock_keep_open_after_action` | Reopens the dock after compatible inline actions; enabled by default |
 
+## Code organization
+
+- `main.lua`: plugin lifecycle, saved state, migrations, dock sizing, pagination, and action dispatch.
+- `modules/widgets.lua`: lighting sliders, stateful frontlight button, fixed positioning, and multi-column layout.
+- `modules/context.lua`: reader, file-browser, and optional Bookshelf integration.
+- `modules/icons.lua`: custom/system icon resolution, stateful icons, and safe shared IconWidget patching.
+- `modules/menu.lua`: settings menus, action visibility controls, icon-name help, and reset confirmation.
+
 ## Installation
 
 Extract `shortcutdock.koplugin` into KOReader's `plugins` directory and restart KOReader.
@@ -173,4 +181,4 @@ Extract `shortcutdock.koplugin` into KOReader's `plugins` directory and restart 
 
 ## Version
 
-v0.13.1
+v0.14.0
