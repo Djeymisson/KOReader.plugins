@@ -1,5 +1,4 @@
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
-local Button = require("ui/widget/button")
 local DataStorage = require("datastorage")
 local Device = require("device")
 local Dispatcher = require("dispatcher")
@@ -7,8 +6,6 @@ local Geom = require("ui/geometry")
 local InfoMessage = require("ui/widget/infomessage")
 local Size = require("ui/size")
 local UIManager = require("ui/uimanager")
-local VerticalGroup = require("ui/widget/verticalgroup")
-local VerticalSpan = require("ui/widget/verticalspan")
 local util = require("util")
 local _ = require("gettext")
 
@@ -433,9 +430,6 @@ end
 
 local DockWidgets = dofile(PLUGIN_DIR .. "modules/widgets.lua")
 local InfoPanel = dofile(PLUGIN_DIR .. "modules/info_panel.lua")
-local LightSlider = DockWidgets.LightSlider
-local FrontlightToggleButton = DockWidgets.FrontlightToggleButton
-local InfoPanelToggleButton = DockWidgets.InfoPanelToggleButton
 local FloatingControlButtonDialog = DockWidgets.FloatingControlButtonDialog
 local ShortcutDock = WidgetContainer:extend({
     name = "shortcutdock",
@@ -466,6 +460,7 @@ function ShortcutDock:init()
     self.info_panel_cover_cache = nil
     self.status_panel_widget = nil
     self.status_panel_text = nil
+    self.network_info_refresh_state = nil
     self.wifi_status_generation = 0
     self.current_page = 1
 
@@ -499,6 +494,17 @@ function ShortcutDock:onClose()
     InfoPanel.clearCoverCache(self)
     self:saveActions()
     self:unpatchIconWidget()
+end
+
+-- On Kindle, the screensaver is shown immediately before KOReader broadcasts
+-- Suspend. Close every dock-owned overlay when that broadcast reaches the
+-- plugin, otherwise a later refresh may paint an information/status panel on
+-- top of the sleep screen. Do not return true: the power event must continue
+-- to the other listeners.
+function ShortcutDock:onSuspend()
+    if self.dialog or self.info_panel_widget or self.status_panel_widget then
+        self:closeDock()
+    end
 end
 
 function ShortcutDock:onFlushSettings()
@@ -897,6 +903,24 @@ function ShortcutDock:showInfoPanelToggleButton()
     return self:showReadingInfoPanel() and self:showNetworkInfoPanel()
 end
 
+function ShortcutDock:replaceInfoPanel(kind, metrics)
+    metrics = metrics or self:getDockMetrics()
+    local previous_widget = self.info_panel_widget
+    local data = self:collectInfoPanelData(kind, metrics)
+    local widget = self:createInfoPanelOverlay(data, metrics)
+
+    self.info_panel_widget = nil
+    self.info_panel_data = nil
+    if previous_widget then
+        UIManager:close(previous_widget)
+    end
+
+    self.info_panel_data = data
+    self.info_panel_widget = widget
+    UIManager:show(widget, "[ui]")
+    return widget
+end
+
 function ShortcutDock:switchInfoPanel(kind)
     if
         not self.dialog
@@ -908,20 +932,9 @@ function ShortcutDock:switchInfoPanel(kind)
     end
 
     self.current_info_panel_kind = kind
+    self.network_info_refresh_state = nil
     self:closeStatusPanel()
-    local previous_widget = self.info_panel_widget
-    self.info_panel_widget = nil
-    self.info_panel_data = nil
-    if previous_widget then
-        UIManager:close(previous_widget)
-    end
-
-    local metrics = self:getDockMetrics()
-    local data = self:collectInfoPanelData(kind, metrics)
-    local widget = self:createInfoPanelOverlay(data, metrics)
-    self.info_panel_data = data
-    self.info_panel_widget = widget
-    UIManager:show(widget, "[ui]")
+    self:replaceInfoPanel(kind)
     local toggle_button = self.dialog and self.dialog.info_panel_toggle_button
     if toggle_button and toggle_button.dimen then
         UIManager:setDirty(self.dialog, "ui", toggle_button.dimen)
@@ -940,19 +953,8 @@ function ShortcutDock:refreshVisibleNetworkInfoPanel(network_state)
         return false
     end
 
-    local previous_widget = self.info_panel_widget
-    local metrics = self:getDockMetrics()
-    local data = self:collectInfoPanelData("network", metrics)
-    local widget = self:createInfoPanelOverlay(data, metrics)
-
-    self.info_panel_widget = nil
-    self.info_panel_data = nil
-    UIManager:close(previous_widget)
-
-    self.info_panel_data = data
-    self.info_panel_widget = widget
+    self:replaceInfoPanel("network")
     self.network_info_refresh_state = network_state
-    UIManager:show(widget, "[ui]")
     return true
 end
 
@@ -964,140 +966,6 @@ function ShortcutDock:setCloseDockTogether(enabled)
     G_reader_settings:saveSetting(SETTING_CLOSE_TOGETHER, enabled and true or false)
 end
 
-function ShortcutDock:getFrontlightSliderHeight(dock_height)
-    return math_max(1, tonumber(dock_height) or 1)
-end
-
-function ShortcutDock:makeFrontlightToggleButton(width, dialog, slider, metrics)
-    local powerd = slider.powerd
-    local function getStateIcon()
-        return self:getIcon(slider.enabled and "light_on" or "light_off")
-    end
-
-    local icon = getStateIcon()
-    local config = applyHighlightedButtonMetrics({
-        id = "shortcutdock_toggle_frontlight",
-        enabled = true,
-        show_parent = dialog,
-        slider = slider,
-        icon_provider = function()
-            return getStateIcon()
-        end,
-        callback = function()
-            local toggled = pcall(function()
-                powerd:toggleFrontlight()
-                powerd:updateResumeFrontlightState()
-            end)
-            if toggled then
-                slider:syncFromPower(true)
-            end
-        end,
-        hold_callback = function()
-            local message = slider.enabled and _("Turn frontlight off") or _("Turn frontlight on")
-            self:showButtonHelp(message)
-        end,
-    }, width, metrics)
-    if icon then
-        config.icon = icon
-    else
-        config.text = slider.enabled and _("On") or _("Off")
-    end
-    return FrontlightToggleButton:new(config)
-end
-
-function ShortcutDock:makeFrontlightSlider(dock_height, dialog, metrics)
-    local column_height = self:getFrontlightSliderHeight(dock_height)
-    local slider_height = math_max(
-        1,
-        column_height - metrics.side_button_outer_height - metrics.side_button_gap
-    )
-    local slider = LightSlider:new({
-        width = metrics.button_width,
-        height = slider_height,
-        slider_padding = metrics.frontlight_slider_padding,
-        track_width = metrics.frontlight_track_width,
-        knob_radius = metrics.frontlight_knob_radius,
-        powerd = Device:getPowerDevice(),
-        show_parent = dialog,
-    })
-    local toggle_button = self:makeFrontlightToggleButton(
-        metrics.button_width,
-        dialog,
-        slider,
-        metrics
-    )
-    slider.state_changed_callback = function()
-        UIManager:setDirty(dialog, "ui")
-    end
-    local column = VerticalGroup:new({
-        slider,
-        VerticalSpan:new({ width = metrics.side_button_gap }),
-        toggle_button,
-    })
-    column.toggle_button = toggle_button
-    return column
-end
-
-function ShortcutDock:makeWarmthInfoButton(width, dialog, slider, metrics)
-    local function showWarmthLevel()
-        slider:syncFromPower()
-        self:showButtonHelp(_("Warmth") .. ": " .. tostring(slider.value))
-    end
-    local icon = self:getIcon("warmth")
-    local config = applyHighlightedButtonMetrics({
-        id = "shortcutdock_frontlight_warmth",
-        enabled = true,
-        show_parent = dialog,
-        callback = showWarmthLevel,
-        hold_callback = showWarmthLevel,
-    }, width, metrics)
-    if icon then
-        config.icon = icon
-    else
-        config.text = _("W")
-    end
-    return Button:new(config)
-end
-
-function ShortcutDock:makeWarmthSlider(dock_height, dialog, metrics)
-    local powerd = Device:getPowerDevice()
-    local column_height = self:getFrontlightSliderHeight(dock_height)
-    local slider_height = math_max(
-        1,
-        column_height - metrics.side_button_outer_height - metrics.side_button_gap
-    )
-    local slider = LightSlider:new({
-        width = metrics.button_width,
-        height = slider_height,
-        slider_padding = metrics.frontlight_slider_padding,
-        track_width = metrics.frontlight_track_width,
-        knob_radius = metrics.frontlight_knob_radius,
-        powerd = powerd,
-        minimum = tonumber(powerd.fl_warmth_min) or 0,
-        maximum = tonumber(powerd.fl_warmth_max) or 100,
-        value_reader = function(active_powerd)
-            return active_powerd:toNativeWarmth(active_powerd:frontlightWarmth())
-        end,
-        value_writer = function(active_powerd, native_warmth)
-            active_powerd:setWarmth(active_powerd:fromNativeWarmth(native_warmth))
-        end,
-        show_parent = dialog,
-    })
-    local info_button = self:makeWarmthInfoButton(
-        metrics.button_width,
-        dialog,
-        slider,
-        metrics
-    )
-    local column = VerticalGroup:new({
-        slider,
-        VerticalSpan:new({ width = metrics.side_button_gap }),
-        info_button,
-    })
-    column.info_button = info_button
-    return column
-end
-
 dofile(PLUGIN_DIR .. "modules/context.lua")(ShortcutDock, MODULE_CONSTANTS)
 function ShortcutDock:onShowShortcutDock(gesture)
     self:showDock(1, self:getGestureSide(gesture))
@@ -1105,6 +973,14 @@ function ShortcutDock:onShowShortcutDock(gesture)
 end
 
 dofile(PLUGIN_DIR .. "modules/icons.lua")(ShortcutDock, MODULE_CONSTANTS)
+dofile(PLUGIN_DIR .. "modules/controls.lua")(ShortcutDock, {
+    action_home = ACTION_HOME,
+    stateful_actions = STATEFUL_ACTIONS,
+    apply_button_metrics = applyButtonMetrics,
+    apply_highlighted_button_metrics = applyHighlightedButtonMetrics,
+    make_fallback_label = makeFallbackLabel,
+    widgets = DockWidgets,
+})
 function ShortcutDock:getConfiguredActions()
     local configured_actions = {}
     for _, item in ipairs(Dispatcher.getDisplayList(self.actions)) do
@@ -1200,6 +1076,7 @@ function ShortcutDock:closeInfoPanel()
     local info_panel_widget = self.info_panel_widget
     self.info_panel_widget = nil
     self.info_panel_data = nil
+    self.network_info_refresh_state = nil
     if info_panel_widget then
         UIManager:close(info_panel_widget)
     end
@@ -1222,6 +1099,7 @@ function ShortcutDock:closeDock()
     self.dialog = nil
     self.info_panel_widget = nil
     self.info_panel_data = nil
+    self.network_info_refresh_state = nil
     self.status_panel_widget = nil
     self.status_panel_text = nil
 
@@ -1287,201 +1165,6 @@ function ShortcutDock:executeAction(action_id)
             Dispatcher:execute({ [action_id] = value })
         end
     end)
-end
-
-function ShortcutDock:refreshStatefulActionButton(action_id)
-    if not STATEFUL_ACTIONS[action_id] or not self.dialog then
-        return
-    end
-    local dialog = self.dialog
-    local button = dialog:getButtonById("shortcutdock_" .. action_id)
-    if not button then
-        return
-    end
-
-    local icon = self:getIcon(action_id)
-    if icon and icon ~= button.icon then
-        button:setIcon(icon, button.width)
-        UIManager:setDirty(dialog, "ui")
-    end
-end
-
-function ShortcutDock:makeActionButton(item, metrics)
-    local icon = self:getIcon(item.key)
-    local button = {
-        id = "shortcutdock_" .. item.key,
-        enabled = true,
-        callback = function()
-            -- Wi-Fi and night mode run against the active host without
-            -- replacing the dock. Every other Dispatcher action closes it.
-            self:executeAction(item.key)
-        end,
-        hold_callback = function()
-            self:showButtonHelp(item.text)
-        end,
-    }
-    if icon then
-        button.icon = icon
-    else
-        button.text = makeFallbackLabel(item.text, item.key)
-        button.font_size = metrics.fallback_font_size
-        button.font_bold = true
-    end
-    return applyButtonMetrics(button, metrics)
-end
-
-function ShortcutDock:makeContextButton(metrics)
-    local bookshelf = self:getParkedBookshelfContext()
-    local in_reader = self:isReaderContext()
-    local text
-    if bookshelf then
-        text = _("Return to reader")
-    elseif in_reader then
-        text = _("File browser")
-    else
-        text = _("Open last document")
-    end
-    local icon = self:getIcon(ACTION_HOME)
-    local button = {
-        id = "shortcutdock_context_home",
-        enabled = true,
-        callback = function()
-            self:closeDock()
-            UIManager:scheduleIn(0.05, function()
-                self:onShortcutDockContextHome()
-            end)
-        end,
-        hold_callback = function()
-            self:showButtonHelp(text)
-        end,
-    }
-    if icon then
-        button.icon = icon
-    else
-        button.text = makeFallbackLabel(text, ACTION_HOME)
-        button.font_size = metrics.fallback_font_size
-        button.font_bold = true
-    end
-    return applyButtonMetrics(button, metrics)
-end
-
-function ShortcutDock:makePageButton(direction, target_page, metrics)
-    local is_next = direction == "next"
-    local icon = self:getIcon(is_next and "chevron-up" or "chevron-down")
-    local button = {
-        id = is_next and "shortcutdock_next" or "shortcutdock_previous",
-        enabled = true,
-        callback = function()
-            self:showDock(target_page, self.current_dock_side, self.info_panel_data)
-        end,
-        hold_callback = function()
-            self:showButtonHelp(
-                is_next and _("Show next dock page") or _("Show previous dock page")
-            )
-        end,
-    }
-    if icon then
-        button.icon = icon
-    else
-        button.text = is_next and "↑" or "↓"
-        button.font_size = metrics.page_font_size
-    end
-    return applyButtonMetrics(button, metrics)
-end
-
-function ShortcutDock:makeSideButton(width, dialog, metrics)
-    local current_side = self.current_dock_side or self:getSide()
-    local target_side = current_side == "left" and "right" or "left"
-    local icon = self:getIcon("chevron-" .. target_side)
-    local button = applyHighlightedButtonMetrics({
-        id = "shortcutdock_switch_side",
-        enabled = true,
-        show_parent = dialog,
-        callback = function()
-            local page = self.current_page
-            local info_panel_data = self.info_panel_data
-            self:setSide(target_side)
-            UIManager:scheduleIn(0.05, function()
-                self:showDock(page, target_side, info_panel_data)
-            end)
-        end,
-        hold_callback = function()
-            local message = target_side == "left"
-                and _("Move dock to the left")
-                or _("Move dock to the right")
-            self:showButtonHelp(message)
-        end,
-    }, width, metrics)
-    if icon then
-        button.icon = icon
-    else
-        button.text = target_side == "left" and "←" or "→"
-        button.text_font_size = metrics.side_font_size
-        button.text_font_bold = true
-    end
-    return Button:new(button)
-end
-
-function ShortcutDock:makeCloseButton(width, dialog, metrics)
-    local icon = self:getIcon("close")
-    local button = applyHighlightedButtonMetrics({
-        id = "shortcutdock_close",
-        enabled = true,
-        show_parent = dialog,
-        callback = function()
-            self:closeDock()
-        end,
-        hold_callback = function()
-            self:showButtonHelp(_("Close Shortcut Dock"))
-        end,
-    }, width, metrics)
-    if icon then
-        button.icon = icon
-    else
-        button.text = _("Close")
-        button.text_font_size = metrics.fallback_font_size
-        button.text_font_bold = true
-    end
-    return Button:new(button)
-end
-
-function ShortcutDock:getInfoPanelToggleDisplay()
-    if self.current_info_panel_kind == "network" then
-        return self:getIcon("network_info"), _("N")
-    end
-    return self:getIcon("reading_info"), _("R")
-end
-
-function ShortcutDock:makeInfoPanelToggleButton(width, dialog, metrics)
-    local icon, fallback = self:getInfoPanelToggleDisplay()
-    local button = applyHighlightedButtonMetrics({
-        id = "shortcutdock_switch_info_panel",
-        enabled = true,
-        show_parent = dialog,
-        display_provider = function()
-            return self:getInfoPanelToggleDisplay()
-        end,
-        callback = function()
-            local target = self.current_info_panel_kind == "network"
-                and "reading"
-                or "network"
-            self:switchInfoPanel(target)
-        end,
-        hold_callback = function()
-            local message = self.current_info_panel_kind == "network"
-                and _("Showing network information. Tap to show reading information.")
-                or _("Showing reading information. Tap to show network information.")
-            self:showButtonHelp(message)
-        end,
-    }, width, metrics)
-    if icon then
-        button.icon = icon
-    else
-        button.text = fallback
-        button.text_font_size = metrics.side_font_size
-        button.text_font_bold = true
-    end
-    return InfoPanelToggleButton:new(button)
 end
 
 function ShortcutDock:showDock(page, side, info_panel_data)

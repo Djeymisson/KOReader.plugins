@@ -5,6 +5,40 @@ local InfoMessage = require("ui/widget/infomessage")
 local UIManager = require("ui/uimanager")
 local _ = require("gettext")
 
+local function refreshMenu(touchmenu_instance)
+    if touchmenu_instance and touchmenu_instance.updateItems then
+        touchmenu_instance:updateItems()
+    end
+end
+
+local function makeRadioOption(text, help_text, checked_func, select_callback)
+    return {
+        text = text,
+        help_text = help_text,
+        checked_func = checked_func,
+        callback = function(touchmenu_instance)
+            select_callback()
+            refreshMenu(touchmenu_instance)
+        end,
+        keep_menu_open = true,
+        radio = true,
+    }
+end
+
+local function makeToggleOption(text, help_text, checked_func, set_callback, enabled_func)
+    return {
+        text = text,
+        help_text = help_text,
+        enabled_func = enabled_func,
+        checked_func = checked_func,
+        callback = function(touchmenu_instance)
+            set_callback(not checked_func())
+            refreshMenu(touchmenu_instance)
+        end,
+        keep_menu_open = true,
+    }
+end
+
 return function(ShortcutDock, constants)
     local ACTION_CONTEXT_ALL = constants.ACTION_CONTEXT_ALL
     local ACTION_CONTEXT_AUTOMATIC = constants.ACTION_CONTEXT_AUTOMATIC
@@ -24,48 +58,49 @@ return function(ShortcutDock, constants)
     local INFO_PANEL_TEXT_SCREEN_EDGE = constants.INFO_PANEL_TEXT_SCREEN_EDGE
     local PLUGIN_VERSION = constants.PLUGIN_VERSION
 
-function ShortcutDock:showResetButtonsConfirmation(touchmenu_instance)
+local function showResetConfirmation(plugin, touchmenu_instance, text, ok_text, reset_callback)
     UIManager:show(ConfirmBox:new({
-        text = _("Reset the Shortcut Dock buttons and their order to the defaults?"),
-        ok_text = _("Reset"),
+        text = text,
+        ok_text = ok_text,
         ok_callback = function()
-            self:resetActions()
-            if touchmenu_instance and touchmenu_instance.updateItems then
-                touchmenu_instance:updateItems()
-            end
+            reset_callback(plugin)
+            refreshMenu(touchmenu_instance)
         end,
     }))
+end
+
+function ShortcutDock:showResetButtonsConfirmation(touchmenu_instance)
+    showResetConfirmation(
+        self,
+        touchmenu_instance,
+        _("Reset the Shortcut Dock buttons and their order to the defaults?"),
+        _("Reset"),
+        self.resetActions
+    )
 end
 
 function ShortcutDock:showResetBehaviorConfirmation(touchmenu_instance)
-    UIManager:show(ConfirmBox:new({
-        text = _("Reset Shortcut Dock behavior to its defaults? Your buttons and their order will be kept."),
-        ok_text = _("Reset"),
-        ok_callback = function()
-            self:resetBehavior()
-            if touchmenu_instance and touchmenu_instance.updateItems then
-                touchmenu_instance:updateItems()
-            end
-        end,
-    }))
+    showResetConfirmation(
+        self,
+        touchmenu_instance,
+        _("Reset Shortcut Dock behavior to its defaults? Your buttons and their order will be kept."),
+        _("Reset"),
+        self.resetBehavior
+    )
 end
 
 function ShortcutDock:showResetBehaviorAndButtonsConfirmation(touchmenu_instance)
-    UIManager:show(ConfirmBox:new({
-        text = _("Reset Shortcut Dock behavior and buttons to their defaults? Appearance settings will be kept."),
-        ok_text = _("Reset all"),
-        ok_callback = function()
-            self:resetBehaviorAndButtons()
-            if touchmenu_instance and touchmenu_instance.updateItems then
-                touchmenu_instance:updateItems()
-            end
-        end,
-    }))
+    showResetConfirmation(
+        self,
+        touchmenu_instance,
+        _("Reset Shortcut Dock behavior and buttons to their defaults? Appearance settings will be kept."),
+        _("Reset all"),
+        self.resetBehaviorAndButtons
+    )
 end
 
 function ShortcutDock:getActionsMenu()
     local menu = {}
-
     Dispatcher:addSubMenu(self, menu, self, "actions")
     return menu
 end
@@ -91,23 +126,20 @@ function ShortcutDock:getActionVisibilitySummary(action_id)
 end
 
 function ShortcutDock:makeActionVisibilityOption(action_id, context)
-    return {
-        text = self:getActionVisibilityLabel(context),
-        enabled_func = function()
-            return context ~= ACTION_CONTEXT_AUTOMATIC or self:automaticVisibilityEnabled()
-        end,
-        checked_func = function()
+    local option = makeRadioOption(
+        self:getActionVisibilityLabel(context),
+        nil,
+        function()
             return self:getActionVisibilityMode(action_id) == context
         end,
-        radio = true,
-        callback = function(touchmenu_instance)
+        function()
             self:setActionVisibility(action_id, context)
-            if touchmenu_instance and touchmenu_instance.updateItems then
-                touchmenu_instance:updateItems()
-            end
-        end,
-        keep_menu_open = true,
-    }
+        end
+    )
+    option.enabled_func = function()
+        return context ~= ACTION_CONTEXT_AUTOMATIC or self:automaticVisibilityEnabled()
+    end
+    return option
 end
 
 function ShortcutDock:getActionVisibilityMenu()
@@ -116,19 +148,16 @@ function ShortcutDock:getActionVisibilityMenu()
     local menu = {
         {
             text_func = function()
-                if self:automaticVisibilityEnabled() then
-                    return _("Use automatic visibility for all actions")
-                end
-                return _("Show all actions everywhere")
+                return self:automaticVisibilityEnabled()
+                    and _("Use automatic visibility for all actions")
+                    or _("Show all actions everywhere")
             end,
             checked_func = function()
                 return next(self.action_contexts) == nil
             end,
             callback = function(touchmenu_instance)
                 self:resetActionVisibility()
-                if touchmenu_instance and touchmenu_instance.updateItems then
-                    touchmenu_instance:updateItems()
-                end
+                refreshMenu(touchmenu_instance)
             end,
             keep_menu_open = true,
             separator = true,
@@ -162,83 +191,73 @@ function ShortcutDock:getActionVisibilityMenu()
     return menu
 end
 
-function ShortcutDock:getIconFilenamesMenu()
-    local close_icon_details = _("Close button")
-        .. "\n\nSVG: close.svg"
-        .. "\nPNG: close.png"
-    local light_icon_details = _("Frontlight toggle")
-        .. "\n\n" .. _("Frontlight on") .. ": light_on.svg / light_on.png"
-        .. "\n" .. _("Frontlight off") .. ": light_off.svg / light_off.png"
-    local warmth_icon_details = _("Warmth control")
-        .. "\n\nSVG: warmth.svg"
-        .. "\nPNG: warmth.png"
-    local panel_toggle_icon_details = _("Information panel switch")
-        .. "\n\n" .. _("Reading information")
-        .. ": reading_info.svg / reading_info.png"
-        .. "\n" .. _("Network information")
-        .. ": network_info.svg / network_info.png"
-    local menu = {
-        {
-            text = _("Close button") .. ": close.svg",
-            help_text = _("Icon shown in the separate button that closes the dock."),
-            callback = function()
-                UIManager:show(InfoMessage:new({ text = close_icon_details }))
-            end,
-        },
-        {
-            text = _("Frontlight toggle") .. ": light_on.svg / light_off.svg",
-            help_text = _("Uses a different icon for the active and inactive frontlight states."),
-            callback = function()
-                UIManager:show(InfoMessage:new({ text = light_icon_details }))
-            end,
-        },
-        {
-            text = _("Warmth control") .. ": warmth.svg",
-            help_text = _("Icon shown below the frontlight warmth slider."),
-            callback = function()
-                UIManager:show(InfoMessage:new({ text = warmth_icon_details }))
-            end,
-        },
-        {
-            text = _("Information panel switch")
-                .. ": reading_info.svg / network_info.svg",
-            help_text = _("Uses a dedicated icon for the visible reading or network information panel."),
-            callback = function()
-                UIManager:show(InfoMessage:new({ text = panel_toggle_icon_details }))
-            end,
-        },
+local function makeIconInfoItem(text, help_text, details)
+    return {
+        text = text,
+        help_text = help_text,
+        callback = function()
+            UIManager:show(InfoMessage:new({ text = details }))
+        end,
     }
+end
+
+function ShortcutDock:getIconFilenamesMenu()
+    local menu = {
+        makeIconInfoItem(
+            _("Close button") .. ": close.svg",
+            _("Icon shown in the separate button that closes the dock."),
+            _("Close button") .. "\n\nSVG: close.svg\nPNG: close.png"
+        ),
+        makeIconInfoItem(
+            _("Frontlight toggle") .. ": light_on.svg / light_off.svg",
+            _("Uses a different icon for the active and inactive frontlight states."),
+            _("Frontlight toggle")
+                .. "\n\n" .. _("Frontlight on") .. ": light_on.svg / light_on.png"
+                .. "\n" .. _("Frontlight off") .. ": light_off.svg / light_off.png"
+        ),
+        makeIconInfoItem(
+            _("Warmth control") .. ": warmth.svg",
+            _("Icon shown below the frontlight warmth slider."),
+            _("Warmth control") .. "\n\nSVG: warmth.svg\nPNG: warmth.png"
+        ),
+        makeIconInfoItem(
+            _("Information panel switch") .. ": reading_info.svg / network_info.svg",
+            _("Uses a dedicated icon for the visible reading or network information panel."),
+            _("Information panel switch")
+                .. "\n\n" .. _("Reading information")
+                .. ": reading_info.svg / reading_info.png"
+                .. "\n" .. _("Network information")
+                .. ": network_info.svg / network_info.png"
+        ),
+    }
+    menu[#menu].separator = true
+
     local actions = self:getConfiguredActions()
     table.insert(actions, 1, {
         key = ACTION_HOME,
         text = _("File browser / return to reader / open last document"),
     })
-    for index = 1, #actions do
-        local item = actions[index]
+    for _, item in ipairs(actions) do
         local basename = tostring(item.key)
         local svg_name = basename .. ".svg"
-        local png_name = basename .. ".png"
-        local help_text = _("Alternative PNG filename") .. ": " .. png_name
+        local help_text = _("Alternative PNG filename") .. ": " .. basename .. ".png"
         local details = tostring(item.text or basename)
             .. "\n\nSVG: " .. svg_name
-            .. "\nPNG: " .. png_name
+            .. "\nPNG: " .. basename .. ".png"
         if item.key == "night_mode" then
             svg_name = "day_mode.svg / night_mode.svg"
-            png_name = "day_mode.png / night_mode.png"
             help_text = _("Uses a different icon for day and night modes.")
             details = tostring(item.text or basename)
                 .. "\n\n" .. _("Day mode") .. ": day_mode.svg / day_mode.png"
                 .. "\n" .. _("Night mode") .. ": night_mode.svg / night_mode.png"
         elseif item.key == "toggle_wifi" then
             svg_name = "wifi_on.svg / wifi_off.svg"
-            png_name = "wifi_on.png / wifi_off.png"
             help_text = _("Uses a different icon for the active and inactive Wi-Fi states.")
             details = tostring(item.text or basename)
                 .. "\n\n" .. _("Wi-Fi on") .. ": wifi_on.svg / wifi_on.png"
                 .. "\n" .. _("Wi-Fi off") .. ": wifi_off.svg / wifi_off.png"
         elseif item.key == ACTION_HOME then
             svg_name = "exit_reader.svg / last_doc.svg"
-            png_name = "exit_reader.png / last_doc.png"
             help_text = _("Uses a different icon inside and outside the reader.")
             details = tostring(item.text or basename)
                 .. "\n\n" .. _("While reading") .. ": exit_reader.svg / exit_reader.png"
@@ -246,555 +265,357 @@ function ShortcutDock:getIconFilenamesMenu()
                 .. "\n" .. _("In Bookshelf with a parked reader")
                 .. ": last_doc.svg / last_doc.png"
         end
-        menu[#menu + 1] = {
-            text = tostring(item.text or basename) .. ": " .. svg_name,
-            help_text = help_text,
-            callback = function()
-                UIManager:show(InfoMessage:new({ text = details }))
-            end,
-        }
-    end
-    if #menu == 0 then
-        menu[1] = {
-            text = _("No Shortcut Dock actions are configured."),
-            enabled = false,
-        }
+        menu[#menu + 1] = makeIconInfoItem(
+            tostring(item.text or basename) .. ": " .. svg_name,
+            help_text,
+            details
+        )
     end
     return menu
 end
 
-function ShortcutDock:addToMainMenu(menu_items)
-    local behavior_items = {
-        {
-            text_func = function()
-                local side
-                if self:getSideMode() == SIDE_MODE_GESTURE then
-                    side = _("Follow gesture")
-                else
-                    side = self:getSide() == "left" and _("Left") or _("Right")
+function ShortcutDock:getBehaviorMenu()
+    local side_item = {
+        text_func = function()
+            local side = self:getSideMode() == SIDE_MODE_GESTURE
+                and _("Follow gesture")
+                or (self:getSide() == "left" and _("Left") or _("Right"))
+            return _("Dock side") .. ": " .. side
+        end,
+        help_text = _("Choose a fixed side or place the dock on the side where its gesture started."),
+        sub_item_table = {
+            makeRadioOption(
+                _("Left"), nil,
+                function()
+                    return self:getSideMode() == SIDE_MODE_FIXED and self:getSide() == "left"
+                end,
+                function()
+                    self:setSide("left")
+                    self:setSideMode(SIDE_MODE_FIXED)
                 end
-                return _("Dock side") .. ": " .. side
-            end,
-            help_text = _("Choose a fixed side or place the dock on the side where its gesture started."),
-            sub_item_table = {
-                {
-                    text = _("Left"),
-                    checked_func = function()
-                        return self:getSideMode() == SIDE_MODE_FIXED and self:getSide() == "left"
-                    end,
-                    callback = function(touchmenu_instance)
-                        self:setSide("left")
-                        self:setSideMode(SIDE_MODE_FIXED)
-                        if touchmenu_instance and touchmenu_instance.updateItems then
-                            touchmenu_instance:updateItems()
-                        end
-                    end,
-                    keep_menu_open = true,
-                    radio = true,
-                },
-                {
-                    text = _("Right"),
-                    checked_func = function()
-                        return self:getSideMode() == SIDE_MODE_FIXED and self:getSide() == "right"
-                    end,
-                    callback = function(touchmenu_instance)
-                        self:setSide("right")
-                        self:setSideMode(SIDE_MODE_FIXED)
-                        if touchmenu_instance and touchmenu_instance.updateItems then
-                            touchmenu_instance:updateItems()
-                        end
-                    end,
-                    keep_menu_open = true,
-                    radio = true,
-                },
-                {
-                    text = _("Follow gesture side"),
-                    help_text = _("Places the dock on the half of the screen where the gesture started. Uses the fixed side when no gesture position is available."),
-                    checked_func = function()
-                        return self:getSideMode() == SIDE_MODE_GESTURE
-                    end,
-                    callback = function(touchmenu_instance)
-                        self:setSideMode(SIDE_MODE_GESTURE)
-                        if touchmenu_instance and touchmenu_instance.updateItems then
-                            touchmenu_instance:updateItems()
-                        end
-                    end,
-                    keep_menu_open = true,
-                    radio = true,
-                },
-            },
+            ),
+            makeRadioOption(
+                _("Right"), nil,
+                function()
+                    return self:getSideMode() == SIDE_MODE_FIXED and self:getSide() == "right"
+                end,
+                function()
+                    self:setSide("right")
+                    self:setSideMode(SIDE_MODE_FIXED)
+                end
+            ),
+            makeRadioOption(
+                _("Follow gesture side"),
+                _("Places the dock on the half of the screen where the gesture started. Uses the fixed side when no gesture position is available."),
+                function()
+                    return self:getSideMode() == SIDE_MODE_GESTURE
+                end,
+                function()
+                    self:setSideMode(SIDE_MODE_GESTURE)
+                end
+            ),
         },
+    }
+
+    local closing_item = {
+        text_func = function()
+            local mode = self:closeDockTogether()
+                and _("All blocks at once")
+                or _("One block at a time")
+            return _("Dock and panel closing") .. ": " .. mode
+        end,
+        help_text = _("Choose whether the dock and its panels disappear in the same repaint cycle or close separately."),
+        sub_item_table = {
+            makeRadioOption(
+                _("One block at a time"),
+                _("Closes each visible block separately, using the original sequential behavior."),
+                function() return not self:closeDockTogether() end,
+                function() self:setCloseDockTogether(false) end
+            ),
+            makeRadioOption(
+                _("All blocks at once"),
+                _("Closes all blocks with one non-flashing update over the smallest rectangle that contains them."),
+                function() return self:closeDockTogether() end,
+                function() self:setCloseDockTogether(true) end
+            ),
+        },
+    }
+    return { side_item, closing_item }
+end
+
+function ShortcutDock:getDockControlsMenu()
+    return {
+        makeToggleOption(
+            _("Show reader/browser button"),
+            _("Shows the first dock button: it opens the file browser while reading, returns from Bookshelf to the reader, or opens the last document from the file browser."),
+            function() return self:showContextButton() end,
+            function(enabled) self:setShowContextButton(enabled) end
+        ),
+        makeToggleOption(
+            _("Show side-switch button"),
+            _("Shows a separate chevron button above the dock for changing sides without opening the settings."),
+            function() return self:showSideButton() end,
+            function(enabled) self:setShowSideButton(enabled) end
+        ),
+        makeToggleOption(
+            _("Show close button"),
+            _("Shows a separate close button above the dock using close.svg."),
+            function() return self:showCloseButton() end,
+            function(enabled) self:setShowCloseButton(enabled) end
+        ),
+    }
+end
+
+function ShortcutDock:getActionSettingsMenu()
+    return {
         {
             text_func = function()
-                local labels = {
-                    [DOCK_SIZE_SMALL] = _("Small"),
-                    [DOCK_SIZE_MEDIUM] = _("Medium"),
-                    [DOCK_SIZE_LARGE] = _("Large"),
-                }
-                return _("Dock scale") .. ": " .. labels[self:getDockSize()]
+                return _("Buttons and order") .. ": " .. tostring(#self:getConfiguredActions())
             end,
-            help_text = _("Change the size of the buttons, icons, pagination controls, and frontlight column."),
-            sub_item_table = {
-                {
-                    text = _("Small"),
-                    help_text = _("Uses the original Shortcut Dock dimensions."),
-                    checked_func = function()
-                        return self:getDockSize() == DOCK_SIZE_SMALL
-                    end,
-                    callback = function(touchmenu_instance)
-                        self:setDockSize(DOCK_SIZE_SMALL)
-                        if touchmenu_instance and touchmenu_instance.updateItems then
-                            touchmenu_instance:updateItems()
-                        end
-                    end,
-                    keep_menu_open = true,
-                    radio = true,
-                },
-                {
-                    text = _("Medium"),
-                    help_text = _("Increases the dock dimensions by 20 percent."),
-                    checked_func = function()
-                        return self:getDockSize() == DOCK_SIZE_MEDIUM
-                    end,
-                    callback = function(touchmenu_instance)
-                        self:setDockSize(DOCK_SIZE_MEDIUM)
-                        if touchmenu_instance and touchmenu_instance.updateItems then
-                            touchmenu_instance:updateItems()
-                        end
-                    end,
-                    keep_menu_open = true,
-                    radio = true,
-                },
-                {
-                    text = _("Large"),
-                    help_text = _("Increases the dock dimensions by 40 percent."),
-                    checked_func = function()
-                        return self:getDockSize() == DOCK_SIZE_LARGE
-                    end,
-                    callback = function(touchmenu_instance)
-                        self:setDockSize(DOCK_SIZE_LARGE)
-                        if touchmenu_instance and touchmenu_instance.updateItems then
-                            touchmenu_instance:updateItems()
-                        end
-                    end,
-                    keep_menu_open = true,
-                    radio = true,
-                },
-            },
+            help_text = _("Choose the actions shown in the dock and arrange their order."),
+            sub_item_table_func = function()
+                return self:getActionsMenu()
+            end,
         },
         {
-            text_func = function()
-                local mode = self:closeDockTogether()
-                    and _("All blocks at once")
-                    or _("One block at a time")
-                return _("Dock and panel closing") .. ": " .. mode
+            text = _("Dock controls"),
+            help_text = _("Show or hide the reader/browser, side-switch, and close controls."),
+            sub_item_table_func = function()
+                return self:getDockControlsMenu()
             end,
-            help_text = _("Choose whether the dock and its panels disappear in the same repaint cycle or close separately."),
+        },
+        {
+            text = _("Action visibility"),
+            help_text = _("Control which actions appear in the reader, file browser, and Bookshelf."),
             sub_item_table = {
+                makeToggleOption(
+                    _("Automatic visibility"),
+                    _("Automatically shows native reader and file-browser actions only in their relevant context. Manual choices override the automatic result."),
+                    function() return self:automaticVisibilityEnabled() end,
+                    function(enabled) self:setAutomaticVisibility(enabled) end
+                ),
                 {
-                    text = _("One block at a time"),
-                    help_text = _("Closes each visible block separately, using the original sequential behavior."),
-                    checked_func = function()
-                        return not self:closeDockTogether()
+                    text = _("Per-action visibility"),
+                    help_text = _("Review automatic results or override each action for all screens, the reader, or the file browser and Bookshelf."),
+                    sub_item_table_func = function()
+                        return self:getActionVisibilityMenu()
                     end,
-                    callback = function(touchmenu_instance)
-                        self:setCloseDockTogether(false)
-                        if touchmenu_instance and touchmenu_instance.updateItems then
-                            touchmenu_instance:updateItems()
-                        end
-                    end,
-                    keep_menu_open = true,
-                    radio = true,
-                },
-                {
-                    text = _("All blocks at once"),
-                    help_text = _("Closes all blocks with one non-flashing update over the smallest rectangle that contains them."),
-                    checked_func = function()
-                        return self:closeDockTogether()
-                    end,
-                    callback = function(touchmenu_instance)
-                        self:setCloseDockTogether(true)
-                        if touchmenu_instance and touchmenu_instance.updateItems then
-                            touchmenu_instance:updateItems()
-                        end
-                    end,
-                    keep_menu_open = true,
-                    radio = true,
                 },
             },
         },
     }
+end
 
-    local additional_control_items = {
-        {
-            text = _("Show reader/browser button"),
-            help_text = _("Shows the first dock button: it opens the file browser while reading, returns from Bookshelf to the reader, or opens the last document from the file browser."),
-            checked_func = function()
-                return self:showContextButton()
-            end,
-            callback = function(touchmenu_instance)
-                self:setShowContextButton(not self:showContextButton())
-                if touchmenu_instance and touchmenu_instance.updateItems then
-                    touchmenu_instance:updateItems()
-                end
-            end,
-            keep_menu_open = true,
+function ShortcutDock:getDockLayoutMenu()
+    local size_labels = {
+        [DOCK_SIZE_SMALL] = _("Small"),
+        [DOCK_SIZE_MEDIUM] = _("Medium"),
+        [DOCK_SIZE_LARGE] = _("Large"),
+    }
+    local scale_item = {
+        text_func = function()
+            return _("Dock scale") .. ": " .. size_labels[self:getDockSize()]
+        end,
+        help_text = _("Change the size of buttons, icons, pagination controls, and lighting columns."),
+        sub_item_table = {
+            makeRadioOption(
+                _("Small"), _("Uses the original Shortcut Dock dimensions."),
+                function() return self:getDockSize() == DOCK_SIZE_SMALL end,
+                function() self:setDockSize(DOCK_SIZE_SMALL) end
+            ),
+            makeRadioOption(
+                _("Medium"), _("Increases the dock dimensions by 20 percent."),
+                function() return self:getDockSize() == DOCK_SIZE_MEDIUM end,
+                function() self:setDockSize(DOCK_SIZE_MEDIUM) end
+            ),
+            makeRadioOption(
+                _("Large"), _("Increases the dock dimensions by 40 percent."),
+                function() return self:getDockSize() == DOCK_SIZE_LARGE end,
+                function() self:setDockSize(DOCK_SIZE_LARGE) end
+            ),
         },
-        {
-            text = _("Show side-switch button"),
-            help_text = _("Shows a separate chevron button above the dock for changing sides without opening the settings."),
-            checked_func = function()
-                return self:showSideButton()
-            end,
-            callback = function(touchmenu_instance)
-                self:setShowSideButton(not self:showSideButton())
-                if touchmenu_instance and touchmenu_instance.updateItems then
-                    touchmenu_instance:updateItems()
-                end
-            end,
-            keep_menu_open = true,
+    }
+    local height_item = {
+        text_func = function()
+            return _("Maximum dock height") .. ": " .. self:getMaxActionDockHeight() .. "%"
+        end,
+        help_text = _("Limits the action and lighting columns to the selected percentage of the screen and paginates buttons when necessary."),
+        sub_item_table = {
+            makeRadioOption(
+                "100%", nil,
+                function() return self:getMaxActionDockHeight() == MAX_ACTION_DOCK_HEIGHT_100 end,
+                function() self:setMaxActionDockHeight(MAX_ACTION_DOCK_HEIGHT_100) end
+            ),
+            makeRadioOption(
+                "60%", nil,
+                function() return self:getMaxActionDockHeight() == MAX_ACTION_DOCK_HEIGHT_60 end,
+                function() self:setMaxActionDockHeight(MAX_ACTION_DOCK_HEIGHT_60) end
+            ),
+            makeRadioOption(
+                "33%", nil,
+                function() return self:getMaxActionDockHeight() == MAX_ACTION_DOCK_HEIGHT_33 end,
+                function() self:setMaxActionDockHeight(MAX_ACTION_DOCK_HEIGHT_33) end
+            ),
         },
-        {
-            text = _("Show close button"),
-            help_text = _("Shows a separate close button above the dock using close.svg."),
-            checked_func = function()
-                return self:showCloseButton()
-            end,
-            callback = function(touchmenu_instance)
-                self:setShowCloseButton(not self:showCloseButton())
-                if touchmenu_instance and touchmenu_instance.updateItems then
-                    touchmenu_instance:updateItems()
-                end
-            end,
-            keep_menu_open = true,
-        },
-        {
-            text = _("Show reading information"),
-            help_text = _("Shows book, chapter, daily reading, clock, and battery information on the screen edge opposite the dock."),
-            checked_func = function()
-                return self:showReadingInfoPanel()
-            end,
-            callback = function(touchmenu_instance)
-                self:setShowReadingInfoPanel(not self:showReadingInfoPanel())
-                if touchmenu_instance and touchmenu_instance.updateItems then
-                    touchmenu_instance:updateItems()
-                end
-            end,
-            keep_menu_open = true,
-        },
-        {
-            text = _("Show network information"),
-            help_text = _("Shows Wi-Fi state and the network details reported by KOReader in the information panel."),
-            checked_func = function()
-                return self:showNetworkInfoPanel()
-            end,
-            callback = function(touchmenu_instance)
-                self:setShowNetworkInfoPanel(not self:showNetworkInfoPanel())
-                if touchmenu_instance and touchmenu_instance.updateItems then
-                    touchmenu_instance:updateItems()
-                end
-            end,
-            keep_menu_open = true,
-        },
-        {
-            text = _("Show book cover at the top"),
-            help_text = _("Shows the open book's cover above the reading information. The thumbnail is loaded once and reused while the document remains open."),
-            enabled_func = function()
-                return self:showReadingInfoPanel()
-            end,
-            checked_func = function()
-                return self:showInfoPanelCover()
-            end,
-            callback = function(touchmenu_instance)
-                self:setShowInfoPanelCover(not self:showInfoPanelCover())
-                if touchmenu_instance and touchmenu_instance.updateItems then
-                    touchmenu_instance:updateItems()
-                end
-            end,
-            keep_menu_open = true,
-        },
+    }
+    return { scale_item, height_item }
+end
+
+function ShortcutDock:getInformationPanelMenu()
+    local alignment_labels = {
+        [INFO_PANEL_TEXT_LEFT] = _("Left"),
+        [INFO_PANEL_TEXT_CENTER] = _("Center"),
+        [INFO_PANEL_TEXT_SCREEN_EDGE] = _("Nearest screen edge"),
+    }
+    return {
+        makeToggleOption(
+            _("Show reading information"),
+            _("Shows book, chapter, daily reading, clock, and battery information on the screen edge opposite the dock."),
+            function() return self:showReadingInfoPanel() end,
+            function(enabled) self:setShowReadingInfoPanel(enabled) end
+        ),
+        makeToggleOption(
+            _("Show network information"),
+            _("Shows Wi-Fi state and the network details reported by KOReader in the information panel."),
+            function() return self:showNetworkInfoPanel() end,
+            function(enabled) self:setShowNetworkInfoPanel(enabled) end
+        ),
+        makeToggleOption(
+            _("Show book cover at the top"),
+            _("Shows the open book's cover above the reading information. The thumbnail is loaded once and reused while the document remains open."),
+            function() return self:showInfoPanelCover() end,
+            function(enabled) self:setShowInfoPanelCover(enabled) end,
+            function() return self:showReadingInfoPanel() end
+        ),
         {
             text_func = function()
-                local labels = {
-                    [INFO_PANEL_TEXT_LEFT] = _("Left"),
-                    [INFO_PANEL_TEXT_CENTER] = _("Center"),
-                    [INFO_PANEL_TEXT_SCREEN_EDGE] = _("Nearest screen edge"),
-                }
                 return _("Panel text alignment")
-                    .. ": " .. labels[self:getInfoPanelTextAlignment()]
+                    .. ": " .. alignment_labels[self:getInfoPanelTextAlignment()]
             end,
             help_text = _("Aligns every line in the selected information panel, including the clock and battery."),
-            enabled_func = function()
-                return self:showInfoPanel()
-            end,
+            enabled_func = function() return self:showInfoPanel() end,
             sub_item_table = {
-                {
-                    text = _("Left"),
-                    checked_func = function()
-                        return self:getInfoPanelTextAlignment() == INFO_PANEL_TEXT_LEFT
-                    end,
-                    callback = function(touchmenu_instance)
-                        self:setInfoPanelTextAlignment(INFO_PANEL_TEXT_LEFT)
-                        if touchmenu_instance and touchmenu_instance.updateItems then
-                            touchmenu_instance:updateItems()
-                        end
-                    end,
-                    keep_menu_open = true,
-                    radio = true,
-                },
-                {
-                    text = _("Center"),
-                    checked_func = function()
-                        return self:getInfoPanelTextAlignment() == INFO_PANEL_TEXT_CENTER
-                    end,
-                    callback = function(touchmenu_instance)
-                        self:setInfoPanelTextAlignment(INFO_PANEL_TEXT_CENTER)
-                        if touchmenu_instance and touchmenu_instance.updateItems then
-                            touchmenu_instance:updateItems()
-                        end
-                    end,
-                    keep_menu_open = true,
-                    radio = true,
-                },
-                {
-                    text = _("Nearest screen edge"),
-                    help_text = _("Aligns left on the left edge and right on the right edge."),
-                    checked_func = function()
+                makeRadioOption(
+                    _("Left"), nil,
+                    function() return self:getInfoPanelTextAlignment() == INFO_PANEL_TEXT_LEFT end,
+                    function() self:setInfoPanelTextAlignment(INFO_PANEL_TEXT_LEFT) end
+                ),
+                makeRadioOption(
+                    _("Center"), nil,
+                    function() return self:getInfoPanelTextAlignment() == INFO_PANEL_TEXT_CENTER end,
+                    function() self:setInfoPanelTextAlignment(INFO_PANEL_TEXT_CENTER) end
+                ),
+                makeRadioOption(
+                    _("Nearest screen edge"),
+                    _("Aligns left on the left edge and right on the right edge."),
+                    function()
                         return self:getInfoPanelTextAlignment() == INFO_PANEL_TEXT_SCREEN_EDGE
                     end,
-                    callback = function(touchmenu_instance)
-                        self:setInfoPanelTextAlignment(INFO_PANEL_TEXT_SCREEN_EDGE)
-                        if touchmenu_instance and touchmenu_instance.updateItems then
-                            touchmenu_instance:updateItems()
-                        end
-                    end,
-                    keep_menu_open = true,
-                    radio = true,
-                },
+                    function() self:setInfoPanelTextAlignment(INFO_PANEL_TEXT_SCREEN_EDGE) end
+                ),
             },
         },
-        {
-            text = _("Show frontlight control"),
-            help_text = _("Shows the brightness slider and its light toggle button beside the dock on devices with a frontlight."),
-            enabled_func = function()
-                return Device:hasFrontlight()
-            end,
-            checked_func = function()
-                return self:showFrontlightSlider()
-            end,
-            callback = function(touchmenu_instance)
-                self:setShowFrontlightSlider(not self:showFrontlightSlider())
-                if touchmenu_instance and touchmenu_instance.updateItems then
-                    touchmenu_instance:updateItems()
-                end
-            end,
-            keep_menu_open = true,
-        },
-        {
-            text = _("Show warmth control"),
-            help_text = _("Shows a second slider for the frontlight warmth on supported devices."),
-            enabled_func = function()
-                return Device:hasNaturalLight()
-            end,
-            checked_func = function()
-                return self:showWarmthSlider()
-            end,
-            callback = function(touchmenu_instance)
-                self:setShowWarmthSlider(not self:showWarmthSlider())
-                if touchmenu_instance and touchmenu_instance.updateItems then
-                    touchmenu_instance:updateItems()
-                end
-            end,
-            keep_menu_open = true,
-        },
     }
+end
 
-    local dock_size_item = behavior_items[2]
-    local max_action_dock_height_item = {
-        text_func = function()
-            return _("Maximum dock height")
-                .. ": " .. self:getMaxActionDockHeight() .. "%"
-        end,
-        help_text = _("Limits the action and lighting columns to the selected percentage of the screen and paginates the buttons when necessary."),
-        sub_item_table = {
-            {
-                text = "100%",
-                checked_func = function()
-                    return self:getMaxActionDockHeight() == MAX_ACTION_DOCK_HEIGHT_100
-                end,
-                callback = function(touchmenu_instance)
-                    self:setMaxActionDockHeight(MAX_ACTION_DOCK_HEIGHT_100)
-                    if touchmenu_instance and touchmenu_instance.updateItems then
-                        touchmenu_instance:updateItems()
-                    end
-                end,
-                keep_menu_open = true,
-                radio = true,
-            },
-            {
-                text = "60%",
-                checked_func = function()
-                    return self:getMaxActionDockHeight() == MAX_ACTION_DOCK_HEIGHT_60
-                end,
-                callback = function(touchmenu_instance)
-                    self:setMaxActionDockHeight(MAX_ACTION_DOCK_HEIGHT_60)
-                    if touchmenu_instance and touchmenu_instance.updateItems then
-                        touchmenu_instance:updateItems()
-                    end
-                end,
-                keep_menu_open = true,
-                radio = true,
-            },
-            {
-                text = "33%",
-                checked_func = function()
-                    return self:getMaxActionDockHeight() == MAX_ACTION_DOCK_HEIGHT_33
-                end,
-                callback = function(touchmenu_instance)
-                    self:setMaxActionDockHeight(MAX_ACTION_DOCK_HEIGHT_33)
-                    if touchmenu_instance and touchmenu_instance.updateItems then
-                        touchmenu_instance:updateItems()
-                    end
-                end,
-                keep_menu_open = true,
-                radio = true,
-            },
+function ShortcutDock:getLightingControlsMenu()
+    return {
+        makeToggleOption(
+            _("Show frontlight control"),
+            _("Shows the brightness slider and its light toggle button beside the dock on devices with a frontlight."),
+            function() return self:showFrontlightSlider() end,
+            function(enabled) self:setShowFrontlightSlider(enabled) end,
+            function() return Device:hasFrontlight() end
+        ),
+        makeToggleOption(
+            _("Show warmth control"),
+            _("Shows a second slider for frontlight warmth on supported devices."),
+            function() return self:showWarmthSlider() end,
+            function(enabled) self:setShowWarmthSlider(enabled) end,
+            function() return Device:hasNaturalLight() end
+        ),
+    }
+end
+
+function ShortcutDock:getAppearanceMenu()
+    return {
+        {
+            text = _("Dock layout"),
+            help_text = _("Adjust the scale and maximum height of the dock."),
+            sub_item_table_func = function() return self:getDockLayoutMenu() end,
         },
-    }
-    behavior_items = {
-        behavior_items[1],
-        behavior_items[3],
-    }
-    local action_button_items = {
-        additional_control_items[1],
-        additional_control_items[2],
-        additional_control_items[3],
-    }
-    local appearance_items = {
-        dock_size_item,
-        max_action_dock_height_item,
         {
             text = _("Information panel"),
-            help_text = _("Choose reading and network content for the opposite-edge panel."),
-            sub_item_table = {
-                additional_control_items[4],
-                additional_control_items[5],
-                additional_control_items[6],
-                additional_control_items[7],
-            },
+            help_text = _("Choose the content and text alignment of the opposite-edge panel."),
+            sub_item_table_func = function() return self:getInformationPanelMenu() end,
         },
         {
             text = _("Lighting controls"),
             help_text = _("Show or hide the frontlight brightness and warmth columns."),
-            sub_item_table = {
-                additional_control_items[8],
-                additional_control_items[9],
-            },
+            sub_item_table_func = function() return self:getLightingControlsMenu() end,
         },
         {
             text = _("Expected icon filenames"),
             help_text = _("Shows the custom SVG and PNG filenames expected for each dock action."),
-            sub_item_table_func = function()
-                return self:getIconFilenamesMenu()
-            end,
+            sub_item_table_func = function() return self:getIconFilenamesMenu() end,
         },
     }
+end
 
-    local context_visibility_items = {
+function ShortcutDock:getResetMenu()
+    return {
         {
-            text = _("Automatic visibility"),
-            help_text = _("Automatically shows native reader and file-browser actions only in their relevant context. Manual choices override the automatic result."),
-            checked_func = function()
-                return self:automaticVisibilityEnabled()
-            end,
+            text = _("Reset behavior to defaults"),
+            help_text = _("Restores gesture-following placement, right-side fallback, and one-block-at-a-time closing without changing actions, buttons, or appearance."),
             callback = function(touchmenu_instance)
-                self:setAutomaticVisibility(not self:automaticVisibilityEnabled())
-                if touchmenu_instance and touchmenu_instance.updateItems then
-                    touchmenu_instance:updateItems()
-                end
+                self:showResetBehaviorConfirmation(touchmenu_instance)
             end,
-            keep_menu_open = true,
         },
         {
-            text = _("Per-action visibility"),
-            help_text = _("Review automatic results or override each action for all screens, the reader, or the file browser and Bookshelf."),
-            sub_item_table_func = function()
-                return self:getActionVisibilityMenu()
+            text = _("Reset buttons to defaults"),
+            help_text = _("Restores the initial buttons and their order without changing other Shortcut Dock settings."),
+            callback = function(touchmenu_instance)
+                self:showResetButtonsConfirmation(touchmenu_instance)
+            end,
+        },
+        {
+            text = _("Reset behavior and buttons"),
+            help_text = _("Restores behavior, dock controls, default actions, order, and action visibility while keeping appearance settings."),
+            callback = function(touchmenu_instance)
+                self:showResetBehaviorAndButtonsConfirmation(touchmenu_instance)
             end,
         },
     }
+end
 
+function ShortcutDock:addToMainMenu(menu_items)
     menu_items.shortcutdock = {
         text = _("Shortcut Dock"),
         sorting_hint = "tools",
         sub_item_table = {
             {
                 text = _("Show Shortcut Dock"),
-                callback = function()
-                    self:showDock(1)
-                end,
+                callback = function() self:showDock(1) end,
             },
             {
                 text = _("Behavior"),
-                help_text = _("Controls where the dock opens and how its blocks close."),
-                sub_item_table = behavior_items,
+                help_text = _("Controls where the dock opens and how its visible blocks close."),
+                sub_item_table_func = function() return self:getBehaviorMenu() end,
             },
             {
                 text = _("Actions and buttons"),
-                help_text = _("Configure actions, fixed buttons, ordering, and contextual visibility."),
-                sub_item_table = {
-                    {
-                        text_func = function()
-                            return _("Buttons and order") .. ": " .. tostring(#self:getConfiguredActions())
-                        end,
-                        help_text = _("Choose the actions shown in the dock and arrange their order."),
-                        sub_item_table_func = function()
-                            return self:getActionsMenu()
-                        end,
-                    },
-                    {
-                        text = _("Fixed buttons"),
-                        help_text = _("Show or hide the reader/browser, side-switch, and close buttons."),
-                        sub_item_table = action_button_items,
-                    },
-                    {
-                        text = _("Context visibility"),
-                        help_text = _("Control which actions appear in the reader, file browser, and Bookshelf."),
-                        sub_item_table = context_visibility_items,
-                    },
-                },
+                help_text = _("Configure actions, dock controls, ordering, and contextual visibility."),
+                sub_item_table_func = function() return self:getActionSettingsMenu() end,
             },
             {
                 text = _("Appearance"),
-                help_text = _("Controls dock scale and maximum height, visible panels, lighting columns, and custom icons."),
-                sub_item_table = appearance_items,
+                help_text = _("Controls dock layout, information panels, lighting columns, and custom icons."),
+                sub_item_table_func = function() return self:getAppearanceMenu() end,
             },
             {
                 text = _("Reset"),
-                help_text = _("Restore the default behavior, with or without resetting the buttons."),
-                sub_item_table = {
-                    {
-                        text = _("Reset behavior to defaults"),
-                        help_text = _("Restores gesture-following placement, right-side fallback, and one-block-at-a-time closing without changing actions, buttons, or appearance."),
-                        callback = function(touchmenu_instance)
-                            self:showResetBehaviorConfirmation(touchmenu_instance)
-                        end,
-                    },
-                    {
-                        text = _("Reset buttons to defaults"),
-                        help_text = _("Restores the initial buttons and their order without changing other Shortcut Dock settings."),
-                        callback = function(touchmenu_instance)
-                            self:showResetButtonsConfirmation(touchmenu_instance)
-                        end,
-                    },
-                    {
-                        text = _("Reset behavior and buttons"),
-                        help_text = _("Restores behavior, fixed buttons, default actions, order, and action visibility while keeping appearance settings."),
-                        callback = function(touchmenu_instance)
-                            self:showResetBehaviorAndButtonsConfirmation(touchmenu_instance)
-                        end,
-                    },
-                },
+                help_text = _("Restore default behavior, with or without resetting buttons."),
+                sub_item_table_func = function() return self:getResetMenu() end,
             },
             {
                 text = _("Gesture setup"),
@@ -808,7 +629,9 @@ function ShortcutDock:addToMainMenu(menu_items)
             {
                 text = _("Version") .. ": " .. PLUGIN_VERSION,
                 callback = function()
-                    UIManager:show(InfoMessage:new({ text = _("Shortcut Dock") .. " " .. PLUGIN_VERSION }))
+                    UIManager:show(InfoMessage:new({
+                        text = _("Shortcut Dock") .. " " .. PLUGIN_VERSION,
+                    }))
                 end,
                 separator = true,
             },

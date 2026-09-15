@@ -63,18 +63,19 @@ The settings follow the same grouped layout as the other plugins in this reposit
 - `Behavior`: controls where the dock opens and how its visible blocks close.
   - `Dock side: <current side>`: selects `Left`, `Right`, or `Follow gesture side`. Following the gesture is enabled by default, and the configured fixed side is used as a fallback when the dock is opened without gesture coordinates.
   - `Dock and panel closing`: selects `One block at a time` (the default sequential behavior) or `All blocks at once` (one non-flashing update over the smallest rectangle containing the visible elements).
-- `Actions and buttons`: controls configurable actions, fixed buttons, and context visibility.
+- `Actions and buttons`: controls configurable actions, dock controls, and context visibility.
   - `Buttons and order`: opens KOReader's native action selector and shows the current number of configured actions.
-  - `Fixed buttons`:
+  - `Dock controls`:
     - `Show reader/browser button`: shows the first dock button; it opens the file browser while reading, opens the last document from the file browser, and returns from Bookshelf to the reader.
     - `Show side-switch button`: shows a separate chevron above the dock that changes its side without opening the settings.
     - `Show close button`: shows a separate close control above the dock. Fixed external controls remain stacked above the action column.
-  - `Context visibility`:
+  - `Action visibility`:
     - `Automatic visibility`: automatically separates native reader and file-browser actions.
     - `Per-action visibility`: displays the automatic result and controls manual overrides for each action.
 - `Appearance`: controls scale, visible panels and columns, and icon customization.
-  - `Dock scale: <current scale>`: selects `Small`, `Medium`, or `Large`. The selected scale applies to the buttons, icons, chevrons, lighting columns, information panel, and pagination calculation.
-  - `Maximum dock height: <current percentage>`: limits the action, brightness, and warmth columns to approximately `100%`, `60%`, or `33%` of the screen height. Buttons are paginated when they reach the selected limit; the exact height can vary slightly to preserve complete button rows and usable navigation controls. The default is `100%`.
+  - `Dock layout`:
+    - `Dock scale: <current scale>`: selects `Small`, `Medium`, or `Large`. The selected scale applies to the buttons, icons, chevrons, lighting columns, information panel, and pagination calculation.
+    - `Maximum dock height: <current percentage>`: limits the action, brightness, and warmth columns to approximately `100%`, `60%`, or `33%` of the screen height. Buttons are paginated when they reach the selected limit; the exact height can vary slightly to preserve complete button rows and usable navigation controls. The default is `100%`.
   - `Information panel`:
     - `Show reading information`: shows or hides the Mini Receipt-inspired reading content. Enabled by default.
     - `Show network information`: shows or hides Wi-Fi state and KOReader's interface, MAC, SSID, IP, gateway, and connectivity details. Disabled by default.
@@ -109,14 +110,14 @@ Open **Tools > Shortcut Dock > Actions and buttons > Buttons and order**. KORead
 
 Selecting **Nothing** removes every configurable action and remains effective when switching between the file browser and reader. The reader/browser button may still be displayed independently when its visibility option is enabled.
 
-Open **Tools > Shortcut Dock > Actions and buttons > Context visibility > Per-action visibility** to choose one of these options for each configured action:
+Open **Tools > Shortcut Dock > Actions and buttons > Action visibility > Per-action visibility** to choose one of these options for each configured action:
 
 - **Automatic**: uses the native-action classification when automatic visibility is enabled.
 - **Everywhere**: displays the action in every supported screen; this is the default when automatic visibility is disabled.
 - **Reader only**: displays the action only while a document is open.
 - **File browser and Bookshelf only**: displays the action in the file browser and in Bookshelf, including when Bookshelf is covering a parked reader.
 
-Enable **Tools > Shortcut Dock > Actions and buttons > Context visibility > Automatic visibility** to classify native KOReader actions automatically. Book map, Table of contents, Bookmarks, reading navigation, typography, and document-layout actions are treated as reader-only. File search, folder navigation, sorting, and file-browser display actions are treated as file-browser and Bookshelf only. General actions such as Wi-Fi, lighting, history, and power controls remain available everywhere.
+Enable **Tools > Shortcut Dock > Actions and buttons > Action visibility > Automatic visibility** to classify native KOReader actions automatically. Book map, Table of contents, Bookmarks, reading navigation, typography, and document-layout actions are treated as reader-only. File search, folder navigation, sorting, and file-browser display actions are treated as file-browser and Bookshelf only. General actions such as Wi-Fi, lighting, history, and power controls remain available everywhere.
 
 Manual selections always override the automatic result. Unknown actions and actions registered by other plugins default to **Everywhere**. At the top of the visibility menu, **Use automatic visibility for all actions** clears manual overrides when automatic mode is enabled; with automatic mode disabled, the same command is shown as **Show all actions everywhere**.
 
@@ -211,8 +212,9 @@ Shortcut Dock stores its preferences through KOReader's reader settings using th
 
 ## Code organization
 
-- `main.lua`: plugin lifecycle, saved state, migrations, dock sizing, pagination, and action dispatch.
-- `modules/widgets.lua`: external close, side-switch, and information-panel controls, lighting sliders, stateful buttons, fixed positioning, and multi-column layout.
+- `main.lua`: plugin lifecycle, saved state, migrations, dock sizing, pagination, information-panel coordination, and action dispatch.
+- `modules/controls.lua`: action, context, pagination, side-switch, close, information-panel, frontlight, and warmth control factories.
+- `modules/widgets.lua`: low-level slider and button widget classes, fixed positioning, and multi-column layout.
 - `modules/info_panel.lua`: safe collection and opposite-edge rendering of reading and network details, covers, statistics, clock, battery, and transient status panels.
 - `modules/inline_actions.lua`: in-place night-mode and Wi-Fi execution, including Wi-Fi progress redirection and timeout handling.
 - `modules/context.lua`: reader, file-browser, and optional Bookshelf integration.
