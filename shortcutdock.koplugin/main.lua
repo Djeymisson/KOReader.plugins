@@ -27,7 +27,11 @@ local math_floor = math.floor
 local math_max = math.max
 local math_min = math.min
 
-local PLUGIN_VERSION = "v0.8.2"
+local function scaleMetric(value, factor, minimum)
+    return math_max(minimum or 1, math_floor(value * factor + 0.5))
+end
+
+local PLUGIN_VERSION = "v0.11.0"
 local SETTING_ACTIONS = "shortcutdock_actions"
 local SETTING_ACTION_CONTEXTS = "shortcutdock_action_contexts"
 local SETTING_AUTO_VISIBILITY = "shortcutdock_auto_visibility"
@@ -36,32 +40,43 @@ local SETTING_SIDE_MODE = "shortcutdock_side_mode"
 local SETTING_SHOW_SIDE_BUTTON = "shortcutdock_show_side_button"
 local SETTING_SHOW_CONTEXT_BUTTON = "shortcutdock_show_context_button"
 local SETTING_SHOW_FRONTLIGHT_SLIDER = "shortcutdock_show_frontlight_slider"
+local SETTING_DOCK_SIZE = "shortcutdock_dock_size"
+local SETTING_KEEP_OPEN_AFTER_ACTION = "shortcutdock_keep_open_after_action"
 
 local SIDE_MODE_FIXED = "fixed"
 local SIDE_MODE_GESTURE = "gesture"
+
+local DOCK_SIZE_SMALL = "small"
+local DOCK_SIZE_MEDIUM = "medium"
+local DOCK_SIZE_LARGE = "large"
+local DOCK_SIZE_FACTORS = {
+    [DOCK_SIZE_SMALL] = 1,
+    [DOCK_SIZE_MEDIUM] = 1.2,
+    [DOCK_SIZE_LARGE] = 1.4,
+}
+
+local STATEFUL_ACTIONS = {
+    night_mode = true,
+    toggle_wifi = true,
+}
 
 local ACTION_CONTEXT_ALL = "all"
 local ACTION_CONTEXT_AUTOMATIC = "automatic"
 local ACTION_CONTEXT_READER = "reader"
 local ACTION_CONTEXT_BROWSER = "browser"
 
-local BUTTON_ICON_SIZE = Screen:scaleBySize(22)
-local BUTTON_HEIGHT = Screen:scaleBySize(42)
-local BUTTON_SIDE_PADDING = Screen:scaleBySize(6)
-local BUTTON_WIDTH = BUTTON_HEIGHT + 2 * BUTTON_SIDE_PADDING
+local BASE_BUTTON_ICON_SIZE = Screen:scaleBySize(22)
+local BASE_BUTTON_HEIGHT = Screen:scaleBySize(42)
+local BASE_BUTTON_SIDE_PADDING = Screen:scaleBySize(6)
 local DOCK_MARGIN = Size.padding.large
-local SIDE_BUTTON_ICON_SIZE = Screen:scaleBySize(18)
-local SIDE_BUTTON_HEIGHT = Screen:scaleBySize(28)
-local SIDE_BUTTON_PADDING = Screen:scaleBySize(4)
-local SIDE_BUTTON_OUTER_HEIGHT = SIDE_BUTTON_HEIGHT
-    + 2 * SIDE_BUTTON_PADDING
-    + 2 * Size.border.button
-local SIDE_BUTTON_GAP = Size.padding.default
-local FRONTLIGHT_SLIDER_WIDTH = BUTTON_WIDTH
-local FRONTLIGHT_SLIDER_GAP = Size.padding.default
-local FRONTLIGHT_SLIDER_PADDING = Screen:scaleBySize(8)
-local FRONTLIGHT_TRACK_WIDTH = math_max(2, Screen:scaleBySize(3))
-local FRONTLIGHT_KNOB_RADIUS = math_max(5, Screen:scaleBySize(8))
+local BASE_SIDE_BUTTON_ICON_SIZE = Screen:scaleBySize(18)
+local BASE_SIDE_BUTTON_HEIGHT = Screen:scaleBySize(28)
+local BASE_SIDE_BUTTON_PADDING = Screen:scaleBySize(4)
+local BASE_SIDE_BUTTON_GAP = Size.padding.default
+local BASE_FRONTLIGHT_SLIDER_GAP = Size.padding.default
+local BASE_FRONTLIGHT_SLIDER_PADDING = Screen:scaleBySize(8)
+local BASE_FRONTLIGHT_TRACK_WIDTH = math_max(2, Screen:scaleBySize(3))
+local BASE_FRONTLIGHT_KNOB_RADIUS = math_max(5, Screen:scaleBySize(8))
 
 local ACTION_HOME = "shortcutdock_context_home"
 local ACTION_SEARCH = "shortcutdock_context_search"
@@ -184,6 +199,7 @@ local DEFAULT_ACTIONS = {
     settings = {
         order = {
             "toggle_wifi",
+            "night_mode",
             "increase_frontlight",
             "decrease_frontlight",
             ACTION_SEARCH,
@@ -191,10 +207,19 @@ local DEFAULT_ACTIONS = {
         },
     },
     toggle_wifi = true,
+    night_mode = true,
     increase_frontlight = 1,
     decrease_frontlight = 1,
     [ACTION_SEARCH] = true,
     history = true,
+}
+
+local PREVIOUS_DEFAULT_ACTION_ORDER = {
+    "toggle_wifi",
+    "increase_frontlight",
+    "decrease_frontlight",
+    ACTION_SEARCH,
+    "history",
 }
 
 local ACTION_ICONS = {
@@ -296,12 +321,12 @@ local function makeFallbackLabel(text, action_id)
     return string.upper(firstCharacters(readable_id, 2))
 end
 
-local function applyButtonMetrics(button)
-    button.icon_width = BUTTON_ICON_SIZE
-    button.icon_height = BUTTON_ICON_SIZE
-    button.height = BUTTON_HEIGHT
-    button.width = BUTTON_WIDTH
-    button.padding = BUTTON_SIDE_PADDING
+local function applyButtonMetrics(button, metrics)
+    button.icon_width = metrics.button_icon_size
+    button.icon_height = metrics.button_icon_size
+    button.height = metrics.button_height
+    button.width = metrics.button_width
+    button.padding = metrics.button_side_padding
     button.margin = 0
     return button
 end
@@ -309,8 +334,11 @@ end
 local FrontlightSlider = InputContainer:extend({})
 
 function FrontlightSlider:init()
-    self.width = self.width or FRONTLIGHT_SLIDER_WIDTH
+    self.width = self.width or Screen:scaleBySize(54)
     self.height = math_max(1, self.height or Screen:getHeight() / 2)
+    self.slider_padding = self.slider_padding or BASE_FRONTLIGHT_SLIDER_PADDING
+    self.track_width = self.track_width or BASE_FRONTLIGHT_TRACK_WIDTH
+    self.knob_radius = self.knob_radius or BASE_FRONTLIGHT_KNOB_RADIUS
     self.powerd = self.powerd or Device:getPowerDevice()
     self.minimum = tonumber(self.powerd and self.powerd.fl_min) or 0
     self.maximum = tonumber(self.powerd and self.powerd.fl_max) or 100
@@ -372,7 +400,7 @@ function FrontlightSlider:getSize()
 end
 
 function FrontlightSlider:getTrackBounds()
-    local inset = FRONTLIGHT_SLIDER_PADDING + FRONTLIGHT_KNOB_RADIUS
+    local inset = self.slider_padding + self.knob_radius
     local top = inset
     local bottom = math_max(top + 1, self.height - inset)
     return top, bottom
@@ -469,21 +497,21 @@ function FrontlightSlider:paintTo(bb, x, y)
     local percentage = (self.value - self.minimum) / (self.maximum - self.minimum)
     local knob_y = y + track_bottom - math_floor(percentage * track_height + 0.5)
     local center_x = x + math_floor(self.width / 2)
-    local track_x = center_x - math_floor(FRONTLIGHT_TRACK_WIDTH / 2)
+    local track_x = center_x - math_floor(self.track_width / 2)
 
     local track_color = self.enabled and Blitbuffer.COLOR_GRAY or Blitbuffer.COLOR_LIGHT_GRAY
     local active_color = self.enabled and Blitbuffer.COLOR_BLACK or Blitbuffer.COLOR_DARK_GRAY
-    bb:paintRect(track_x, y + track_top, FRONTLIGHT_TRACK_WIDTH, track_height, track_color)
+    bb:paintRect(track_x, y + track_top, self.track_width, track_height, track_color)
     if knob_y < y + track_bottom then
         bb:paintRect(
             track_x,
             knob_y,
-            FRONTLIGHT_TRACK_WIDTH,
+            self.track_width,
             y + track_bottom - knob_y,
             active_color
         )
     end
-    bb:paintCircle(center_x, knob_y, FRONTLIGHT_KNOB_RADIUS, active_color)
+    bb:paintCircle(center_x, knob_y, self.knob_radius, active_color)
 end
 
 local FrontlightToggleButton = Button:extend({})
@@ -544,7 +572,7 @@ function FloatingControlButtonDialog:init()
         side_button = self.side_button_factory(dock_size.w, self)
         dock_column = VerticalGroup:new({
             side_button,
-            VerticalSpan:new({ width = SIDE_BUTTON_GAP }),
+            VerticalSpan:new({ width = self.side_button_gap or BASE_SIDE_BUTTON_GAP }),
             dock_frame,
         })
     end
@@ -566,13 +594,17 @@ function FloatingControlButtonDialog:init()
         if self.dock_side == "left" then
             columns = {
                 aligned_dock_column,
-                HorizontalSpan:new({ width = FRONTLIGHT_SLIDER_GAP }),
+                HorizontalSpan:new({
+                    width = self.frontlight_slider_gap or BASE_FRONTLIGHT_SLIDER_GAP,
+                }),
                 aligned_slider,
             }
         else
             columns = {
                 aligned_slider,
-                HorizontalSpan:new({ width = FRONTLIGHT_SLIDER_GAP }),
+                HorizontalSpan:new({
+                    width = self.frontlight_slider_gap or BASE_FRONTLIGHT_SLIDER_GAP,
+                }),
                 aligned_dock_column,
             }
         end
@@ -678,6 +710,24 @@ function ShortcutDock:loadActions()
             if order[index] == ACTION_HOME then
                 table.remove(order, index)
             end
+        end
+
+        -- Add the new night-mode button only to installations that still use
+        -- the previous default order. Customized and deliberately empty docks
+        -- remain untouched.
+        local uses_previous_defaults = #order == #PREVIOUS_DEFAULT_ACTION_ORDER
+        if uses_previous_defaults then
+            for index = 1, #order do
+                if order[index] ~= PREVIOUS_DEFAULT_ACTION_ORDER[index] then
+                    uses_previous_defaults = false
+                    break
+                end
+            end
+        end
+        if uses_previous_defaults and actions.night_mode == nil then
+            table.insert(order, 2, "night_mode")
+            actions.night_mode = true
+            G_reader_settings:saveSetting(SETTING_ACTIONS, actions)
         end
     end
     return actions
@@ -809,6 +859,46 @@ function ShortcutDock:getGestureSide(gesture)
     return x < Screen:getWidth() / 2 and "left" or "right"
 end
 
+function ShortcutDock:getDockSize()
+    local size = G_reader_settings:readSetting(SETTING_DOCK_SIZE)
+    return DOCK_SIZE_FACTORS[size] and size or DOCK_SIZE_SMALL
+end
+
+function ShortcutDock:setDockSize(size)
+    G_reader_settings:saveSetting(
+        SETTING_DOCK_SIZE,
+        DOCK_SIZE_FACTORS[size] and size or DOCK_SIZE_SMALL
+    )
+end
+
+function ShortcutDock:getDockMetrics()
+    local factor = DOCK_SIZE_FACTORS[self:getDockSize()]
+    local button_height = scaleMetric(BASE_BUTTON_HEIGHT, factor)
+    local button_side_padding = scaleMetric(BASE_BUTTON_SIDE_PADDING, factor)
+    local side_button_height = scaleMetric(BASE_SIDE_BUTTON_HEIGHT, factor)
+    local side_button_padding = scaleMetric(BASE_SIDE_BUTTON_PADDING, factor)
+    return {
+        button_icon_size = scaleMetric(BASE_BUTTON_ICON_SIZE, factor),
+        button_height = button_height,
+        button_side_padding = button_side_padding,
+        button_width = button_height + 2 * button_side_padding,
+        fallback_font_size = scaleMetric(18, factor),
+        page_font_size = scaleMetric(24, factor),
+        side_font_size = scaleMetric(22, factor),
+        side_button_icon_size = scaleMetric(BASE_SIDE_BUTTON_ICON_SIZE, factor),
+        side_button_height = side_button_height,
+        side_button_padding = side_button_padding,
+        side_button_outer_height = side_button_height
+            + 2 * side_button_padding
+            + 2 * Size.border.button,
+        side_button_gap = scaleMetric(BASE_SIDE_BUTTON_GAP, factor),
+        frontlight_slider_gap = scaleMetric(BASE_FRONTLIGHT_SLIDER_GAP, factor),
+        frontlight_slider_padding = scaleMetric(BASE_FRONTLIGHT_SLIDER_PADDING, factor),
+        frontlight_track_width = scaleMetric(BASE_FRONTLIGHT_TRACK_WIDTH, factor, 2),
+        frontlight_knob_radius = scaleMetric(BASE_FRONTLIGHT_KNOB_RADIUS, factor, 5),
+    }
+end
+
 function ShortcutDock:showSideButton()
     return G_reader_settings:readSetting(SETTING_SHOW_SIDE_BUTTON) ~= false
 end
@@ -834,6 +924,14 @@ function ShortcutDock:setShowFrontlightSlider(enabled)
     G_reader_settings:saveSetting(SETTING_SHOW_FRONTLIGHT_SLIDER, enabled and true or false)
 end
 
+function ShortcutDock:keepOpenAfterAction()
+    return G_reader_settings:readSetting(SETTING_KEEP_OPEN_AFTER_ACTION) == true
+end
+
+function ShortcutDock:setKeepOpenAfterAction(enabled)
+    G_reader_settings:saveSetting(SETTING_KEEP_OPEN_AFTER_ACTION, enabled and true or false)
+end
+
 function ShortcutDock:getFrontlightSliderHeight(dock_height)
     local screen_height = Screen:getHeight()
     dock_height = math_max(1, tonumber(dock_height) or 1)
@@ -843,7 +941,7 @@ function ShortcutDock:getFrontlightSliderHeight(dock_height)
     return dock_height
 end
 
-function ShortcutDock:makeFrontlightToggleButton(width, dialog, slider)
+function ShortcutDock:makeFrontlightToggleButton(width, dialog, slider, metrics)
     local powerd = slider.powerd
     local function getStateIcon()
         return self:getIcon(slider.enabled and "light_on" or "light_off")
@@ -853,13 +951,13 @@ function ShortcutDock:makeFrontlightToggleButton(width, dialog, slider)
     local config = {
         id = "shortcutdock_toggle_frontlight",
         width = width,
-        height = SIDE_BUTTON_HEIGHT,
-        padding = SIDE_BUTTON_PADDING,
+        height = metrics.side_button_height,
+        padding = metrics.side_button_padding,
         margin = 0,
         bordersize = Size.border.button,
         radius = Size.radius.button,
-        icon_width = SIDE_BUTTON_ICON_SIZE,
-        icon_height = SIDE_BUTTON_ICON_SIZE,
+        icon_width = metrics.side_button_icon_size,
+        icon_height = metrics.side_button_icon_size,
         enabled = true,
         show_parent = dialog,
         slider = slider,
@@ -888,29 +986,33 @@ function ShortcutDock:makeFrontlightToggleButton(width, dialog, slider)
     return FrontlightToggleButton:new(config)
 end
 
-function ShortcutDock:makeFrontlightSlider(dock_height, dialog)
+function ShortcutDock:makeFrontlightSlider(dock_height, dialog, metrics)
     local column_height = self:getFrontlightSliderHeight(dock_height)
     local slider_height = math_max(
         1,
-        column_height - SIDE_BUTTON_OUTER_HEIGHT - SIDE_BUTTON_GAP
+        column_height - metrics.side_button_outer_height - metrics.side_button_gap
     )
     local slider = FrontlightSlider:new({
-        width = FRONTLIGHT_SLIDER_WIDTH,
+        width = metrics.button_width,
         height = slider_height,
+        slider_padding = metrics.frontlight_slider_padding,
+        track_width = metrics.frontlight_track_width,
+        knob_radius = metrics.frontlight_knob_radius,
         powerd = Device:getPowerDevice(),
         show_parent = dialog,
     })
     local toggle_button = self:makeFrontlightToggleButton(
-        FRONTLIGHT_SLIDER_WIDTH,
+        metrics.button_width,
         dialog,
-        slider
+        slider,
+        metrics
     )
     slider.state_changed_callback = function()
         UIManager:setDirty(dialog, "ui")
     end
     local column = VerticalGroup:new({
         slider,
-        VerticalSpan:new({ width = SIDE_BUTTON_GAP }),
+        VerticalSpan:new({ width = metrics.side_button_gap }),
         toggle_button,
     })
     column.toggle_button = toggle_button
@@ -1125,9 +1227,21 @@ function ShortcutDock:isWifiOn()
     return ok and enabled == true
 end
 
+function ShortcutDock:isNightMode()
+    if type(Screen.night_mode) == "boolean" then
+        return Screen.night_mode
+    end
+    local ok, enabled = pcall(function()
+        return G_reader_settings:isTrue("night_mode")
+    end)
+    return ok and enabled == true
+end
+
 function ShortcutDock:getStockIcon(action_id)
     if action_id == "toggle_wifi" then
-        return self:isWifiOn() and "wifi" or "wifi-off"
+        return self:isWifiOn() and "wifi_on" or "wifi_off"
+    elseif action_id == "night_mode" then
+        return self:isNightMode() and "night_mode" or "day_mode"
     end
     if action_id == ACTION_HOME then
         if self:getParkedBookshelfContext() then
@@ -1162,11 +1276,17 @@ function ShortcutDock:getIcon(action_id)
         return cached or nil
     end
 
-    local candidates = {
-        self.icons_path .. action_id .. ".svg",
-        self.icons_path .. action_id .. ".png",
-    }
-    if stock_icon then
+    local candidates = {}
+    if STATEFUL_ACTIONS[action_id] then
+        if stock_icon then
+            candidates[#candidates + 1] = self.icons_path .. stock_icon .. ".svg"
+            candidates[#candidates + 1] = self.icons_path .. stock_icon .. ".png"
+        end
+    else
+        candidates[#candidates + 1] = self.icons_path .. action_id .. ".svg"
+        candidates[#candidates + 1] = self.icons_path .. action_id .. ".png"
+    end
+    if stock_icon and not STATEFUL_ACTIONS[action_id] then
         candidates[#candidates + 1] = self.icons_path .. stock_icon .. ".svg"
         candidates[#candidates + 1] = self.icons_path .. stock_icon .. ".png"
     end
@@ -1208,11 +1328,12 @@ function ShortcutDock:getDisplayActions()
     return display_actions
 end
 
-function ShortcutDock:getMaxPageRows()
+function ShortcutDock:getMaxPageRows(metrics)
+    metrics = metrics or self:getDockMetrics()
     -- ButtonTable adds vertical padding and separators around the requested
     -- button height. Account for all of it before ButtonDialog decides that
     -- it needs a ScrollableContainer (and, consequently, a scrollbar).
-    local button_row_height = BUTTON_HEIGHT
+    local button_row_height = metrics.button_height
         + 2 * Size.padding.buttontable
         + 2 * Size.span.vertical_default
     local row_separator_height = Size.line.medium
@@ -1223,7 +1344,9 @@ function ShortcutDock:getMaxPageRows()
         - 2 * DOCK_MARGIN
         - 2 * Size.border.window
     if self:showSideButton() then
-        dock_height = dock_height - SIDE_BUTTON_OUTER_HEIGHT - SIDE_BUTTON_GAP
+        dock_height = dock_height
+            - metrics.side_button_outer_height
+            - metrics.side_button_gap
     end
     local available_height = math_min(dialog_height, dock_height)
 
@@ -1234,9 +1357,9 @@ function ShortcutDock:getMaxPageRows()
     ))
 end
 
-function ShortcutDock:getPages(action_count)
+function ShortcutDock:getPages(action_count, metrics)
     local fixed_rows = self:showContextButton() and 1 or 0
-    local max_rows = self:getMaxPageRows()
+    local max_rows = self:getMaxPageRows(metrics)
     local first_page_capacity = max_rows - fixed_rows
     if action_count <= first_page_capacity then
         return { { first = 1, last = action_count } }
@@ -1273,27 +1396,87 @@ function ShortcutDock:closeDock()
     end
 end
 
+function ShortcutDock:getTopmostActionHost()
+    if type(UIManager.topdown_widgets_iter) == "function" then
+        for widget in UIManager:topdown_widgets_iter() do
+            if not widget.invisible and not widget.toast then
+                return widget
+            end
+        end
+    elseif type(UIManager.getTopmostVisibleWidget) == "function" then
+        return UIManager:getTopmostVisibleWidget()
+    end
+end
+
 function ShortcutDock:executeAction(action_id)
     local value = self.actions[action_id]
     if value == nil then
         return
     end
 
+    local reopen_dock = self:keepOpenAfterAction()
+    local page = self.current_page or 1
+    local side = self.current_dock_side or self:getSide()
     self:closeDock()
     UIManager:scheduleIn(0.05, function()
+        -- Capture the real Dispatcher target after the dock (and any menu used
+        -- to open it) has had time to leave the widget stack.
+        local action_host = reopen_dock and self:getTopmostActionHost() or nil
         if action_id == "history" and self:openBookshelfRecent() then
-            return
+            -- Bookshelf handled the action directly.
+        else
+            Dispatcher:execute({ [action_id] = value })
         end
-        Dispatcher:execute({ [action_id] = value })
+
+        if reopen_dock and action_host then
+            -- A single deferred check is enough: inline actions leave the same
+            -- host on top, while dialogs and context changes replace it.
+            UIManager:scheduleIn(0.05, function()
+                if
+                    not self.dialog
+                    and self:getTopmostActionHost() == action_host
+                then
+                    self:showDock(page, side)
+                end
+            end)
+        end
     end)
 end
 
-function ShortcutDock:makeActionButton(item)
+function ShortcutDock:refreshStatefulActionButton(action_id)
+    if not STATEFUL_ACTIONS[action_id] or not self.dialog then
+        return
+    end
+    local dialog = self.dialog
+    local button = dialog:getButtonById("shortcutdock_" .. action_id)
+    if not button then
+        return
+    end
+
+    local icon = self:getIcon(action_id)
+    if icon and icon ~= button.icon then
+        button:setIcon(icon, button.width)
+        UIManager:setDirty(dialog, "ui")
+    end
+end
+
+function ShortcutDock:onNetworkConnected()
+    self:refreshStatefulActionButton("toggle_wifi")
+end
+
+function ShortcutDock:onNetworkDisconnected()
+    self:refreshStatefulActionButton("toggle_wifi")
+end
+
+function ShortcutDock:makeActionButton(item, metrics)
     local icon = self:getIcon(item.key)
     local button = {
         id = "shortcutdock_" .. item.key,
         enabled = true,
         callback = function()
+            -- Dispatcher sends native actions to the topmost widget. Close the
+            -- dock first so ToggleNightMode and ToggleWifi reach the active
+            -- Reader, File Browser, or Bookshelf context instead of this dialog.
             self:executeAction(item.key)
         end,
         hold_callback = function()
@@ -1304,13 +1487,13 @@ function ShortcutDock:makeActionButton(item)
         button.icon = icon
     else
         button.text = makeFallbackLabel(item.text, item.key)
-        button.font_size = 18
+        button.font_size = metrics.fallback_font_size
         button.font_bold = true
     end
-    return applyButtonMetrics(button)
+    return applyButtonMetrics(button, metrics)
 end
 
-function ShortcutDock:makeContextButton()
+function ShortcutDock:makeContextButton(metrics)
     local bookshelf = self:getParkedBookshelfContext()
     local in_reader = self:isReaderContext()
     local text
@@ -1339,13 +1522,13 @@ function ShortcutDock:makeContextButton()
         button.icon = icon
     else
         button.text = makeFallbackLabel(text, ACTION_HOME)
-        button.font_size = 18
+        button.font_size = metrics.fallback_font_size
         button.font_bold = true
     end
-    return applyButtonMetrics(button)
+    return applyButtonMetrics(button, metrics)
 end
 
-function ShortcutDock:makePageButton(direction, target_page)
+function ShortcutDock:makePageButton(direction, target_page, metrics)
     local is_next = direction == "next"
     local icon = self:getIcon(is_next and "chevron-up" or "chevron-down")
     local button = {
@@ -1359,25 +1542,25 @@ function ShortcutDock:makePageButton(direction, target_page)
         button.icon = icon
     else
         button.text = is_next and "↑" or "↓"
-        button.font_size = 24
+        button.font_size = metrics.page_font_size
     end
-    return applyButtonMetrics(button)
+    return applyButtonMetrics(button, metrics)
 end
 
-function ShortcutDock:makeSideButton(width, dialog)
+function ShortcutDock:makeSideButton(width, dialog, metrics)
     local current_side = self.current_dock_side or self:getSide()
     local target_side = current_side == "left" and "right" or "left"
     local icon = self:getIcon("chevron-" .. target_side)
     local button = {
         id = "shortcutdock_switch_side",
         width = width,
-        height = SIDE_BUTTON_HEIGHT,
-        padding = SIDE_BUTTON_PADDING,
+        height = metrics.side_button_height,
+        padding = metrics.side_button_padding,
         margin = 0,
         bordersize = Size.border.button,
         radius = Size.radius.button,
-        icon_width = SIDE_BUTTON_ICON_SIZE,
-        icon_height = SIDE_BUTTON_ICON_SIZE,
+        icon_width = metrics.side_button_icon_size,
+        icon_height = metrics.side_button_icon_size,
         enabled = true,
         show_parent = dialog,
         callback = function()
@@ -1398,7 +1581,7 @@ function ShortcutDock:makeSideButton(width, dialog)
         button.icon = icon
     else
         button.text = target_side == "left" and "←" or "→"
-        button.text_font_size = 22
+        button.text_font_size = metrics.side_font_size
         button.text_font_bold = true
     end
     return Button:new(button)
@@ -1411,30 +1594,31 @@ function ShortcutDock:showDock(page, side)
     self.auto_visibility = self:loadAutomaticVisibility()
     side = side == "left" and "left" or side == "right" and "right" or self:getSide()
     self.current_dock_side = side
+    local metrics = self:getDockMetrics()
     local actions = self:getDisplayActions()
     if #actions == 0 and not self:showContextButton() then
         UIManager:show(InfoMessage:new({ text = _("No Shortcut Dock actions are configured.") }))
         return
     end
 
-    local pages = self:getPages(#actions)
+    local pages = self:getPages(#actions, metrics)
     local page_count = #pages
     self.current_page = math_max(1, math.min(page or 1, page_count))
     local page_range = pages[self.current_page]
     local rows = {}
 
     for index = page_range.last, page_range.first, -1 do
-        rows[#rows + 1] = { self:makeActionButton(actions[index]) }
+        rows[#rows + 1] = { self:makeActionButton(actions[index], metrics) }
     end
 
     if self.current_page < page_count then
-        table.insert(rows, 1, { self:makePageButton("next", self.current_page + 1) })
+        table.insert(rows, 1, { self:makePageButton("next", self.current_page + 1, metrics) })
     end
     if self.current_page == 1 and self:showContextButton() then
-        rows[#rows + 1] = { self:makeContextButton() }
+        rows[#rows + 1] = { self:makeContextButton(metrics) }
     end
     if self.current_page > 1 then
-        rows[#rows + 1] = { self:makePageButton("previous", self.current_page - 1) }
+        rows[#rows + 1] = { self:makePageButton("previous", self.current_page - 1, metrics) }
     end
 
     self:closeDock()
@@ -1443,23 +1627,25 @@ function ShortcutDock:showDock(page, side)
     local side_button_factory
     if self:showSideButton() then
         side_button_factory = function(width, parent)
-            return self:makeSideButton(width, parent)
+            return self:makeSideButton(width, parent, metrics)
         end
     end
     local frontlight_slider_factory
     if self:showFrontlightSlider() then
         frontlight_slider_factory = function(dock_height, parent)
-            return self:makeFrontlightSlider(dock_height, parent)
+            return self:makeFrontlightSlider(dock_height, parent, metrics)
         end
     end
     dialog = FloatingControlButtonDialog:new({
         buttons = rows,
-        width = BUTTON_WIDTH + 2 * Size.border.window + 2 * Size.padding.button,
+        width = metrics.button_width + 2 * Size.border.window + 2 * Size.padding.button,
         shrink_unneeded_width = true,
-        shrink_min_width = BUTTON_WIDTH,
+        shrink_min_width = metrics.button_width,
         dismissable = true,
         side_button_factory = side_button_factory,
         frontlight_slider_factory = frontlight_slider_factory,
+        side_button_gap = metrics.side_button_gap,
+        frontlight_slider_gap = metrics.frontlight_slider_gap,
         dock_side = side,
         anchor = function()
             local dialog_size = dialog:getContentSize()
@@ -1631,7 +1817,21 @@ function ShortcutDock:getIconFilenamesMenu()
         local details = tostring(item.text or basename)
             .. "\n\nSVG: " .. svg_name
             .. "\nPNG: " .. png_name
-        if item.key == ACTION_HOME then
+        if item.key == "night_mode" then
+            svg_name = "day_mode.svg / night_mode.svg"
+            png_name = "day_mode.png / night_mode.png"
+            help_text = _("Uses a different icon for day and night modes.")
+            details = tostring(item.text or basename)
+                .. "\n\n" .. _("Day mode") .. ": day_mode.svg / day_mode.png"
+                .. "\n" .. _("Night mode") .. ": night_mode.svg / night_mode.png"
+        elseif item.key == "toggle_wifi" then
+            svg_name = "wifi_on.svg / wifi_off.svg"
+            png_name = "wifi_on.png / wifi_off.png"
+            help_text = _("Uses a different icon for the active and inactive Wi-Fi states.")
+            details = tostring(item.text or basename)
+                .. "\n\n" .. _("Wi-Fi on") .. ": wifi_on.svg / wifi_on.png"
+                .. "\n" .. _("Wi-Fi off") .. ": wifi_off.svg / wifi_off.png"
+        elseif item.key == ACTION_HOME then
             help_text = help_text
                 .. "\n" .. _("Context-specific SVG filenames")
                 .. ": home.svg / book.opened.svg"
@@ -1723,6 +1923,56 @@ function ShortcutDock:addToMainMenu(menu_items)
                         },
                     },
                     {
+                        text = _("Dock size"),
+                        sub_item_table = {
+                            {
+                                text = _("Small"),
+                                help_text = _("Uses the original Shortcut Dock dimensions."),
+                                checked_func = function()
+                                    return self:getDockSize() == DOCK_SIZE_SMALL
+                                end,
+                                callback = function(touchmenu_instance)
+                                    self:setDockSize(DOCK_SIZE_SMALL)
+                                    if touchmenu_instance and touchmenu_instance.updateItems then
+                                        touchmenu_instance:updateItems()
+                                    end
+                                end,
+                                keep_menu_open = true,
+                                radio = true,
+                            },
+                            {
+                                text = _("Medium"),
+                                help_text = _("Increases the dock dimensions by 20 percent."),
+                                checked_func = function()
+                                    return self:getDockSize() == DOCK_SIZE_MEDIUM
+                                end,
+                                callback = function(touchmenu_instance)
+                                    self:setDockSize(DOCK_SIZE_MEDIUM)
+                                    if touchmenu_instance and touchmenu_instance.updateItems then
+                                        touchmenu_instance:updateItems()
+                                    end
+                                end,
+                                keep_menu_open = true,
+                                radio = true,
+                            },
+                            {
+                                text = _("Large"),
+                                help_text = _("Increases the dock dimensions by 40 percent."),
+                                checked_func = function()
+                                    return self:getDockSize() == DOCK_SIZE_LARGE
+                                end,
+                                callback = function(touchmenu_instance)
+                                    self:setDockSize(DOCK_SIZE_LARGE)
+                                    if touchmenu_instance and touchmenu_instance.updateItems then
+                                        touchmenu_instance:updateItems()
+                                    end
+                                end,
+                                keep_menu_open = true,
+                                radio = true,
+                            },
+                        },
+                    },
+                    {
                         text = _("Show frontlight slider"),
                         help_text = _("Shows a vertical brightness slider beside the dock on devices with a frontlight."),
                         enabled_func = function()
@@ -1733,6 +1983,20 @@ function ShortcutDock:addToMainMenu(menu_items)
                         end,
                         callback = function(touchmenu_instance)
                             self:setShowFrontlightSlider(not self:showFrontlightSlider())
+                            if touchmenu_instance and touchmenu_instance.updateItems then
+                                touchmenu_instance:updateItems()
+                            end
+                        end,
+                        keep_menu_open = true,
+                    },
+                    {
+                        text = _("Keep dock open after actions"),
+                        help_text = _("Reopens the dock after actions that do not open another screen or dialog."),
+                        checked_func = function()
+                            return self:keepOpenAfterAction()
+                        end,
+                        callback = function(touchmenu_instance)
+                            self:setKeepOpenAfterAction(not self:keepOpenAfterAction())
                             if touchmenu_instance and touchmenu_instance.updateItems then
                                 touchmenu_instance:updateItems()
                             end

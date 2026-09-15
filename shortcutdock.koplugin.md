@@ -1,4 +1,4 @@
-# Shortcut Dock ![Version](https://img.shields.io/badge/version-v0.8.2-blue)
+# Shortcut Dock ![Version](https://img.shields.io/badge/version-v0.11.0-blue)
 
 Shortcut Dock adds a floating, vertical shortcut bar to KOReader. It is designed for touch devices and can be assigned to any gesture supported by KOReader.
 
@@ -6,8 +6,10 @@ Shortcut Dock adds a floating, vertical shortcut bar to KOReader. It is designed
 
 - Floating dock anchored near the lower-left or lower-right corner, without touching the screen edges.
 - Fixed placement while open: dragging over the dock does not move it away from its selected side.
+- Optional keep-open behavior for inline actions. The dock safely closes for dispatch and reopens only when the action did not open another dialog or change context.
 - Optional gesture-following position mode that opens the dock on the same half of the screen where the assigned gesture started.
 - Compact icon buttons using the same scaled dimensions and standard `ButtonDialog` corner radius as Selection Toolbar.
+- Three selectable dock scales: Small keeps the original dimensions, Medium increases them by 20%, and Large by 40%.
 - Unlimited configurable actions through KOReader's native Dispatcher action picker.
 - Configurable button order.
 - Optional automatic context visibility for native KOReader actions, with per-action manual overrides.
@@ -24,7 +26,9 @@ Shortcut Dock adds a floating, vertical shortcut bar to KOReader. It is designed
   - opens full-text search while reading;
   - opens Bookshelf's library search while Bookshelf is in the foreground.
 - The History action opens Bookshelf's Recent shelf while Bookshelf is in the foreground, and keeps KOReader's native history behavior in other contexts.
-- Dynamic Wi-Fi icon reflecting the current Wi-Fi state whenever the dock is opened.
+- Interactive night-mode button using `day_mode.svg` or `night_mode.svg` according to the active display mode.
+- Interactive Wi-Fi button using `wifi_on.svg` or `wifi_off.svg` according to the radio state.
+- Night mode and Wi-Fi use KOReader's native Dispatcher actions. The dock closes before dispatch so the event reaches the active KOReader screen, and the state-specific icon is refreshed the next time the dock opens without background polling.
 - Optional per-action custom icons with automatic fallback to KOReader icons.
 - Two-letter action abbreviations when neither a custom nor a KOReader icon is available; hold the button to see its full name.
 
@@ -34,10 +38,11 @@ From the bottom upward:
 
 1. Fixed context button: open previous document / file browser / return from Bookshelf to the reader
 2. Toggle Wi-Fi
-3. Increase frontlight brightness
-4. Decrease frontlight brightness
-5. Search current context
-6. History
+3. Toggle night mode
+4. Increase frontlight brightness
+5. Decrease frontlight brightness
+6. Search current context
+7. History
 
 Unavailable device actions, such as frontlight controls on devices without a frontlight, are automatically omitted by KOReader.
 
@@ -52,7 +57,9 @@ The settings follow the same grouped layout as the other plugins in this reposit
 - `Show Shortcut Dock`: opens the dock immediately.
 - `Behavior`: controls the dock position and its frontlight control.
   - `Dock side`: selects `Left`, `Right`, or `Follow gesture side`. The automatic option uses the configured fixed side as a fallback when the dock is opened without gesture coordinates.
+  - `Dock size`: selects `Small`, `Medium`, or `Large`. The selected scale applies to the buttons, icons, chevrons, frontlight column, and pagination calculation.
   - `Show frontlight slider`: shows or hides the brightness column on devices with a frontlight.
+  - `Keep dock open after actions`: reopens the dock after inline actions while leaving it closed when an action opens another screen or dialog.
 - `Buttons`: controls the fixed and configurable dock buttons.
   - `Show side-switch button`: shows a separate chevron above the dock that changes its side without opening the settings.
   - `Show fixed context button`: enables the first contextual button in the main group.
@@ -61,7 +68,7 @@ The settings follow the same grouped layout as the other plugins in this reposit
   - `Visibility by context`: displays the automatic result and controls manual overrides for each action.
   - `Expected icon filenames`: lists the custom SVG and PNG names accepted for every action.
 - `Gesture setup`: displays instructions for assigning the dock to a KOReader gesture.
-- `Version: v0.8.2`: shows the installed plugin version.
+- `Version: v0.11.0`: shows the installed plugin version.
 
 The side selector and visibility options keep their menu open after a change, making it easier to review related settings.
 
@@ -116,7 +123,7 @@ The integration only uses Bookshelf modules that are already loaded. Bookshelf r
 
 Put `.svg` or `.png` files in `shortcutdock.koplugin/icons/`. The plugin checks custom files before using KOReader's built-in icon.
 
-Resolution order:
+Resolution order for regular actions:
 
 1. `icons/<dispatcher-action-id>.svg`
 2. `icons/<dispatcher-action-id>.png`
@@ -125,7 +132,9 @@ Resolution order:
 5. KOReader's built-in icon
 6. A short abbreviation generated from the action name
 
-Examples: `toggle_wifi.svg`, `history.svg`, `increase_frontlight.svg`, and `shortcutdock_context_search.svg`. The plugin already includes matching chevrons for pagination and changing the dock side, the dynamic home and document icons for the fixed context button, and `light_on.svg` / `light_off.svg` for the frontlight toggle.
+The two stateful actions use their state-specific names before the regular resolution order: `day_mode.svg` / `night_mode.svg` and `wifi_on.svg` / `wifi_off.svg`. These files are checked only when the dock is drawn or the corresponding action changes state; there is no periodic polling.
+
+Examples for regular actions include `history.svg`, `increase_frontlight.svg`, and `shortcutdock_context_search.svg`. The plugin also includes matching chevrons for pagination and changing the dock side, the dynamic home and document icons for the fixed context button, and `light_on.svg` / `light_off.svg` for the frontlight toggle.
 
 For the fixed context button, `shortcutdock_context_home.svg` overrides the icon in every context. To keep its icon dynamic, use `home.svg` while reading and `book.opened.svg` in the file browser or when Bookshelf is covering a parked reader. In that Bookshelf state, the button resumes the reader instead of sending another Home command. The same names with a `.png` extension are also accepted.
 
@@ -143,6 +152,8 @@ Shortcut Dock stores its preferences through KOReader's reader settings using th
 | `shortcutdock_show_side_button` | Visibility of the floating side-switch button |
 | `shortcutdock_show_context_button` | Visibility of the fixed contextual button |
 | `shortcutdock_show_frontlight_slider` | Visibility of the frontlight slider column |
+| `shortcutdock_dock_size` | Selected Small, Medium, or Large dock scale |
+| `shortcutdock_keep_open_after_action` | Reopens the dock after compatible inline actions |
 
 ## Installation
 
@@ -154,4 +165,4 @@ Extract `shortcutdock.koplugin` into KOReader's `plugins` directory and restart 
 
 ## Version
 
-v0.8.2
+v0.11.0
