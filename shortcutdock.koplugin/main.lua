@@ -21,7 +21,7 @@ local function scaleMetric(value, factor, minimum)
     return math_max(minimum or 1, math_floor(value * factor + 0.5))
 end
 
-local PLUGIN_VERSION = "v0.20.4"
+local PLUGIN_VERSION = "v0.20.5"
 local SETTING_ACTIONS = "shortcutdock_actions"
 local SETTING_ACTION_CONTEXTS = "shortcutdock_action_contexts"
 local SETTING_AUTO_VISIBILITY = "shortcutdock_auto_visibility"
@@ -1004,7 +1004,7 @@ function ShortcutDock:getPages(action_count, metrics)
         local remaining = action_count - first + 1
         local action_capacity
         if #pages == 0 then
-            -- The fixed context button belongs only to the first page, which
+            -- The reader/browser button belongs only to the first page, which
             -- also needs the next-page arrow when pagination is active.
             action_capacity = max_rows - fixed_rows - 1
         elseif remaining <= max_rows - 1 then

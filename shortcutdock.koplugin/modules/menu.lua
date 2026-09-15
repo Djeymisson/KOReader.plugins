@@ -422,8 +422,8 @@ function ShortcutDock:addToMainMenu(menu_items)
 
     local additional_control_items = {
         {
-            text = _("Show fixed context button"),
-            help_text = _("Shows File browser while reading, Return to reader in Bookshelf, and Open last document in the file browser."),
+            text = _("Show reader/browser button"),
+            help_text = _("Shows the first dock button: it opens the file browser while reading, returns from Bookshelf to the reader, or opens the last document from the file browser."),
             checked_func = function()
                 return self:showContextButton()
             end,
@@ -622,7 +622,7 @@ function ShortcutDock:addToMainMenu(menu_items)
                     },
                     {
                         text = _("Fixed buttons"),
-                        help_text = _("Show or hide the context, side-switch, and close buttons."),
+                        help_text = _("Show or hide the reader/browser, side-switch, and close buttons."),
                         sub_item_table = action_button_items,
                     },
                     {
