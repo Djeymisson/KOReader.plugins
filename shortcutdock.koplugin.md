@@ -1,4 +1,4 @@
-# Shortcut Dock ![Version](https://img.shields.io/badge/version-v0.21.4-blue)
+# Shortcut Dock ![Version](https://img.shields.io/badge/version-v0.22.1-blue)
 
 Shortcut Dock adds a floating, vertical shortcut bar to KOReader. It is designed for touch devices and can be assigned to any gesture supported by KOReader.
 
@@ -19,7 +19,7 @@ Shortcut Dock adds a floating, vertical shortcut bar to KOReader. It is designed
 - Configurable closing method: one block at a time by default, or all blocks at once using the smallest encompassing rectangle and a non-flashing UI update.
 - Optional vertical frontlight slider in a separate column beside the action buttons, with a circular thumb, live brightness adjustment, and a dedicated frontlight toggle button.
 - Optional second lighting column for frontlight warmth on supported devices, using each device's native warmth range.
-- Optional reading-information panel on the screen edge opposite the dock, enabled by default, with an optional book cover, book and chapter progress, estimated time remaining, today's reading, clock, and battery status.
+- Optional information panel on the screen edge opposite the dock. It can show reading information, network information, or both; when both are enabled, one highlighted button immediately above the action dock switches its content without closing the dock.
 - Night mode, Wi-Fi, and full-screen refresh execute in place when keep-open behavior is enabled, without destroying and rebuilding the dock.
 - Wi-Fi progress appears in a compact opposite-edge status panel instead of KOReader's informational popups during inline toggles.
 - Reader/browser button:
@@ -68,17 +68,18 @@ The settings follow the same grouped layout as the other plugins in this reposit
   - `Fixed buttons`:
     - `Show reader/browser button`: shows the first dock button; it opens the file browser while reading, opens the last document from the file browser, and returns from Bookshelf to the reader.
     - `Show side-switch button`: shows a separate chevron above the dock that changes its side without opening the settings.
-    - `Show close button`: shows a separate close control above the dock. When both external controls are enabled, Close stays at the top and the side switch appears below it.
+    - `Show close button`: shows a separate close control above the dock. Fixed external controls remain stacked above the action column.
   - `Context visibility`:
     - `Automatic visibility`: automatically separates native reader and file-browser actions.
     - `Per-action visibility`: displays the automatic result and controls manual overrides for each action.
 - `Appearance`: controls scale, visible panels and columns, and icon customization.
   - `Dock scale: <current scale>`: selects `Small`, `Medium`, or `Large`. The selected scale applies to the buttons, icons, chevrons, lighting columns, information panel, and pagination calculation.
   - `Maximum dock height: <current percentage>`: limits the action, brightness, and warmth columns to approximately `100%`, `60%`, or `33%` of the screen height. Buttons are paginated when they reach the selected limit; the exact height can vary slightly to preserve complete button rows and usable navigation controls. The default is `100%`.
-  - `Reading information panel`:
-    - `Show panel`: shows or hides the Mini Receipt-inspired information block.
+  - `Information panel`:
+    - `Show reading information`: shows or hides the Mini Receipt-inspired reading content. Enabled by default.
+    - `Show network information`: shows or hides Wi-Fi state and KOReader's interface, MAC, SSID, IP, gateway, and connectivity details. Disabled by default.
     - `Show book cover at the top`: shows or hides the open document's cover above the reading information.
-    - `Panel text alignment`: aligns every line, including the clock and battery, to the `Left`, `Center`, or `Nearest screen edge`. The last option aligns left when the panel is on the left and right when it is on the right. `Left` is the default.
+    - `Panel text alignment`: aligns every line of either panel, including the clock and battery, to the `Left`, `Center`, or `Nearest screen edge`. The last option aligns left when the panel is on the left and right when it is on the right. `Left` is the default.
   - `Lighting controls`:
     - `Show frontlight control`: shows or hides the brightness slider and light toggle on devices with a frontlight.
     - `Show warmth control`: shows or hides the optional warmth slider on devices with natural-light support.
@@ -88,7 +89,7 @@ The settings follow the same grouped layout as the other plugins in this reposit
   - `Reset buttons to defaults`: restores the initial buttons and their order after confirmation without changing the other plugin settings.
   - `Reset behavior and buttons`: additionally restores fixed buttons, default actions, order, and visibility while preserving appearance.
 - `Gesture setup`: displays instructions for assigning the dock to a KOReader gesture.
-- `Version: v0.21.4`: shows the installed plugin version.
+- `Version: v0.22.1`: shows the installed plugin version.
 
 The side selector and visibility options keep their menu open after a change, making it easier to review related settings.
 
@@ -119,23 +120,25 @@ Enable **Tools > Shortcut Dock > Actions and buttons > Context visibility > Auto
 
 Manual selections always override the automatic result. Unknown actions and actions registered by other plugins default to **Everywhere**. At the top of the visibility menu, **Use automatic visibility for all actions** clears manual overrides when automatic mode is enabled; with automatic mode disabled, the same command is shown as **Show all actions everywhere**.
 
-The **Show close button**, **Show side-switch button**, and **Show reader/browser button** options independently control those fixed controls. The reader/browser and side-switch buttons are enabled by default; the close button is disabled by default. If enabled, it uses `icons/close.svg` or `icons/close.png`, then KOReader's system `close` icon, and finally the text **Close** when no icon is available. The frontlight toggle follows the visibility of the complete frontlight column.
+The **Show close button**, **Show side-switch button**, and **Show reader/browser button** options independently control those fixed controls. The reader/browser and side-switch buttons are enabled by default; the close button is disabled by default. If enabled, it uses `icons/close.svg` or `icons/close.png`, then KOReader's system `close` icon, and finally the text **Close** when no icon is available. When both information types are enabled, an automatic panel-switch button is placed closest to the action dock, below the side-switch and close controls. The frontlight toggle follows the visibility of the complete frontlight column.
 
-## Reading information panel
+## Information panels
 
-The information panel is enabled by default and appears at the opposite edge of the screen: when the dock opens on the left, the panel opens on the right; when the dock opens on the right, the panel opens on the left. It is bottom-aligned using the same screen margin as the dock and uses the same border, white background, and rounded-corner style as its buttons.
+The information panel appears at the opposite edge of the screen: when the dock opens on the left, the panel opens on the right; when the dock opens on the right, the panel opens on the left. It is bottom-aligned using the same screen margin as the dock and uses the same border, white background, and rounded-corner style as its buttons. Reading information is enabled by default, while network information is optional.
 
-The open book's cover is also enabled by default and appears centered at the top of the panel when one is available. Shortcut Dock obtains it through KOReader's current-document cover API, scales it down once to the panel's maximum dimensions, and reuses that thumbnail while the same document and dock scale remain active. Missing covers are cached as unavailable too, avoiding repeated extraction attempts. There is no background loading or polling. Configure both options at **Tools > Shortcut Dock > Appearance > Reading information panel**.
+The open book's cover is also enabled by default and appears centered at the top of the reading panel when one is available. Shortcut Dock obtains it through KOReader's current-document cover API, scales it down once to the panel's maximum dimensions, and reuses that thumbnail while the same document and dock scale remain active. Missing covers are cached as unavailable too, avoiding repeated extraction attempts. There is no background loading or polling. Configure these options at **Tools > Shortcut Dock > Appearance > Information panel**.
 
 While reading, the panel shows the document title and primary author, current/total page and book percentage, chapter title and progress, estimated time remaining for the book and chapter, today's pages and reading time, the clock, and battery state. It does not show remaining page counts. Stable page labels are used for the displayed book page numbers when enabled, while percentages and estimates continue to follow actual page turns.
 
-In the file browser or Bookshelf, no document-specific fields are invented: the panel shows the available daily reading summary, clock, and battery state. Reading-time fields appear only when KOReader's Statistics plugin is enabled and has data. The statistics API is queried once when the dock opens, and the same snapshot is reused across pagination and side changes; there is no timer, background polling, direct database access, or global ReaderUI/FileManager patch. Disable the block at **Tools > Shortcut Dock > Appearance > Reading information panel > Show panel**.
+In the file browser or Bookshelf, no document-specific fields are invented: the reading panel shows the available daily reading summary, clock, and battery state. Reading-time fields appear only when KOReader's Statistics plugin is enabled and has data. The statistics API is queried once when the dock opens, and the same snapshot is reused across pagination and side changes; there is no timer, background polling, direct database access, or global ReaderUI/FileManager patch.
+
+The network panel displays the current Wi-Fi state and uses KOReader's native network-information provider for available interface, MAC, SSID, IPv4/IPv6, gateway, and gateway-test details. This data is collected only when the network panel is opened or selected. With both reading and network information enabled, one square button immediately above the action dock alternates between them without rebuilding or closing the dock. It uses the same dimensions, border, rounded corners, and press feedback as the frontlight toggle. Its icon indicates the panel currently visible: `info_panel_reading.svg` (with the system open-book icon as fallback) for Reading, or `wifi_on.svg` / `wifi_off.svg` for Network. Holding the button describes the current panel and the tap action.
 
 ## Inline actions and Wi-Fi status
 
 When **Keep dock open after actions** is enabled, **Toggle night mode**, **Toggle Wi-Fi**, and **Full screen refresh** run without closing the dock or rebuilding its widgets. Night mode and full refresh are sent directly to the active KOReader device listener; all other configurable actions retain the safer close, dispatch, and conditional-reopen flow when appropriate.
 
-Wi-Fi uses KOReader's native network manager and its standard connection events, but replaces informational progress popups from an inline toggle with a dock-styled status block. When the reading-information panel is visible, the status block appears directly above it on the same opposite screen edge. When that panel is disabled, the status block uses its bottom-aligned position. Turning on, scanning, connecting, connected, turning off, offline, and timeout/error states are covered. While KOReader reports a pending connection, the connecting status has no display timeout and remains until the connection succeeds, fails, or the dock is closed. Repeated native scan and authentication messages reuse this same overlay instead of closing and recreating it before each forced repaint. Native network selection, password, and confirmation dialogs remain available because they require user interaction; errors raised later inside those interactive dialogs retain KOReader's native presentation.
+Wi-Fi uses KOReader's native network manager and its standard connection events, but replaces informational progress popups from an inline toggle with a dock-styled status block. When either information panel is visible, the status block appears directly above it on the same opposite screen edge. When both panels are disabled, the status block uses its bottom-aligned position. Turning on, scanning, connecting, connected, turning off, offline, and timeout/error states are covered. While KOReader reports a pending connection, the connecting status has no display timeout and remains until the connection succeeds, fails, or the dock is closed. Repeated native scan and authentication messages reuse this same overlay instead of closing and recreating it before each forced repaint. Native network selection, password, and confirmation dialogs remain available because they require user interaction; errors raised later inside those interactive dialogs retain KOReader's native presentation.
 
 Shortcut Dock does not add a second connectivity polling loop. It relies on KOReader's existing checks and schedules only one final timeout check for an attempted connection. Closing the dock also closes its Wi-Fi status block; the underlying network operation continues normally.
 
@@ -197,6 +200,7 @@ Shortcut Dock stores its preferences through KOReader's reader settings using th
 | `shortcutdock_show_frontlight_slider` | Visibility of the frontlight slider column |
 | `shortcutdock_show_warmth_slider` | Visibility of the frontlight warmth column; enabled by default on supported devices |
 | `shortcutdock_show_info_panel` | Visibility of the reading-information panel; enabled by default |
+| `shortcutdock_show_network_info_panel` | Visibility of the network-information panel; disabled by default |
 | `shortcutdock_show_info_panel_cover` | Visibility of the open book's cover at the top of the information panel; enabled by default |
 | `shortcutdock_info_panel_text_alignment` | Left, centered, or nearest-screen-edge alignment for all information-panel text |
 | `shortcutdock_dock_size` | Selected Small, Medium, or Large dock scale |
@@ -207,8 +211,8 @@ Shortcut Dock stores its preferences through KOReader's reader settings using th
 ## Code organization
 
 - `main.lua`: plugin lifecycle, saved state, migrations, dock sizing, pagination, and action dispatch.
-- `modules/widgets.lua`: external close and side-switch controls, lighting sliders, stateful frontlight button, fixed positioning, and multi-column layout.
-- `modules/info_panel.lua`: safe collection and opposite-edge rendering of reading progress, covers, statistics, clock, battery, and transient status panels.
+- `modules/widgets.lua`: external close, side-switch, and information-panel controls, lighting sliders, stateful buttons, fixed positioning, and multi-column layout.
+- `modules/info_panel.lua`: safe collection and opposite-edge rendering of reading and network details, covers, statistics, clock, battery, and transient status panels.
 - `modules/inline_actions.lua`: in-place night mode, Wi-Fi, and full-refresh execution, including Wi-Fi progress redirection and timeout handling.
 - `modules/context.lua`: reader, file-browser, and optional Bookshelf integration.
 - `modules/icons.lua`: custom/system icon resolution, stateful icons, and safe shared IconWidget patching.
@@ -224,4 +228,4 @@ Extract `shortcutdock.koplugin` into KOReader's `plugins` directory and restart 
 
 ## Version
 
-v0.21.4
+v0.22.1

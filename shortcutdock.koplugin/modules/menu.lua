@@ -172,6 +172,11 @@ function ShortcutDock:getIconFilenamesMenu()
     local warmth_icon_details = _("Warmth control")
         .. "\n\nSVG: warmth.svg"
         .. "\nPNG: warmth.png"
+    local panel_toggle_icon_details = _("Information panel switch")
+        .. "\n\n" .. _("Reading information")
+        .. ": info_panel_reading.svg / info_panel_reading.png"
+        .. "\n" .. _("Network information")
+        .. ": wifi_on.svg / wifi_on.png, wifi_off.svg / wifi_off.png"
     local menu = {
         {
             text = _("Close button") .. ": close.svg",
@@ -192,6 +197,14 @@ function ShortcutDock:getIconFilenamesMenu()
             help_text = _("Icon shown below the frontlight warmth slider."),
             callback = function()
                 UIManager:show(InfoMessage:new({ text = warmth_icon_details }))
+            end,
+        },
+        {
+            text = _("Information panel switch")
+                .. ": info_panel_reading.svg / wifi_on.svg / wifi_off.svg",
+            help_text = _("Uses the reading icon or the current Wi-Fi state icon according to the visible information panel."),
+            callback = function()
+                UIManager:show(InfoMessage:new({ text = panel_toggle_icon_details }))
             end,
         },
     }
@@ -470,13 +483,27 @@ function ShortcutDock:addToMainMenu(menu_items)
             keep_menu_open = true,
         },
         {
-            text = _("Show panel"),
+            text = _("Show reading information"),
             help_text = _("Shows book, chapter, daily reading, clock, and battery information on the screen edge opposite the dock."),
             checked_func = function()
-                return self:showInfoPanel()
+                return self:showReadingInfoPanel()
             end,
             callback = function(touchmenu_instance)
-                self:setShowInfoPanel(not self:showInfoPanel())
+                self:setShowReadingInfoPanel(not self:showReadingInfoPanel())
+                if touchmenu_instance and touchmenu_instance.updateItems then
+                    touchmenu_instance:updateItems()
+                end
+            end,
+            keep_menu_open = true,
+        },
+        {
+            text = _("Show network information"),
+            help_text = _("Shows Wi-Fi state and the network details reported by KOReader in the information panel."),
+            checked_func = function()
+                return self:showNetworkInfoPanel()
+            end,
+            callback = function(touchmenu_instance)
+                self:setShowNetworkInfoPanel(not self:showNetworkInfoPanel())
                 if touchmenu_instance and touchmenu_instance.updateItems then
                     touchmenu_instance:updateItems()
                 end
@@ -487,7 +514,7 @@ function ShortcutDock:addToMainMenu(menu_items)
             text = _("Show book cover at the top"),
             help_text = _("Shows the open book's cover above the reading information. The thumbnail is loaded once and reused while the document remains open."),
             enabled_func = function()
-                return self:showInfoPanel()
+                return self:showReadingInfoPanel()
             end,
             checked_func = function()
                 return self:showInfoPanelCover()
@@ -510,7 +537,7 @@ function ShortcutDock:addToMainMenu(menu_items)
                 return _("Panel text alignment")
                     .. ": " .. labels[self:getInfoPanelTextAlignment()]
             end,
-            help_text = _("Aligns every line in the reading information panel, including the clock and battery."),
+            help_text = _("Aligns every line in the selected information panel, including the clock and battery."),
             enabled_func = function()
                 return self:showInfoPanel()
             end,
@@ -662,20 +689,21 @@ function ShortcutDock:addToMainMenu(menu_items)
         dock_size_item,
         max_action_dock_height_item,
         {
-            text = _("Reading information panel"),
-            help_text = _("Configure the opposite-edge reading summary and its book cover."),
+            text = _("Information panel"),
+            help_text = _("Choose reading and network content for the opposite-edge panel."),
             sub_item_table = {
                 additional_control_items[4],
                 additional_control_items[5],
                 additional_control_items[6],
+                additional_control_items[7],
             },
         },
         {
             text = _("Lighting controls"),
             help_text = _("Show or hide the frontlight brightness and warmth columns."),
             sub_item_table = {
-                additional_control_items[7],
                 additional_control_items[8],
+                additional_control_items[9],
             },
         },
         {

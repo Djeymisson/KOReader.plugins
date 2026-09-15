@@ -21,7 +21,7 @@ local function scaleMetric(value, factor, minimum)
     return math_max(minimum or 1, math_floor(value * factor + 0.5))
 end
 
-local PLUGIN_VERSION = "v0.21.4"
+local PLUGIN_VERSION = "v0.22.1"
 local SETTING_ACTIONS = "shortcutdock_actions"
 local SETTING_ACTION_CONTEXTS = "shortcutdock_action_contexts"
 local SETTING_AUTO_VISIBILITY = "shortcutdock_auto_visibility"
@@ -33,6 +33,7 @@ local SETTING_SHOW_CONTEXT_BUTTON = "shortcutdock_show_context_button"
 local SETTING_SHOW_FRONTLIGHT_SLIDER = "shortcutdock_show_frontlight_slider"
 local SETTING_SHOW_WARMTH_SLIDER = "shortcutdock_show_warmth_slider"
 local SETTING_SHOW_INFO_PANEL = "shortcutdock_show_info_panel"
+local SETTING_SHOW_NETWORK_INFO_PANEL = "shortcutdock_show_network_info_panel"
 local SETTING_SHOW_INFO_PANEL_COVER = "shortcutdock_show_info_panel_cover"
 local SETTING_CENTER_INFO_PANEL_TEXT = "shortcutdock_center_info_panel_text"
 local SETTING_INFO_PANEL_TEXT_ALIGNMENT = "shortcutdock_info_panel_text_alignment"
@@ -264,6 +265,7 @@ local ACTION_ICONS = {
     exit = "exit",
     close = "close",
     toggle_wifi = "wifi",
+    info_panel_reading = "book.opened",
     show_network_info = "wifi",
     show_frontlight_dialog = "frontlight",
     toggle_frontlight = "frontlight",
@@ -414,9 +416,9 @@ local function applyButtonMetrics(button, metrics)
     return button
 end
 
--- Keep every detached/highlighted control on the same geometry. In
--- particular, the side-switch and close buttons must match the frontlight
--- toggle instead of independently duplicating its dimensions.
+-- Keep every detached/highlighted control on the same geometry. The close,
+-- side-switch, information-panel, and frontlight buttons all share these
+-- dimensions instead of duplicating them independently.
 local function applyHighlightedButtonMetrics(button, width, metrics)
     button.width = width
     button.height = metrics.side_button_height
@@ -433,6 +435,7 @@ local DockWidgets = dofile(PLUGIN_DIR .. "modules/widgets.lua")
 local InfoPanel = dofile(PLUGIN_DIR .. "modules/info_panel.lua")
 local LightSlider = DockWidgets.LightSlider
 local FrontlightToggleButton = DockWidgets.FrontlightToggleButton
+local InfoPanelToggleButton = DockWidgets.InfoPanelToggleButton
 local FloatingControlButtonDialog = DockWidgets.FloatingControlButtonDialog
 local ShortcutDock = WidgetContainer:extend({
     name = "shortcutdock",
@@ -459,6 +462,7 @@ function ShortcutDock:init()
     self.dialog = nil
     self.info_panel_widget = nil
     self.info_panel_data = nil
+    self.current_info_panel_kind = nil
     self.info_panel_cover_cache = nil
     self.status_panel_widget = nil
     self.status_panel_text = nil
@@ -796,14 +800,43 @@ function ShortcutDock:setShowWarmthSlider(enabled)
     G_reader_settings:saveSetting(SETTING_SHOW_WARMTH_SLIDER, enabled and true or false)
 end
 
-function ShortcutDock:showInfoPanel()
+function ShortcutDock:showReadingInfoPanel()
     return G_reader_settings:readSetting(SETTING_SHOW_INFO_PANEL) ~= false
 end
 
-function ShortcutDock:setShowInfoPanel(enabled)
+function ShortcutDock:setShowReadingInfoPanel(enabled)
     G_reader_settings:saveSetting(SETTING_SHOW_INFO_PANEL, enabled and true or false)
     if not enabled then
         InfoPanel.clearCoverCache(self)
+    end
+end
+
+function ShortcutDock:showNetworkInfoPanel()
+    return G_reader_settings:readSetting(SETTING_SHOW_NETWORK_INFO_PANEL) == true
+end
+
+function ShortcutDock:setShowNetworkInfoPanel(enabled)
+    G_reader_settings:saveSetting(
+        SETTING_SHOW_NETWORK_INFO_PANEL,
+        enabled and true or false
+    )
+end
+
+function ShortcutDock:showInfoPanel()
+    return self:showReadingInfoPanel() or self:showNetworkInfoPanel()
+end
+
+function ShortcutDock:getInfoPanelKind()
+    local reading = self:showReadingInfoPanel()
+    local network = self:showNetworkInfoPanel()
+    if self.current_info_panel_kind == "network" and network then
+        return "network"
+    elseif self.current_info_panel_kind == "reading" and reading then
+        return "reading"
+    elseif reading then
+        return "reading"
+    elseif network then
+        return "network"
     end
 end
 
@@ -837,6 +870,63 @@ function ShortcutDock:setInfoPanelTextAlignment(alignment)
             and alignment
             or INFO_PANEL_TEXT_LEFT
     )
+end
+
+function ShortcutDock:collectInfoPanelData(kind, metrics)
+    if kind == "network" then
+        return InfoPanel.collectNetwork()
+    end
+    return InfoPanel.collect(
+        self,
+        metrics,
+        DOCK_MARGIN,
+        self:showInfoPanelCover()
+    )
+end
+
+function ShortcutDock:createInfoPanelOverlay(data, metrics)
+    return InfoPanel.createOverlay(
+        self,
+        metrics,
+        self.current_dock_side == "left" and "right" or "left",
+        DOCK_MARGIN,
+        data
+    )
+end
+
+function ShortcutDock:showInfoPanelToggleButton()
+    return self:showReadingInfoPanel() and self:showNetworkInfoPanel()
+end
+
+function ShortcutDock:switchInfoPanel(kind)
+    if
+        not self.dialog
+        or (kind ~= "reading" and kind ~= "network")
+        or (kind == "reading" and not self:showReadingInfoPanel())
+        or (kind == "network" and not self:showNetworkInfoPanel())
+    then
+        return
+    end
+
+    self.current_info_panel_kind = kind
+    self:closeStatusPanel()
+    local previous_widget = self.info_panel_widget
+    self.info_panel_widget = nil
+    self.info_panel_data = nil
+    if previous_widget then
+        UIManager:close(previous_widget)
+    end
+
+    local metrics = self:getDockMetrics()
+    local data = self:collectInfoPanelData(kind, metrics)
+    local widget = self:createInfoPanelOverlay(data, metrics)
+    self.info_panel_data = data
+    self.info_panel_widget = widget
+    UIManager:show(widget, "[ui]")
+    local toggle_button = self.dialog and self.dialog.info_panel_toggle_button
+    if toggle_button and toggle_button.dimen then
+        UIManager:setDirty(self.dialog, "ui", toggle_button.dimen)
+    end
 end
 
 function ShortcutDock:keepOpenAfterAction()
@@ -1037,6 +1127,7 @@ function ShortcutDock:getMaxPageRows(metrics)
         - 2 * Size.border.window
     local external_button_count = (self:showSideButton() and 1 or 0)
         + (self:showCloseButton() and 1 or 0)
+        + (self:showInfoPanelToggleButton() and 1 or 0)
     screen_available_height = screen_available_height
         - external_button_count * metrics.side_button_outer_height
         - external_button_count * metrics.side_button_gap
@@ -1361,6 +1452,45 @@ function ShortcutDock:makeCloseButton(width, dialog, metrics)
     return Button:new(button)
 end
 
+function ShortcutDock:getInfoPanelToggleDisplay()
+    if self.current_info_panel_kind == "network" then
+        return self:getIcon("toggle_wifi"), _("N")
+    end
+    return self:getIcon("info_panel_reading"), _("R")
+end
+
+function ShortcutDock:makeInfoPanelToggleButton(width, dialog, metrics)
+    local icon, fallback = self:getInfoPanelToggleDisplay()
+    local button = applyHighlightedButtonMetrics({
+        id = "shortcutdock_switch_info_panel",
+        enabled = true,
+        show_parent = dialog,
+        display_provider = function()
+            return self:getInfoPanelToggleDisplay()
+        end,
+        callback = function()
+            local target = self.current_info_panel_kind == "network"
+                and "reading"
+                or "network"
+            self:switchInfoPanel(target)
+        end,
+        hold_callback = function()
+            local message = self.current_info_panel_kind == "network"
+                and _("Showing network information. Tap to show reading information.")
+                or _("Showing reading information. Tap to show network information.")
+            UIManager:show(InfoMessage:new({ text = message }))
+        end,
+    }, width, metrics)
+    if icon then
+        button.icon = icon
+    else
+        button.text = fallback
+        button.text_font_size = metrics.side_font_size
+        button.text_font_bold = true
+    end
+    return InfoPanelToggleButton:new(button)
+end
+
 function ShortcutDock:showDock(page, side, info_panel_data)
     -- Another UI instance (reader or file browser) may have changed these
     -- shared preferences since this instance was created.
@@ -1410,6 +1540,12 @@ function ShortcutDock:showDock(page, side, info_panel_data)
             return self:makeCloseButton(width, parent, metrics)
         end
     end
+    local info_panel_toggle_button_factory
+    if self:showInfoPanelToggleButton() then
+        info_panel_toggle_button_factory = function(width, parent)
+            return self:makeInfoPanelToggleButton(width, parent, metrics)
+        end
+    end
     local frontlight_slider_factory
     if self:showFrontlightSlider() then
         frontlight_slider_factory = function(dock_height, parent)
@@ -1422,13 +1558,12 @@ function ShortcutDock:showDock(page, side, info_panel_data)
             return self:makeWarmthSlider(dock_height, parent, metrics)
         end
     end
-    if self:showInfoPanel() then
-        info_panel_data = info_panel_data or InfoPanel.collect(
-            self,
-            metrics,
-            DOCK_MARGIN,
-            self:showInfoPanelCover()
-        )
+    local info_panel_kind = self:getInfoPanelKind()
+    self.current_info_panel_kind = info_panel_kind
+    if info_panel_kind then
+        if not info_panel_data or info_panel_data.kind ~= info_panel_kind then
+            info_panel_data = self:collectInfoPanelData(info_panel_kind, metrics)
+        end
     else
         info_panel_data = nil
         InfoPanel.clearCoverCache(self)
@@ -1441,6 +1576,7 @@ function ShortcutDock:showDock(page, side, info_panel_data)
         dismissable = true,
         side_button_factory = side_button_factory,
         close_button_factory = close_button_factory,
+        info_panel_toggle_button_factory = info_panel_toggle_button_factory,
         frontlight_slider_factory = frontlight_slider_factory,
         warmth_slider_factory = warmth_slider_factory,
         side_button_gap = metrics.side_button_gap,
@@ -1475,13 +1611,7 @@ function ShortcutDock:showDock(page, side, info_panel_data)
     self.dialog = dialog
     self.info_panel_data = info_panel_data
     if info_panel_data then
-        self.info_panel_widget = InfoPanel.createOverlay(
-            self,
-            metrics,
-            side == "left" and "right" or "left",
-            DOCK_MARGIN,
-            info_panel_data
-        )
+        self.info_panel_widget = self:createInfoPanelOverlay(info_panel_data, metrics)
         UIManager:show(self.info_panel_widget, "[ui]")
     end
     UIManager:show(dialog, "[ui]")

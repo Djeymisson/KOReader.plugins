@@ -244,6 +244,23 @@ function FrontlightToggleButton:paintTo(bb, x, y)
     Button.paintTo(self, bb, x, y)
 end
 
+local InfoPanelToggleButton = Button:extend({})
+
+function InfoPanelToggleButton:paintTo(bb, x, y)
+    local icon, text = self.display_provider()
+    if icon then
+        if icon ~= self.icon or self.text ~= nil then
+            self.text = nil
+            self.icon = nil
+            self:setIcon(icon, self.width)
+        end
+    elseif text ~= self.text or self.icon ~= nil then
+        self.icon = nil
+        self:setText(text, self.width)
+    end
+    Button.paintTo(self, bb, x, y)
+end
+
 local FloatingControlButtonDialog = ButtonDialog:extend({})
 
 function FloatingControlButtonDialog:onCloseWidget()
@@ -286,6 +303,7 @@ function FloatingControlButtonDialog:init()
     if
         not self.side_button_factory
         and not self.close_button_factory
+        and not self.info_panel_toggle_button_factory
         and not self.frontlight_slider_factory
         and not self.warmth_slider_factory
     then
@@ -297,6 +315,7 @@ function FloatingControlButtonDialog:init()
     local dock_column = dock_frame
     local side_button
     local close_button
+    local info_panel_toggle_button
     local frontlight_column
     local warmth_column
     if self.close_button_factory then
@@ -305,7 +324,11 @@ function FloatingControlButtonDialog:init()
     if self.side_button_factory then
         side_button = self.side_button_factory(dock_size.w, self)
     end
-    if close_button or side_button then
+    if self.info_panel_toggle_button_factory then
+        info_panel_toggle_button = self.info_panel_toggle_button_factory(dock_size.w, self)
+        self.info_panel_toggle_button = info_panel_toggle_button
+    end
+    if close_button or side_button or info_panel_toggle_button then
         local external_buttons = {}
         local gap = self.side_button_gap or BASE_SIDE_BUTTON_GAP
         if close_button then
@@ -314,6 +337,10 @@ function FloatingControlButtonDialog:init()
         end
         if side_button then
             external_buttons[#external_buttons + 1] = side_button
+            external_buttons[#external_buttons + 1] = VerticalSpan:new({ width = gap })
+        end
+        if info_panel_toggle_button then
+            external_buttons[#external_buttons + 1] = info_panel_toggle_button
             external_buttons[#external_buttons + 1] = VerticalSpan:new({ width = gap })
         end
         external_buttons[#external_buttons + 1] = dock_frame
@@ -384,6 +411,9 @@ function FloatingControlButtonDialog:init()
     if close_button and Device:hasDPad() and self.layout then
         table.insert(self.layout, 1, { close_button })
     end
+    if info_panel_toggle_button and Device:hasDPad() and self.layout then
+        table.insert(self.layout, 1, { info_panel_toggle_button })
+    end
     if
         frontlight_column
         and frontlight_column.toggle_button
@@ -405,5 +435,6 @@ end
 return {
     LightSlider = LightSlider,
     FrontlightToggleButton = FrontlightToggleButton,
+    InfoPanelToggleButton = InfoPanelToggleButton,
     FloatingControlButtonDialog = FloatingControlButtonDialog,
 }

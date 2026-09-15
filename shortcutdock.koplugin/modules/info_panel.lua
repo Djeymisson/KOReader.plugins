@@ -7,6 +7,7 @@ local FrameContainer = require("ui/widget/container/framecontainer")
 local Geom = require("ui/geometry")
 local ImageWidget = require("ui/widget/imagewidget")
 local LineWidget = require("ui/widget/linewidget")
+local NetworkMgr = require("ui/network/manager")
 local RenderImage = require("ui/renderimage")
 local Size = require("ui/size")
 local TextBoxWidget = require("ui/widget/textboxwidget")
@@ -25,6 +26,11 @@ local math_min = math.min
 
 local InfoPanelOverlay = WidgetContainer:extend({
     modal = false,
+    -- The panel may be replaced while the dock remains open. Keeping it in
+    -- KOReader's non-blocking overlay layer prevents a refreshed panel from
+    -- becoming the input target above the dock. Unlike Notification, this
+    -- widget does not close itself on input.
+    toast = true,
 })
 
 local StatusPanelOverlay = WidgetContainer:extend({
@@ -378,6 +384,7 @@ end
 local function collect(plugin, metrics, screen_margin, include_cover)
     local ui = plugin and plugin.ui or nil
     local data = {
+        kind = "reading",
         clock = datetime.secondsToHour(
             os.time(),
             G_reader_settings:isTrue("twelve_hour_clock")
@@ -422,6 +429,56 @@ local function collect(plugin, metrics, screen_margin, include_cover)
         end, total)
     end
     return data
+end
+
+local function collectNetwork()
+    local wifi_on = safeCall(function()
+        return NetworkMgr:isWifiOn()
+    end, false) == true
+    local connected = wifi_on and safeCall(function()
+        return NetworkMgr:isConnected()
+    end, false) == true
+    local connecting = wifi_on and NetworkMgr.pending_connection == true
+    local status
+    if connecting then
+        status = _("Connecting to Wi-Fi…")
+    elseif connected then
+        status = _("Connected")
+    elseif wifi_on then
+        status = _("Wi-Fi on, not connected")
+    else
+        status = _("Wi-Fi off")
+    end
+
+    local current_network = wifi_on and safeCall(function()
+        return NetworkMgr:getCurrentNetwork()
+    end, nil) or nil
+    local details
+    if wifi_on and type(Device.retrieveNetworkInfo) == "function" then
+        details = safeCall(function()
+            return Device:retrieveNetworkInfo()
+        end, nil)
+        if details ~= nil then
+            details = tostring(details):gsub("%s+$", "")
+            if details == "" then
+                details = nil
+            end
+        end
+    end
+
+    return {
+        kind = "network",
+        clock = datetime.secondsToHour(
+            os.time(),
+            G_reader_settings:isTrue("twelve_hour_clock")
+        ),
+        battery = getBatteryText(),
+        network = {
+            status = status,
+            ssid = current_network and current_network.ssid or nil,
+            details = details,
+        },
+    }
 end
 
 local function makeText(text, face, width, bold, color, alignment)
@@ -471,7 +528,22 @@ local function build(plugin, metrics, parent, maximum_outer_width, data, panel_s
     data = data or collect(plugin)
     local items = {}
 
-    if data.document then
+    if data.kind == "network" then
+        items[#items + 1] = makePanelText(_("Network information"), title_face, true)
+        addGap(items, gap)
+        items[#items + 1] = makePanelText(data.network.status, body_face, true)
+        if data.network.ssid and not data.network.details then
+            addGap(items, gap)
+            items[#items + 1] = makePanelText(
+                _("SSID") .. ": " .. tostring(data.network.ssid),
+                body_face
+            )
+        end
+        if data.network.details then
+            addSeparator(items, content_width, gap)
+            items[#items + 1] = makePanelText(data.network.details, body_face)
+        end
+    elseif data.document then
         if data.cover and data.cover.bb then
             items[#items + 1] = CenterContainer:new({
                 dimen = Geom:new({ w = content_width, h = data.cover.height }),
@@ -612,6 +684,7 @@ return {
     build = build,
     clearCoverCache = clearCoverCache,
     collect = collect,
+    collectNetwork = collectNetwork,
     createOverlay = createOverlay,
     createStatusOverlay = createStatusOverlay,
 }
