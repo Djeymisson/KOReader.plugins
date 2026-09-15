@@ -14,7 +14,7 @@ Each plugin is kept in its own `.koplugin/` folder and has a dedicated documenta
 | Lookup Preview | v1.0.19 | `lookuppreview.koplugin/` | [lookuppreview.koplugin.md](./lookuppreview.koplugin.md) |
 | Reader Header Footer | v1.0.1 | `readerheaderfooter.koplugin/` | [readerheaderfooter.koplugin.md](./readerheaderfooter.koplugin.md) |
 | Selection Toolbar | v1.0.4 | `selectiontoolbar.koplugin/` | [selectiontoolbar.koplugin.md](./selectiontoolbar.koplugin.md) |
-| Shortcut Dock | v0.11.0 | `shortcutdock.koplugin/` | [shortcutdock.koplugin.md](./shortcutdock.koplugin.md) |
+| Shortcut Dock | v0.11.1 | `shortcutdock.koplugin/` | [shortcutdock.koplugin.md](./shortcutdock.koplugin.md) |
 
 Each `.koplugin/` folder contains the files required for KOReader to load the plugin, usually including at least:
 

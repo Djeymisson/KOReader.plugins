@@ -1,4 +1,4 @@
-# Shortcut Dock ![Version](https://img.shields.io/badge/version-v0.11.0-blue)
+# Shortcut Dock ![Version](https://img.shields.io/badge/version-v0.11.1-blue)
 
 Shortcut Dock adds a floating, vertical shortcut bar to KOReader. It is designed for touch devices and can be assigned to any gesture supported by KOReader.
 
@@ -55,20 +55,22 @@ In the file browser or reader, open:
 The settings follow the same grouped layout as the other plugins in this repository:
 
 - `Show Shortcut Dock`: opens the dock immediately.
-- `Behavior`: controls the dock position and its frontlight control.
-  - `Dock side`: selects `Left`, `Right`, or `Follow gesture side`. The automatic option uses the configured fixed side as a fallback when the dock is opened without gesture coordinates.
-  - `Dock size`: selects `Small`, `Medium`, or `Large`. The selected scale applies to the buttons, icons, chevrons, frontlight column, and pagination calculation.
-  - `Show frontlight slider`: shows or hides the brightness column on devices with a frontlight.
+- `Behavior`: controls where the dock opens, its size, and what happens after an action.
+  - `Dock side: <current side>`: selects `Left`, `Right`, or `Follow gesture side`. The automatic option uses the configured fixed side as a fallback when the dock is opened without gesture coordinates.
+  - `Dock size: <current size>`: selects `Small`, `Medium`, or `Large`. The selected scale applies to the buttons, icons, chevrons, frontlight column, and pagination calculation.
   - `Keep dock open after actions`: reopens the dock after inline actions while leaving it closed when an action opens another screen or dialog.
-- `Buttons`: controls the fixed and configurable dock buttons.
-  - `Show side-switch button`: shows a separate chevron above the dock that changes its side without opening the settings.
-  - `Show fixed context button`: enables the first contextual button in the main group.
+- `Buttons`: controls configurable actions, additional controls, context visibility, and icon customization.
   - `Buttons and order`: opens KOReader's native action selector and shows the current number of configured actions.
-  - `Automatic context visibility`: automatically separates native reader and file-browser actions.
-  - `Visibility by context`: displays the automatic result and controls manual overrides for each action.
+  - `Additional controls`:
+    - `Show fixed context button`: enables the first contextual button in the main group.
+    - `Show side-switch button`: shows a separate chevron above the dock that changes its side without opening the settings.
+    - `Show frontlight control`: shows or hides the brightness slider and light toggle on devices with a frontlight.
+  - `Context visibility`:
+    - `Automatic visibility`: automatically separates native reader and file-browser actions.
+    - `Per-action visibility`: displays the automatic result and controls manual overrides for each action.
   - `Expected icon filenames`: lists the custom SVG and PNG names accepted for every action.
 - `Gesture setup`: displays instructions for assigning the dock to a KOReader gesture.
-- `Version: v0.11.0`: shows the installed plugin version.
+- `Version: v0.11.1`: shows the installed plugin version.
 
 The side selector and visibility options keep their menu open after a change, making it easier to review related settings.
 
@@ -88,14 +90,14 @@ Open **Tools > Shortcut Dock > Buttons > Buttons and order**. KOReader's native 
 
 Selecting **Nothing** removes every configurable action and remains effective when switching between the file browser and reader. The fixed context button may still be displayed independently when its visibility option is enabled.
 
-Open **Tools > Shortcut Dock > Buttons > Visibility by context** to choose one of these options for each configured action:
+Open **Tools > Shortcut Dock > Buttons > Context visibility > Per-action visibility** to choose one of these options for each configured action:
 
 - **Automatic**: uses the native-action classification when automatic visibility is enabled.
 - **Everywhere**: displays the action in every supported screen; this is the default when automatic visibility is disabled.
 - **Reader only**: displays the action only while a document is open.
 - **File browser and Bookshelf only**: displays the action in the file browser and in Bookshelf, including when Bookshelf is covering a parked reader.
 
-Enable **Tools > Shortcut Dock > Buttons > Automatic context visibility** to classify native KOReader actions automatically. Book map, Table of contents, Bookmarks, reading navigation, typography, and document-layout actions are treated as reader-only. File search, folder navigation, sorting, and file-browser display actions are treated as file-browser and Bookshelf only. General actions such as Wi-Fi, lighting, history, and power controls remain available everywhere.
+Enable **Tools > Shortcut Dock > Buttons > Context visibility > Automatic visibility** to classify native KOReader actions automatically. Book map, Table of contents, Bookmarks, reading navigation, typography, and document-layout actions are treated as reader-only. File search, folder navigation, sorting, and file-browser display actions are treated as file-browser and Bookshelf only. General actions such as Wi-Fi, lighting, history, and power controls remain available everywhere.
 
 Manual selections always override the automatic result. Unknown actions and actions registered by other plugins default to **Everywhere**. At the top of the visibility menu, **Use automatic visibility for all actions** clears manual overrides when automatic mode is enabled; with automatic mode disabled, the same command is shown as **Show all actions everywhere**.
 
@@ -107,7 +109,7 @@ On devices with a frontlight, the slider is enabled by default and appears in it
 
 A separate compact button at the bottom of this column toggles the frontlight. It uses `icons/light_on.svg` while the light is active and `icons/light_off.svg` while it is off. Turning the light off disables and dims the slider until the same button turns it back on.
 
-The frontlight column normally has the same total height as the action-button dock. When the action dock is shorter than one third of the screen, the column uses half of the screen height so it remains comfortable to operate. The slider fills the space above the toggle button, and the column's bottom edge stays aligned with the action dock. Disable **Tools > Shortcut Dock > Behavior > Show frontlight slider** to remove both controls.
+The frontlight column normally has the same total height as the action-button dock. When the action dock is shorter than one third of the screen, the column uses half of the screen height so it remains comfortable to operate. The slider fills the space above the toggle button, and the column's bottom edge stays aligned with the action dock. Disable **Tools > Shortcut Dock > Buttons > Additional controls > Show frontlight control** to remove both controls.
 
 Open **Tools > Shortcut Dock > Buttons > Expected icon filenames** to see the exact custom `.svg` and `.png` filenames for every dock action and fixed control, including the frontlight states.
 
@@ -165,4 +167,4 @@ Extract `shortcutdock.koplugin` into KOReader's `plugins` directory and restart 
 
 ## Version
 
-v0.11.0
+v0.11.1
