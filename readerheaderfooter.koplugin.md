@@ -1,4 +1,4 @@
-# Reader Header Footer ![Version](https://img.shields.io/badge/version-v1.0.1-blue)
+# Reader Header Footer ![Version](https://img.shields.io/badge/version-v1.0.8-blue)
 
 Plugin for [KOReader](https://koreader.rocks/) that adds discreet header and footer information while reading.
 
@@ -194,7 +194,8 @@ The plugin was designed to be lightweight. Some important decisions:
 - avoids redrawing while menus or dialogs are open;
 - updates the clock only when the minute changes;
 - checks the battery periodically, not continuously;
-- reuses the current page state, page count, and visible reader area.
+- reuses the current page state, page count, and visible reader area;
+- trims overflowing header/footer text using glyph-aware measurement, so a multi-byte character (accents, the Wi-Fi symbol) is never split in half at the cut-off point.
 
 ## Advanced customization
 
