@@ -8,13 +8,14 @@ Each plugin is kept in its own `.koplugin/` folder and has a dedicated documenta
 
 | Plugin | Version | Folder | Documentation |
 |---|---|---|---|
-| Plain UI Custom | v1.0.0 | `plainui-custom.koplugin/` | [plainui-custom.koplugin.md](./plainui-custom.koplugin.md) |
-| Dictionary Preview | v1.1.1 | `dictionarypreview.koplugin/` | [dictionarypreview.koplugin.md](./dictionarypreview.koplugin.md) |
-| Translator Preview | v1.0.1 | `translatorpreview.koplugin/` | [translatorpreview.koplugin.md](./translatorpreview.koplugin.md) |
-| Lookup Preview | v1.0.19 | `lookuppreview.koplugin/` | [lookuppreview.koplugin.md](./lookuppreview.koplugin.md) |
-| Reader Header Footer | v1.0.1 | `readerheaderfooter.koplugin/` | [readerheaderfooter.koplugin.md](./readerheaderfooter.koplugin.md) |
-| Selection Toolbar | v1.0.4 | `selectiontoolbar.koplugin/` | [selectiontoolbar.koplugin.md](./selectiontoolbar.koplugin.md) |
-| Quick Dock | v0.22.1 | `quickdock.koplugin/` | [quickdock.koplugin.md](./quickdock.koplugin.md) |
+| Plain UI Custom | v1.3-custom | `plainui-custom.koplugin/` | [plainui-custom.koplugin.md](./plainui-custom.koplugin.md) |
+| Dictionary Preview | v1.1.4 | `dictionarypreview.koplugin/` | [dictionarypreview.koplugin.md](./dictionarypreview.koplugin.md) |
+| Translator Preview | v1.0.2 | `translatorpreview.koplugin/` | [translatorpreview.koplugin.md](./translatorpreview.koplugin.md) |
+| Lookup Preview | v1.0.20 | `lookuppreview.koplugin/` | [lookuppreview.koplugin.md](./lookuppreview.koplugin.md) |
+| Reader Header Footer | v1.0.8 | `readerheaderfooter.koplugin/` | [readerheaderfooter.koplugin.md](./readerheaderfooter.koplugin.md) |
+| Selection Toolbar | v1.0.5 | `selectiontoolbar.koplugin/` | [selectiontoolbar.koplugin.md](./selectiontoolbar.koplugin.md) |
+| Quick Dock | v0.22.2 | `quickdock.koplugin/` | [quickdock.koplugin.md](./quickdock.koplugin.md) |
+| Image Browser | v0.2.6 | `imagebrowser.koplugin/` | [imagebrowser.koplugin.md](./imagebrowser.koplugin.md) |
 | Page Anchor | v1.3.2 | `pageanchor.koplugin/` | [pageanchor.koplugin.md](./pageanchor.koplugin.md) |
 
 Each `.koplugin/` folder contains the files required for KOReader to load the plugin, usually including at least:
