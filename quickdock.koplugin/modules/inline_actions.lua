@@ -9,11 +9,11 @@ local INLINE_ACTIONS = {
 }
 local BUTTON_HELP_TIMEOUT = 3
 
-return function(ShortcutDock, options)
+return function(QuickDock, options)
     local InfoPanel = options.InfoPanel
     local dock_margin = options.dock_margin
 
-function ShortcutDock:closeStatusPanel(expected_widget)
+function QuickDock:closeStatusPanel(expected_widget)
     local status_panel_widget = self.status_panel_widget
     if expected_widget and status_panel_widget ~= expected_widget then
         return
@@ -25,7 +25,7 @@ function ShortcutDock:closeStatusPanel(expected_widget)
     end
 end
 
-function ShortcutDock:showStatusPanel(text, timeout)
+function QuickDock:showStatusPanel(text, timeout)
     if not self.dialog then
         return
     end
@@ -67,11 +67,11 @@ function ShortcutDock:showStatusPanel(text, timeout)
     return status_panel_widget
 end
 
-function ShortcutDock:showButtonHelp(text)
+function QuickDock:showButtonHelp(text)
     return self:showStatusPanel(text, BUTTON_HELP_TIMEOUT)
 end
 
-function ShortcutDock:scheduleWifiStatusTimeout()
+function QuickDock:scheduleWifiStatusTimeout()
     local generation = self.wifi_status_generation
     -- NetworkMgr already performs its own 250 ms connectivity checks. One
     -- final check after its 45 s deadline is enough to replace the native
@@ -89,7 +89,7 @@ function ShortcutDock:scheduleWifiStatusTimeout()
     end)
 end
 
-function ShortcutDock:runWithWifiInfoRedirect(callback)
+function QuickDock:runWithWifiInfoRedirect(callback)
     local original_show = UIManager.show
     local original_close = UIManager.close
     local redirected_widgets = {}
@@ -143,7 +143,7 @@ function ShortcutDock:runWithWifiInfoRedirect(callback)
     return result
 end
 
-function ShortcutDock:toggleWifiInline()
+function QuickDock:toggleWifiInline()
     if NetworkMgr:isWifiOn() then
         self.wifi_status_generation = self.wifi_status_generation + 1
         self:showStatusPanel(_("Turning off Wi-Fi…"))
@@ -174,7 +174,7 @@ function ShortcutDock:toggleWifiInline()
     return true
 end
 
-function ShortcutDock:executeInlineAction(action_id)
+function QuickDock:executeInlineAction(action_id)
     if not INLINE_ACTIONS[action_id] or not self.dialog then
         return false
     end
@@ -192,28 +192,28 @@ function ShortcutDock:executeInlineAction(action_id)
     return true
 end
 
-function ShortcutDock:onNetworkConnected()
+function QuickDock:onNetworkConnected()
     self.wifi_status_generation = self.wifi_status_generation + 1
     self:refreshStatefulActionButton("toggle_wifi")
     self:refreshVisibleNetworkInfoPanel("connected")
     self:showStatusPanel(_("Connected to Wi-Fi"), 2)
 end
 
-function ShortcutDock:onNetworkDisconnected()
+function QuickDock:onNetworkDisconnected()
     self.wifi_status_generation = self.wifi_status_generation + 1
     self:refreshStatefulActionButton("toggle_wifi")
     self:refreshVisibleNetworkInfoPanel("disconnected")
     self:showStatusPanel(_("Wi-Fi off."), 2)
 end
 
-function ShortcutDock:onNetworkConnecting()
+function QuickDock:onNetworkConnecting()
     self.wifi_status_generation = self.wifi_status_generation + 1
     self:refreshVisibleNetworkInfoPanel("connecting")
     self:showStatusPanel(_("Connecting to Wi-Fi…"))
     self:scheduleWifiStatusTimeout()
 end
 
-function ShortcutDock:onNetworkDisconnecting()
+function QuickDock:onNetworkDisconnecting()
     self.wifi_status_generation = self.wifi_status_generation + 1
     self:showStatusPanel(_("Turning off Wi-Fi…"))
 end

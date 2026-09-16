@@ -51,7 +51,7 @@ While reading, open **Page Anchor** in the navigation menu. You can:
 - clear KOReader's current location history.
 
 Navigation buttons use SVG icons bundled with Page Anchor and the same rounded
-border, icon size, base height and padding as Shortcut Dock's main buttons.
+border, icon size, base height and padding as Quick Dock's main buttons.
 Their placement is automatic: for left-to-right books, later locations are on
 the right and earlier locations are on the left; right-to-left books reverse
 that mapping.

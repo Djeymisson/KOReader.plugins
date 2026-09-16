@@ -39,7 +39,7 @@ local function makeToggleOption(text, help_text, checked_func, set_callback, ena
     }
 end
 
-return function(ShortcutDock, constants)
+return function(QuickDock, constants)
     local ACTION_CONTEXT_ALL = constants.ACTION_CONTEXT_ALL
     local ACTION_CONTEXT_AUTOMATIC = constants.ACTION_CONTEXT_AUTOMATIC
     local ACTION_CONTEXT_READER = constants.ACTION_CONTEXT_READER
@@ -69,43 +69,43 @@ local function showResetConfirmation(plugin, touchmenu_instance, text, ok_text, 
     }))
 end
 
-function ShortcutDock:showResetButtonsConfirmation(touchmenu_instance)
+function QuickDock:showResetButtonsConfirmation(touchmenu_instance)
     showResetConfirmation(
         self,
         touchmenu_instance,
-        _("Reset the Shortcut Dock buttons and their order to the defaults?"),
+        _("Reset the Quick Dock buttons and their order to the defaults?"),
         _("Reset"),
         self.resetActions
     )
 end
 
-function ShortcutDock:showResetBehaviorConfirmation(touchmenu_instance)
+function QuickDock:showResetBehaviorConfirmation(touchmenu_instance)
     showResetConfirmation(
         self,
         touchmenu_instance,
-        _("Reset Shortcut Dock behavior to its defaults? Your buttons and their order will be kept."),
+        _("Reset Quick Dock behavior to its defaults? Your buttons and their order will be kept."),
         _("Reset"),
         self.resetBehavior
     )
 end
 
-function ShortcutDock:showResetBehaviorAndButtonsConfirmation(touchmenu_instance)
+function QuickDock:showResetBehaviorAndButtonsConfirmation(touchmenu_instance)
     showResetConfirmation(
         self,
         touchmenu_instance,
-        _("Reset Shortcut Dock behavior and buttons to their defaults? Appearance settings will be kept."),
+        _("Reset Quick Dock behavior and buttons to their defaults? Appearance settings will be kept."),
         _("Reset all"),
         self.resetBehaviorAndButtons
     )
 end
 
-function ShortcutDock:getActionsMenu()
+function QuickDock:getActionsMenu()
     local menu = {}
     Dispatcher:addSubMenu(self, menu, self, "actions")
     return menu
 end
 
-function ShortcutDock:getActionVisibilityLabel(context)
+function QuickDock:getActionVisibilityLabel(context)
     if context == ACTION_CONTEXT_AUTOMATIC then
         return _("Automatic")
     elseif context == ACTION_CONTEXT_READER then
@@ -116,7 +116,7 @@ function ShortcutDock:getActionVisibilityLabel(context)
     return _("Everywhere")
 end
 
-function ShortcutDock:getActionVisibilitySummary(action_id)
+function QuickDock:getActionVisibilitySummary(action_id)
     local mode = self:getActionVisibilityMode(action_id)
     if mode == ACTION_CONTEXT_AUTOMATIC then
         return self:getActionVisibilityLabel(mode)
@@ -125,7 +125,7 @@ function ShortcutDock:getActionVisibilitySummary(action_id)
     return self:getActionVisibilityLabel(mode)
 end
 
-function ShortcutDock:makeActionVisibilityOption(action_id, context)
+function QuickDock:makeActionVisibilityOption(action_id, context)
     local option = makeRadioOption(
         self:getActionVisibilityLabel(context),
         nil,
@@ -142,7 +142,7 @@ function ShortcutDock:makeActionVisibilityOption(action_id, context)
     return option
 end
 
-function ShortcutDock:getActionVisibilityMenu()
+function QuickDock:getActionVisibilityMenu()
     self.action_contexts = self:loadActionContexts()
     self.auto_visibility = self:loadAutomaticVisibility()
     local menu = {
@@ -167,7 +167,7 @@ function ShortcutDock:getActionVisibilityMenu()
     local actions = self:getConfiguredActions()
     if #actions == 0 then
         menu[#menu + 1] = {
-            text = _("No Shortcut Dock actions are configured."),
+            text = _("No Quick Dock actions are configured."),
             enabled = false,
         }
         return menu
@@ -201,7 +201,7 @@ local function makeIconInfoItem(text, help_text, details)
     }
 end
 
-function ShortcutDock:getIconFilenamesMenu()
+function QuickDock:getIconFilenamesMenu()
     local menu = {
         makeIconInfoItem(
             _("Close button") .. ": close.svg",
@@ -274,7 +274,7 @@ function ShortcutDock:getIconFilenamesMenu()
     return menu
 end
 
-function ShortcutDock:getBehaviorMenu()
+function QuickDock:getBehaviorMenu()
     local side_item = {
         text_func = function()
             local side = self:getSideMode() == SIDE_MODE_GESTURE
@@ -343,7 +343,7 @@ function ShortcutDock:getBehaviorMenu()
     return { side_item, closing_item }
 end
 
-function ShortcutDock:getDockControlsMenu()
+function QuickDock:getDockControlsMenu()
     return {
         makeToggleOption(
             _("Show reader/browser button"),
@@ -366,7 +366,7 @@ function ShortcutDock:getDockControlsMenu()
     }
 end
 
-function ShortcutDock:getActionSettingsMenu()
+function QuickDock:getActionSettingsMenu()
     return {
         {
             text_func = function()
@@ -406,7 +406,7 @@ function ShortcutDock:getActionSettingsMenu()
     }
 end
 
-function ShortcutDock:getDockLayoutMenu()
+function QuickDock:getDockLayoutMenu()
     local size_labels = {
         [DOCK_SIZE_SMALL] = _("Small"),
         [DOCK_SIZE_MEDIUM] = _("Medium"),
@@ -419,7 +419,7 @@ function ShortcutDock:getDockLayoutMenu()
         help_text = _("Change the size of buttons, icons, pagination controls, and lighting columns."),
         sub_item_table = {
             makeRadioOption(
-                _("Small"), _("Uses the original Shortcut Dock dimensions."),
+                _("Small"), _("Uses the base dock dimensions."),
                 function() return self:getDockSize() == DOCK_SIZE_SMALL end,
                 function() self:setDockSize(DOCK_SIZE_SMALL) end
             ),
@@ -461,7 +461,7 @@ function ShortcutDock:getDockLayoutMenu()
     return { scale_item, height_item }
 end
 
-function ShortcutDock:getInformationPanelMenu()
+function QuickDock:getInformationPanelMenu()
     local alignment_labels = {
         [INFO_PANEL_TEXT_LEFT] = _("Left"),
         [INFO_PANEL_TEXT_CENTER] = _("Center"),
@@ -518,7 +518,7 @@ function ShortcutDock:getInformationPanelMenu()
     }
 end
 
-function ShortcutDock:getLightingControlsMenu()
+function QuickDock:getLightingControlsMenu()
     return {
         makeToggleOption(
             _("Show frontlight control"),
@@ -537,7 +537,7 @@ function ShortcutDock:getLightingControlsMenu()
     }
 end
 
-function ShortcutDock:getAppearanceMenu()
+function QuickDock:getAppearanceMenu()
     return {
         {
             text = _("Dock layout"),
@@ -562,7 +562,7 @@ function ShortcutDock:getAppearanceMenu()
     }
 end
 
-function ShortcutDock:getResetMenu()
+function QuickDock:getResetMenu()
     return {
         {
             text = _("Reset behavior to defaults"),
@@ -573,7 +573,7 @@ function ShortcutDock:getResetMenu()
         },
         {
             text = _("Reset buttons to defaults"),
-            help_text = _("Restores the initial buttons and their order without changing other Shortcut Dock settings."),
+            help_text = _("Restores the initial buttons and their order without changing other Quick Dock settings."),
             callback = function(touchmenu_instance)
                 self:showResetButtonsConfirmation(touchmenu_instance)
             end,
@@ -588,13 +588,13 @@ function ShortcutDock:getResetMenu()
     }
 end
 
-function ShortcutDock:addToMainMenu(menu_items)
-    menu_items.shortcutdock = {
-        text = _("Shortcut Dock"),
+function QuickDock:addToMainMenu(menu_items)
+    menu_items.quickdock = {
+        text = _("Quick Dock"),
         sorting_hint = "tools",
         sub_item_table = {
             {
-                text = _("Show Shortcut Dock"),
+                text = _("Show Quick Dock"),
                 callback = function() self:showDock(1) end,
             },
             {
@@ -619,10 +619,10 @@ function ShortcutDock:addToMainMenu(menu_items)
             },
             {
                 text = _("Gesture setup"),
-                help_text = _("Assign 'Show Shortcut Dock' to any gesture in KOReader's gesture manager."),
+                help_text = _("Assign 'Show Quick Dock' to any gesture in KOReader's gesture manager."),
                 callback = function()
                     UIManager:show(InfoMessage:new({
-                        text = _("Open Settings > Taps and gestures > Gesture manager, choose a gesture, then select Show Shortcut Dock."),
+                        text = _("Open Settings > Taps and gestures > Gesture manager, choose a gesture, then select Show Quick Dock."),
                     }))
                 end,
             },
@@ -630,7 +630,7 @@ function ShortcutDock:addToMainMenu(menu_items)
                 text = _("Version") .. ": " .. PLUGIN_VERSION,
                 callback = function()
                     UIManager:show(InfoMessage:new({
-                        text = _("Shortcut Dock") .. " " .. PLUGIN_VERSION,
+                        text = _("Quick Dock") .. " " .. PLUGIN_VERSION,
                     }))
                 end,
                 separator = true,

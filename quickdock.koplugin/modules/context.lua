@@ -3,17 +3,17 @@ local Event = require("ui/event")
 local UIManager = require("ui/uimanager")
 local _ = require("gettext")
 
-return function(ShortcutDock, constants)
+return function(QuickDock, constants)
     local ACTION_CONTEXT_READER = constants.ACTION_CONTEXT_READER
     local ACTION_CONTEXT_BROWSER = constants.ACTION_CONTEXT_BROWSER
 
-function ShortcutDock:isReaderContext()
+function QuickDock:isReaderContext()
     return self.ui and self.ui.document ~= nil
 end
 
-function ShortcutDock:getLoadedBookshelfWidget()
+function QuickDock:getLoadedBookshelfWidget()
     -- Use already-loaded Bookshelf modules to keep this integration optional
-    -- and avoid loading the plugin merely because Shortcut Dock is opened.
+    -- and avoid loading the plugin merely because Quick Dock is opened.
     local BookshelfWidget = package.loaded["lib/bookshelf_widget"]
         or package.loaded["bookshelf_widget"]
     local live_widget = type(BookshelfWidget) == "table" and BookshelfWidget.live or nil
@@ -32,7 +32,7 @@ function ShortcutDock:getLoadedBookshelfWidget()
     return live_widget
 end
 
-function ShortcutDock:getActiveBookshelfWidget()
+function QuickDock:getActiveBookshelfWidget()
     local live_widget = self:getLoadedBookshelfWidget()
     if not live_widget then
         return nil
@@ -81,7 +81,7 @@ function ShortcutDock:getActiveBookshelfWidget()
     return live_widget
 end
 
-function ShortcutDock:getParkedBookshelfContext()
+function QuickDock:getParkedBookshelfContext()
     -- Bookshelf keeps ReaderUI alive while showing its full-screen widget, so
     -- self.ui.document alone cannot distinguish the shelf from the reader.
     local live_widget = self:getActiveBookshelfWidget()
@@ -105,14 +105,14 @@ function ShortcutDock:getParkedBookshelfContext()
     end
 end
 
-function ShortcutDock:getCurrentActionContext()
+function QuickDock:getCurrentActionContext()
     if self:getParkedBookshelfContext() then
         return ACTION_CONTEXT_BROWSER
     end
     return self:isReaderContext() and ACTION_CONTEXT_READER or ACTION_CONTEXT_BROWSER
 end
 
-function ShortcutDock:onShortcutDockContextHome()
+function QuickDock:onQuickDockContextHome()
     local bookshelf = self:getParkedBookshelfContext()
     if bookshelf then
         local ok, resumed = pcall(bookshelf.park.unpark, bookshelf.widget)
@@ -132,7 +132,7 @@ function ShortcutDock:onShortcutDockContextHome()
     return true
 end
 
-function ShortcutDock:onShortcutDockContextSearch()
+function QuickDock:onQuickDockContextSearch()
     local bookshelf = self:getActiveBookshelfWidget()
     if bookshelf and type(bookshelf._openSearchDialog) == "function" then
         local ok = pcall(bookshelf._openSearchDialog, bookshelf)
@@ -146,7 +146,7 @@ function ShortcutDock:onShortcutDockContextSearch()
     return true
 end
 
-function ShortcutDock:openBookshelfRecent()
+function QuickDock:openBookshelfRecent()
     local active_bookshelf = self:getActiveBookshelfWidget()
     local bookshelf = active_bookshelf
 

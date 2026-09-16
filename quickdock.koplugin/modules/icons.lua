@@ -9,24 +9,24 @@ local function fileExists(path)
     return lfs.attributes(path, "mode") == "file"
 end
 
-return function(ShortcutDock, constants)
+return function(QuickDock, constants)
     local ACTION_HOME = constants.ACTION_HOME
     local ACTION_ICONS = constants.ACTION_ICONS
     local ICON_EXTENSIONS = constants.ICON_EXTENSIONS
     local STATEFUL_ACTIONS = constants.STATEFUL_ACTIONS
 
-function ShortcutDock:patchIconWidget()
-    if self._shortcutdock_icon_patch_active then
+function QuickDock:patchIconWidget()
+    if self._quickdock_icon_patch_active then
         return
     end
-    self._shortcutdock_icon_patch_active = true
-    IconWidget._shortcutdock_patch_users = (IconWidget._shortcutdock_patch_users or 0) + 1
+    self._quickdock_icon_patch_active = true
+    IconWidget._quickdock_patch_users = (IconWidget._quickdock_patch_users or 0) + 1
 
-    if IconWidget._shortcutdock_original_init then
+    if IconWidget._quickdock_original_init then
         return
     end
 
-    IconWidget._shortcutdock_original_init = IconWidget.init
+    IconWidget._quickdock_original_init = IconWidget.init
     local original_init = IconWidget.init
 
     local patched_init = function(icon_widget)
@@ -37,43 +37,43 @@ function ShortcutDock:patchIconWidget()
         return original_init(icon_widget)
     end
 
-    IconWidget._shortcutdock_patched_init = patched_init
+    IconWidget._quickdock_patched_init = patched_init
     IconWidget.init = patched_init
 end
 
-function ShortcutDock:unpatchIconWidget()
-    if not self._shortcutdock_icon_patch_active then
+function QuickDock:unpatchIconWidget()
+    if not self._quickdock_icon_patch_active then
         return
     end
-    self._shortcutdock_icon_patch_active = nil
-    IconWidget._shortcutdock_patch_users = math.max(
+    self._quickdock_icon_patch_active = nil
+    IconWidget._quickdock_patch_users = math.max(
         0,
-        (IconWidget._shortcutdock_patch_users or 1) - 1
+        (IconWidget._quickdock_patch_users or 1) - 1
     )
-    if IconWidget._shortcutdock_patch_users > 0 then
+    if IconWidget._quickdock_patch_users > 0 then
         return
     end
 
     if
-        IconWidget._shortcutdock_original_init
-        and IconWidget._shortcutdock_patched_init
-        and IconWidget.init == IconWidget._shortcutdock_patched_init
+        IconWidget._quickdock_original_init
+        and IconWidget._quickdock_patched_init
+        and IconWidget.init == IconWidget._quickdock_patched_init
     then
-        IconWidget.init = IconWidget._shortcutdock_original_init
-        IconWidget._shortcutdock_original_init = nil
-        IconWidget._shortcutdock_patched_init = nil
+        IconWidget.init = IconWidget._quickdock_original_init
+        IconWidget._quickdock_original_init = nil
+        IconWidget._quickdock_patched_init = nil
     end
-    IconWidget._shortcutdock_patch_users = nil
+    IconWidget._quickdock_patch_users = nil
 end
 
-function ShortcutDock:isWifiOn()
+function QuickDock:isWifiOn()
     local ok, enabled = pcall(function()
         return NetworkMgr:isWifiOn()
     end)
     return ok and enabled == true
 end
 
-function ShortcutDock:isNightMode()
+function QuickDock:isNightMode()
     if type(Screen.night_mode) == "boolean" then
         return Screen.night_mode
     end
@@ -83,7 +83,7 @@ function ShortcutDock:isNightMode()
     return ok and enabled == true
 end
 
-function ShortcutDock:getStockIcon(action_id)
+function QuickDock:getStockIcon(action_id)
     if action_id == "toggle_wifi" then
         return self:isWifiOn() and "wifi_on" or "wifi_off"
     elseif action_id == "night_mode" then
@@ -98,7 +98,7 @@ function ShortcutDock:getStockIcon(action_id)
     return ACTION_ICONS[action_id]
 end
 
-function ShortcutDock:systemIconExists(icon)
+function QuickDock:systemIconExists(icon)
     if not icon then
         return false
     end
@@ -112,7 +112,7 @@ function ShortcutDock:systemIconExists(icon)
     return false
 end
 
-function ShortcutDock:getIcon(action_id)
+function QuickDock:getIcon(action_id)
     local stock_icon = self:getStockIcon(action_id)
     local cache_key = action_id .. ":" .. (stock_icon or "")
     local cached = self.icon_cache[cache_key]

@@ -63,7 +63,7 @@ function InfoPanelOverlay:onShow()
 end
 
 function InfoPanelOverlay:onCloseWidget()
-    if self._shortcutdock_suppress_close_refresh then
+    if self._quickdock_suppress_close_refresh then
         return
     end
     UIManager:setDirty(nil, "ui", self.dimen)
@@ -97,7 +97,7 @@ function StatusPanelOverlay:onShow()
 end
 
 function StatusPanelOverlay:onCloseWidget()
-    if self._shortcutdock_suppress_close_refresh then
+    if self._quickdock_suppress_close_refresh then
         return
     end
     UIManager:setDirty(nil, "ui", self.dimen)

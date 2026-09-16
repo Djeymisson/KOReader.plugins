@@ -264,7 +264,7 @@ end
 local FloatingControlButtonDialog = ButtonDialog:extend({})
 
 function FloatingControlButtonDialog:onCloseWidget()
-    if self._shortcutdock_suppress_close_refresh then
+    if self._quickdock_suppress_close_refresh then
         return
     end
     ButtonDialog.onCloseWidget(self)

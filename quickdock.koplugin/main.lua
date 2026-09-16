@@ -19,24 +19,23 @@ local function scaleMetric(value, factor, minimum)
 end
 
 local PLUGIN_VERSION = "v0.22.1"
-local SETTING_ACTIONS = "shortcutdock_actions"
-local SETTING_ACTION_CONTEXTS = "shortcutdock_action_contexts"
-local SETTING_AUTO_VISIBILITY = "shortcutdock_auto_visibility"
-local SETTING_SIDE = "shortcutdock_side"
-local SETTING_SIDE_MODE = "shortcutdock_side_mode"
-local SETTING_SHOW_SIDE_BUTTON = "shortcutdock_show_side_button"
-local SETTING_SHOW_CLOSE_BUTTON = "shortcutdock_show_close_button"
-local SETTING_SHOW_CONTEXT_BUTTON = "shortcutdock_show_context_button"
-local SETTING_SHOW_FRONTLIGHT_SLIDER = "shortcutdock_show_frontlight_slider"
-local SETTING_SHOW_WARMTH_SLIDER = "shortcutdock_show_warmth_slider"
-local SETTING_SHOW_INFO_PANEL = "shortcutdock_show_info_panel"
-local SETTING_SHOW_NETWORK_INFO_PANEL = "shortcutdock_show_network_info_panel"
-local SETTING_SHOW_INFO_PANEL_COVER = "shortcutdock_show_info_panel_cover"
-local SETTING_CENTER_INFO_PANEL_TEXT = "shortcutdock_center_info_panel_text"
-local SETTING_INFO_PANEL_TEXT_ALIGNMENT = "shortcutdock_info_panel_text_alignment"
-local SETTING_DOCK_SIZE = "shortcutdock_dock_size"
-local SETTING_MAX_ACTION_DOCK_HEIGHT = "shortcutdock_max_action_dock_height"
-local SETTING_CLOSE_TOGETHER = "shortcutdock_close_together"
+local SETTING_ACTIONS = "quickdock_actions"
+local SETTING_ACTION_CONTEXTS = "quickdock_action_contexts"
+local SETTING_AUTO_VISIBILITY = "quickdock_auto_visibility"
+local SETTING_SIDE = "quickdock_side"
+local SETTING_SIDE_MODE = "quickdock_side_mode"
+local SETTING_SHOW_SIDE_BUTTON = "quickdock_show_side_button"
+local SETTING_SHOW_CLOSE_BUTTON = "quickdock_show_close_button"
+local SETTING_SHOW_CONTEXT_BUTTON = "quickdock_show_context_button"
+local SETTING_SHOW_FRONTLIGHT_SLIDER = "quickdock_show_frontlight_slider"
+local SETTING_SHOW_WARMTH_SLIDER = "quickdock_show_warmth_slider"
+local SETTING_SHOW_INFO_PANEL = "quickdock_show_info_panel"
+local SETTING_SHOW_NETWORK_INFO_PANEL = "quickdock_show_network_info_panel"
+local SETTING_SHOW_INFO_PANEL_COVER = "quickdock_show_info_panel_cover"
+local SETTING_INFO_PANEL_TEXT_ALIGNMENT = "quickdock_info_panel_text_alignment"
+local SETTING_DOCK_SIZE = "quickdock_dock_size"
+local SETTING_MAX_ACTION_DOCK_HEIGHT = "quickdock_max_action_dock_height"
+local SETTING_CLOSE_TOGETHER = "quickdock_close_together"
 
 local SIDE_MODE_FIXED = "fixed"
 local SIDE_MODE_GESTURE = "gesture"
@@ -91,8 +90,8 @@ local BASE_FRONTLIGHT_SLIDER_PADDING = Screen:scaleBySize(8)
 local BASE_FRONTLIGHT_TRACK_WIDTH = math_max(2, Screen:scaleBySize(3))
 local BASE_FRONTLIGHT_KNOB_RADIUS = math_max(5, Screen:scaleBySize(8))
 
-local ACTION_HOME = "shortcutdock_context_home"
-local ACTION_SEARCH = "shortcutdock_context_search"
+local ACTION_HOME = "quickdock_context_home"
+local ACTION_SEARCH = "quickdock_context_search"
 
 -- Dispatcher keeps action context metadata private, so automatic visibility
 -- uses the stable IDs of KOReader's native reader and file-browser actions.
@@ -223,24 +222,6 @@ local DEFAULT_ACTIONS = {
     history = true,
 }
 
-local LEGACY_DEFAULT_ACTION_ORDERS = {
-    {
-        "toggle_wifi",
-        "increase_frontlight",
-        "decrease_frontlight",
-        ACTION_SEARCH,
-        "history",
-    },
-    {
-        "toggle_wifi",
-        "night_mode",
-        "increase_frontlight",
-        "decrease_frontlight",
-        ACTION_SEARCH,
-        "history",
-    },
-}
-
 local ACTION_ICONS = {
     [ACTION_HOME] = "book.opened",
     [ACTION_SEARCH] = "appbar.search",
@@ -319,7 +300,7 @@ local MODULE_CONSTANTS = {
 local function pluginDir()
     local source = debug.getinfo(1, "S").source or ""
     local path = source:match("^@(.*/)") or source:match("^(.*/)")
-    return path or "plugins/shortcutdock.koplugin/"
+    return path or "plugins/quickdock.koplugin/"
 end
 
 local PLUGIN_DIR = pluginDir()
@@ -334,45 +315,6 @@ local function copyTable(value)
         result[copyTable(key)] = copyTable(child)
     end
     return result
-end
-
-local function actionOrderMatches(order, expected)
-    if #order ~= #expected then
-        return false
-    end
-    for index = 1, #order do
-        if order[index] ~= expected[index] then
-            return false
-        end
-    end
-    return true
-end
-
-local function actionsMatchLegacyDefault(actions, order, expected_order)
-    if not actionOrderMatches(order, expected_order) then
-        return false
-    end
-    local expected_values = {
-        toggle_wifi = true,
-        increase_frontlight = 1,
-        decrease_frontlight = 1,
-        [ACTION_SEARCH] = true,
-        history = true,
-    }
-    if expected_order[2] == "night_mode" then
-        expected_values.night_mode = true
-    end
-    for action_id, expected_value in pairs(expected_values) do
-        if actions[action_id] ~= expected_value then
-            return false
-        end
-    end
-    for action_id, value in pairs(actions) do
-        if action_id ~= "settings" and value ~= nil and expected_values[action_id] == nil then
-            return false
-        end
-    end
-    return true
 end
 
 local function firstCharacters(text, count)
@@ -431,15 +373,15 @@ end
 local DockWidgets = dofile(PLUGIN_DIR .. "modules/widgets.lua")
 local InfoPanel = dofile(PLUGIN_DIR .. "modules/info_panel.lua")
 local FloatingControlButtonDialog = DockWidgets.FloatingControlButtonDialog
-local ShortcutDock = WidgetContainer:extend({
-    name = "shortcutdock",
+local QuickDock = WidgetContainer:extend({
+    name = "quickdock",
 })
-dofile(PLUGIN_DIR .. "modules/inline_actions.lua")(ShortcutDock, {
+dofile(PLUGIN_DIR .. "modules/inline_actions.lua")(QuickDock, {
     InfoPanel = InfoPanel,
     dock_margin = DOCK_MARGIN,
 })
 
-function ShortcutDock:init()
+function QuickDock:init()
     self.plugin_path = PLUGIN_DIR
     self.icons_path = self.plugin_path .. "icons/"
     self.system_icon_paths = {
@@ -472,24 +414,24 @@ function ShortcutDock:init()
     end
 end
 
-function ShortcutDock:onDispatcherRegisterActions()
+function QuickDock:onDispatcherRegisterActions()
     Dispatcher:registerAction(ACTION_SEARCH, {
         category = "none",
-        event = "ShortcutDockContextSearch",
+        event = "QuickDockContextSearch",
         title = _("Search current context"),
         general = true,
     })
-    Dispatcher:registerAction("show_shortcut_dock", {
+    Dispatcher:registerAction("show_quick_dock", {
         -- The arg category lets KOReader's gesture manager forward the gesture
-        -- object, including its screen position, to onShowShortcutDock().
+        -- object, including its screen position, to onShowQuickDock().
         category = "arg",
-        event = "ShowShortcutDock",
-        title = _("Show Shortcut Dock"),
+        event = "ShowQuickDock",
+        title = _("Show Quick Dock"),
         general = true,
     })
 end
 
-function ShortcutDock:onClose()
+function QuickDock:onClose()
     self:closeDock()
     InfoPanel.clearCoverCache(self)
     self:saveActions()
@@ -501,20 +443,20 @@ end
 -- plugin, otherwise a later refresh may paint an information/status panel on
 -- top of the sleep screen. Do not return true: the power event must continue
 -- to the other listeners.
-function ShortcutDock:onSuspend()
+function QuickDock:onSuspend()
     if self.dialog or self.info_panel_widget or self.status_panel_widget then
         self:closeDock()
     end
 end
 
-function ShortcutDock:onFlushSettings()
+function QuickDock:onFlushSettings()
     if self.updated then
         self:saveActions()
         self.updated = false
     end
 end
 
-function ShortcutDock:loadActions()
+function QuickDock:loadActions()
     local actions = G_reader_settings:readSetting(SETTING_ACTIONS)
     if type(actions) ~= "table" then
         return copyTable(DEFAULT_ACTIONS)
@@ -527,8 +469,8 @@ function ShortcutDock:loadActions()
         actions.settings = {}
     end
 
-    -- Since v0.3.0 this context-aware action is a fixed dock button. Remove
-    -- the old configurable entry so upgraded settings cannot show it twice.
+    -- The context-aware action is a fixed dock button, not a configurable
+    -- action. Discard a stray saved entry to avoid showing it twice.
     actions[ACTION_HOME] = nil
     local order = actions.settings.order
     if type(order) == "table" then
@@ -537,30 +479,15 @@ function ShortcutDock:loadActions()
                 table.remove(order, index)
             end
         end
-
-        -- Keep installations that still use either historical default in sync
-        -- with the new compact default. Deliberately empty and customized docks
-        -- remain untouched, including users who explicitly added light steps.
-        local uses_legacy_defaults = false
-        for index = 1, #LEGACY_DEFAULT_ACTION_ORDERS do
-            if actionsMatchLegacyDefault(actions, order, LEGACY_DEFAULT_ACTION_ORDERS[index]) then
-                uses_legacy_defaults = true
-                break
-            end
-        end
-        if uses_legacy_defaults then
-            actions = copyTable(DEFAULT_ACTIONS)
-            G_reader_settings:saveSetting(SETTING_ACTIONS, actions)
-        end
     end
     return actions
 end
 
-function ShortcutDock:saveActions()
+function QuickDock:saveActions()
     G_reader_settings:saveSetting(SETTING_ACTIONS, self.actions)
 end
 
-function ShortcutDock:loadActionContexts()
+function QuickDock:loadActionContexts()
     local saved_contexts = G_reader_settings:readSetting(SETTING_ACTION_CONTEXTS)
     local action_contexts = {}
     if type(saved_contexts) == "table" then
@@ -577,27 +504,27 @@ function ShortcutDock:loadActionContexts()
     return action_contexts
 end
 
-function ShortcutDock:saveActionContexts()
+function QuickDock:saveActionContexts()
     G_reader_settings:saveSetting(SETTING_ACTION_CONTEXTS, self.action_contexts)
 end
 
-function ShortcutDock:loadAutomaticVisibility()
+function QuickDock:loadAutomaticVisibility()
     return G_reader_settings:readSetting(SETTING_AUTO_VISIBILITY) == true
 end
 
-function ShortcutDock:automaticVisibilityEnabled()
+function QuickDock:automaticVisibilityEnabled()
     if self.auto_visibility == nil then
         self.auto_visibility = self:loadAutomaticVisibility()
     end
     return self.auto_visibility
 end
 
-function ShortcutDock:setAutomaticVisibility(enabled)
+function QuickDock:setAutomaticVisibility(enabled)
     self.auto_visibility = enabled and true or false
     G_reader_settings:saveSetting(SETTING_AUTO_VISIBILITY, self.auto_visibility)
 end
 
-function ShortcutDock:getAutomaticActionVisibility(action_id)
+function QuickDock:getAutomaticActionVisibility(action_id)
     if BROWSER_ONLY_ACTIONS[action_id] then
         return ACTION_CONTEXT_BROWSER
     elseif READER_ONLY_ACTIONS[action_id] or tostring(action_id):match("^kopt_") then
@@ -606,7 +533,7 @@ function ShortcutDock:getAutomaticActionVisibility(action_id)
     return ACTION_CONTEXT_ALL
 end
 
-function ShortcutDock:getActionVisibilityMode(action_id)
+function QuickDock:getActionVisibilityMode(action_id)
     local override = self.action_contexts[action_id]
     if override then
         return override
@@ -616,7 +543,7 @@ function ShortcutDock:getActionVisibilityMode(action_id)
     return ACTION_CONTEXT_ALL
 end
 
-function ShortcutDock:getEffectiveActionVisibility(action_id)
+function QuickDock:getEffectiveActionVisibility(action_id)
     local mode = self:getActionVisibilityMode(action_id)
     if mode == ACTION_CONTEXT_AUTOMATIC then
         return self:getAutomaticActionVisibility(action_id)
@@ -624,7 +551,7 @@ function ShortcutDock:getEffectiveActionVisibility(action_id)
     return mode
 end
 
-function ShortcutDock:setActionVisibility(action_id, context)
+function QuickDock:setActionVisibility(action_id, context)
     if
         context == ACTION_CONTEXT_ALL
         or context == ACTION_CONTEXT_READER
@@ -637,18 +564,18 @@ function ShortcutDock:setActionVisibility(action_id, context)
     self:saveActionContexts()
 end
 
-function ShortcutDock:resetActionVisibility()
+function QuickDock:resetActionVisibility()
     self.action_contexts = {}
     self:saveActionContexts()
 end
 
-function ShortcutDock:resetActions()
+function QuickDock:resetActions()
     self.actions = copyTable(DEFAULT_ACTIONS)
     self.updated = false
     self:saveActions()
 end
 
-function ShortcutDock:resetBehavior()
+function QuickDock:resetBehavior()
     self:setSide("right")
     self:setSideMode(SIDE_MODE_GESTURE)
     self:setCloseDockTogether(false)
@@ -656,7 +583,7 @@ function ShortcutDock:resetBehavior()
     self.current_dock_side = nil
 end
 
-function ShortcutDock:resetBehaviorAndButtons()
+function QuickDock:resetBehaviorAndButtons()
     self:resetBehavior()
     self:setShowContextButton(true)
     self:setShowSideButton(true)
@@ -666,28 +593,28 @@ function ShortcutDock:resetBehaviorAndButtons()
     self:resetActions()
 end
 
-function ShortcutDock:getSide()
+function QuickDock:getSide()
     return G_reader_settings:readSetting(SETTING_SIDE) == "left" and "left" or "right"
 end
 
-function ShortcutDock:setSide(side)
+function QuickDock:setSide(side)
     G_reader_settings:saveSetting(SETTING_SIDE, side == "left" and "left" or "right")
 end
 
-function ShortcutDock:getSideMode()
+function QuickDock:getSideMode()
     return G_reader_settings:readSetting(SETTING_SIDE_MODE) == SIDE_MODE_FIXED
         and SIDE_MODE_FIXED
         or SIDE_MODE_GESTURE
 end
 
-function ShortcutDock:setSideMode(mode)
+function QuickDock:setSideMode(mode)
     G_reader_settings:saveSetting(
         SETTING_SIDE_MODE,
         mode == SIDE_MODE_GESTURE and SIDE_MODE_GESTURE or SIDE_MODE_FIXED
     )
 end
 
-function ShortcutDock:getGestureSide(gesture)
+function QuickDock:getGestureSide(gesture)
     if self:getSideMode() ~= SIDE_MODE_GESTURE or type(gesture) ~= "table" then
         return nil
     end
@@ -700,26 +627,26 @@ function ShortcutDock:getGestureSide(gesture)
     return x < Screen:getWidth() / 2 and "left" or "right"
 end
 
-function ShortcutDock:getDockSize()
+function QuickDock:getDockSize()
     local size = G_reader_settings:readSetting(SETTING_DOCK_SIZE)
     return DOCK_SIZE_FACTORS[size] and size or DOCK_SIZE_SMALL
 end
 
-function ShortcutDock:setDockSize(size)
+function QuickDock:setDockSize(size)
     G_reader_settings:saveSetting(
         SETTING_DOCK_SIZE,
         DOCK_SIZE_FACTORS[size] and size or DOCK_SIZE_SMALL
     )
 end
 
-function ShortcutDock:getMaxActionDockHeight()
+function QuickDock:getMaxActionDockHeight()
     local height = G_reader_settings:readSetting(SETTING_MAX_ACTION_DOCK_HEIGHT)
     return MAX_ACTION_DOCK_HEIGHT_FACTORS[height]
         and height
         or MAX_ACTION_DOCK_HEIGHT_100
 end
 
-function ShortcutDock:setMaxActionDockHeight(height)
+function QuickDock:setMaxActionDockHeight(height)
     G_reader_settings:saveSetting(
         SETTING_MAX_ACTION_DOCK_HEIGHT,
         MAX_ACTION_DOCK_HEIGHT_FACTORS[height]
@@ -728,7 +655,7 @@ function ShortcutDock:setMaxActionDockHeight(height)
     )
 end
 
-function ShortcutDock:getDockMetrics()
+function QuickDock:getDockMetrics()
     local dock_size = self:getDockSize()
     if DOCK_METRICS_CACHE[dock_size] then
         return DOCK_METRICS_CACHE[dock_size]
@@ -763,75 +690,75 @@ function ShortcutDock:getDockMetrics()
     return metrics
 end
 
-function ShortcutDock:showSideButton()
+function QuickDock:showSideButton()
     return G_reader_settings:readSetting(SETTING_SHOW_SIDE_BUTTON) ~= false
 end
 
-function ShortcutDock:setShowSideButton(enabled)
+function QuickDock:setShowSideButton(enabled)
     G_reader_settings:saveSetting(SETTING_SHOW_SIDE_BUTTON, enabled and true or false)
 end
 
-function ShortcutDock:showCloseButton()
+function QuickDock:showCloseButton()
     return G_reader_settings:readSetting(SETTING_SHOW_CLOSE_BUTTON) == true
 end
 
-function ShortcutDock:setShowCloseButton(enabled)
+function QuickDock:setShowCloseButton(enabled)
     G_reader_settings:saveSetting(SETTING_SHOW_CLOSE_BUTTON, enabled and true or false)
 end
 
-function ShortcutDock:showContextButton()
+function QuickDock:showContextButton()
     return G_reader_settings:readSetting(SETTING_SHOW_CONTEXT_BUTTON) ~= false
 end
 
-function ShortcutDock:setShowContextButton(enabled)
+function QuickDock:setShowContextButton(enabled)
     G_reader_settings:saveSetting(SETTING_SHOW_CONTEXT_BUTTON, enabled and true or false)
 end
 
-function ShortcutDock:showFrontlightSlider()
+function QuickDock:showFrontlightSlider()
     return Device:hasFrontlight()
         and G_reader_settings:readSetting(SETTING_SHOW_FRONTLIGHT_SLIDER) ~= false
 end
 
-function ShortcutDock:setShowFrontlightSlider(enabled)
+function QuickDock:setShowFrontlightSlider(enabled)
     G_reader_settings:saveSetting(SETTING_SHOW_FRONTLIGHT_SLIDER, enabled and true or false)
 end
 
-function ShortcutDock:showWarmthSlider()
+function QuickDock:showWarmthSlider()
     return Device:hasNaturalLight()
         and G_reader_settings:readSetting(SETTING_SHOW_WARMTH_SLIDER) ~= false
 end
 
-function ShortcutDock:setShowWarmthSlider(enabled)
+function QuickDock:setShowWarmthSlider(enabled)
     G_reader_settings:saveSetting(SETTING_SHOW_WARMTH_SLIDER, enabled and true or false)
 end
 
-function ShortcutDock:showReadingInfoPanel()
+function QuickDock:showReadingInfoPanel()
     return G_reader_settings:readSetting(SETTING_SHOW_INFO_PANEL) ~= false
 end
 
-function ShortcutDock:setShowReadingInfoPanel(enabled)
+function QuickDock:setShowReadingInfoPanel(enabled)
     G_reader_settings:saveSetting(SETTING_SHOW_INFO_PANEL, enabled and true or false)
     if not enabled then
         InfoPanel.clearCoverCache(self)
     end
 end
 
-function ShortcutDock:showNetworkInfoPanel()
+function QuickDock:showNetworkInfoPanel()
     return G_reader_settings:readSetting(SETTING_SHOW_NETWORK_INFO_PANEL) == true
 end
 
-function ShortcutDock:setShowNetworkInfoPanel(enabled)
+function QuickDock:setShowNetworkInfoPanel(enabled)
     G_reader_settings:saveSetting(
         SETTING_SHOW_NETWORK_INFO_PANEL,
         enabled and true or false
     )
 end
 
-function ShortcutDock:showInfoPanel()
+function QuickDock:showInfoPanel()
     return self:showReadingInfoPanel() or self:showNetworkInfoPanel()
 end
 
-function ShortcutDock:getInfoPanelKind()
+function QuickDock:getInfoPanelKind()
     local reading = self:showReadingInfoPanel()
     local network = self:showNetworkInfoPanel()
     if self.current_info_panel_kind == "network" and network then
@@ -845,30 +772,26 @@ function ShortcutDock:getInfoPanelKind()
     end
 end
 
-function ShortcutDock:showInfoPanelCover()
+function QuickDock:showInfoPanelCover()
     return G_reader_settings:readSetting(SETTING_SHOW_INFO_PANEL_COVER) ~= false
 end
 
-function ShortcutDock:setShowInfoPanelCover(enabled)
+function QuickDock:setShowInfoPanelCover(enabled)
     G_reader_settings:saveSetting(SETTING_SHOW_INFO_PANEL_COVER, enabled and true or false)
     if not enabled then
         InfoPanel.clearCoverCache(self)
     end
 end
 
-function ShortcutDock:getInfoPanelTextAlignment()
+function QuickDock:getInfoPanelTextAlignment()
     local alignment = G_reader_settings:readSetting(SETTING_INFO_PANEL_TEXT_ALIGNMENT)
     if INFO_PANEL_TEXT_ALIGNMENTS[alignment] then
         return alignment
     end
-    -- Preserve the preference used before the three-way alignment setting.
-    if G_reader_settings:readSetting(SETTING_CENTER_INFO_PANEL_TEXT) == true then
-        return INFO_PANEL_TEXT_CENTER
-    end
     return INFO_PANEL_TEXT_LEFT
 end
 
-function ShortcutDock:setInfoPanelTextAlignment(alignment)
+function QuickDock:setInfoPanelTextAlignment(alignment)
     G_reader_settings:saveSetting(
         SETTING_INFO_PANEL_TEXT_ALIGNMENT,
         INFO_PANEL_TEXT_ALIGNMENTS[alignment]
@@ -877,7 +800,7 @@ function ShortcutDock:setInfoPanelTextAlignment(alignment)
     )
 end
 
-function ShortcutDock:collectInfoPanelData(kind, metrics)
+function QuickDock:collectInfoPanelData(kind, metrics)
     if kind == "network" then
         return InfoPanel.collectNetwork()
     end
@@ -889,7 +812,7 @@ function ShortcutDock:collectInfoPanelData(kind, metrics)
     )
 end
 
-function ShortcutDock:createInfoPanelOverlay(data, metrics)
+function QuickDock:createInfoPanelOverlay(data, metrics)
     return InfoPanel.createOverlay(
         self,
         metrics,
@@ -899,11 +822,11 @@ function ShortcutDock:createInfoPanelOverlay(data, metrics)
     )
 end
 
-function ShortcutDock:showInfoPanelToggleButton()
+function QuickDock:showInfoPanelToggleButton()
     return self:showReadingInfoPanel() and self:showNetworkInfoPanel()
 end
 
-function ShortcutDock:replaceInfoPanel(kind, metrics)
+function QuickDock:replaceInfoPanel(kind, metrics)
     metrics = metrics or self:getDockMetrics()
     local previous_widget = self.info_panel_widget
     local data = self:collectInfoPanelData(kind, metrics)
@@ -921,7 +844,7 @@ function ShortcutDock:replaceInfoPanel(kind, metrics)
     return widget
 end
 
-function ShortcutDock:switchInfoPanel(kind)
+function QuickDock:switchInfoPanel(kind)
     if
         not self.dialog
         or (kind ~= "reading" and kind ~= "network")
@@ -941,7 +864,7 @@ function ShortcutDock:switchInfoPanel(kind)
     end
 end
 
-function ShortcutDock:refreshVisibleNetworkInfoPanel(network_state)
+function QuickDock:refreshVisibleNetworkInfoPanel(network_state)
     if
         not self.dialog
         or self.current_info_panel_kind ~= "network"
@@ -958,22 +881,22 @@ function ShortcutDock:refreshVisibleNetworkInfoPanel(network_state)
     return true
 end
 
-function ShortcutDock:closeDockTogether()
+function QuickDock:closeDockTogether()
     return G_reader_settings:readSetting(SETTING_CLOSE_TOGETHER) == true
 end
 
-function ShortcutDock:setCloseDockTogether(enabled)
+function QuickDock:setCloseDockTogether(enabled)
     G_reader_settings:saveSetting(SETTING_CLOSE_TOGETHER, enabled and true or false)
 end
 
-dofile(PLUGIN_DIR .. "modules/context.lua")(ShortcutDock, MODULE_CONSTANTS)
-function ShortcutDock:onShowShortcutDock(gesture)
+dofile(PLUGIN_DIR .. "modules/context.lua")(QuickDock, MODULE_CONSTANTS)
+function QuickDock:onShowQuickDock(gesture)
     self:showDock(1, self:getGestureSide(gesture))
     return true
 end
 
-dofile(PLUGIN_DIR .. "modules/icons.lua")(ShortcutDock, MODULE_CONSTANTS)
-dofile(PLUGIN_DIR .. "modules/controls.lua")(ShortcutDock, {
+dofile(PLUGIN_DIR .. "modules/icons.lua")(QuickDock, MODULE_CONSTANTS)
+dofile(PLUGIN_DIR .. "modules/controls.lua")(QuickDock, {
     action_home = ACTION_HOME,
     stateful_actions = STATEFUL_ACTIONS,
     apply_button_metrics = applyButtonMetrics,
@@ -981,7 +904,7 @@ dofile(PLUGIN_DIR .. "modules/controls.lua")(ShortcutDock, {
     make_fallback_label = makeFallbackLabel,
     widgets = DockWidgets,
 })
-function ShortcutDock:getConfiguredActions()
+function QuickDock:getConfiguredActions()
     local configured_actions = {}
     for _, item in ipairs(Dispatcher.getDisplayList(self.actions)) do
         if item.key ~= ACTION_HOME then
@@ -991,7 +914,7 @@ function ShortcutDock:getConfiguredActions()
     return configured_actions
 end
 
-function ShortcutDock:getDisplayActions()
+function QuickDock:getDisplayActions()
     local display_actions = {}
     local current_context = self:getCurrentActionContext()
     for _, item in ipairs(self:getConfiguredActions()) do
@@ -1003,7 +926,7 @@ function ShortcutDock:getDisplayActions()
     return display_actions
 end
 
-function ShortcutDock:getMaxPageRows(metrics)
+function QuickDock:getMaxPageRows(metrics)
     metrics = metrics or self:getDockMetrics()
     -- ButtonTable adds vertical padding and separators around the requested
     -- button height. Account for all of it before ButtonDialog decides that
@@ -1041,7 +964,7 @@ function ShortcutDock:getMaxPageRows(metrics)
     ))
 end
 
-function ShortcutDock:getPages(action_count, metrics)
+function QuickDock:getPages(action_count, metrics)
     local fixed_rows = self:showContextButton() and 1 or 0
     local max_rows = self:getMaxPageRows(metrics)
     local first_page_capacity = max_rows - fixed_rows
@@ -1072,7 +995,7 @@ function ShortcutDock:getPages(action_count, metrics)
     return pages
 end
 
-function ShortcutDock:closeInfoPanel()
+function QuickDock:closeInfoPanel()
     local info_panel_widget = self.info_panel_widget
     self.info_panel_widget = nil
     self.info_panel_data = nil
@@ -1082,7 +1005,7 @@ function ShortcutDock:closeInfoPanel()
     end
 end
 
-function ShortcutDock:closeDock()
+function QuickDock:closeDock()
     local dialog = self.dialog
     if not self:closeDockTogether() then
         self.dialog = nil
@@ -1131,7 +1054,7 @@ function ShortcutDock:closeDock()
             -- These widgets normally enqueue their own close refresh. During
             -- a grouped dock shutdown that would make the panels disappear
             -- one at a time, so defer the refresh until all are unregistered.
-            widget._shortcutdock_suppress_close_refresh = true
+            widget._quickdock_suppress_close_refresh = true
             UIManager:close(widget)
         end
     end
@@ -1145,7 +1068,7 @@ function ShortcutDock:closeDock()
     end
 end
 
-function ShortcutDock:executeAction(action_id)
+function QuickDock:executeAction(action_id)
     local value = self.actions[action_id]
     if value == nil then
         return
@@ -1167,7 +1090,7 @@ function ShortcutDock:executeAction(action_id)
     end)
 end
 
-function ShortcutDock:showDock(page, side, info_panel_data)
+function QuickDock:showDock(page, side, info_panel_data)
     -- Another UI instance (reader or file browser) may have changed these
     -- shared preferences since this instance was created.
     self.action_contexts = self:loadActionContexts()
@@ -1177,7 +1100,7 @@ function ShortcutDock:showDock(page, side, info_panel_data)
     local metrics = self:getDockMetrics()
     local actions = self:getDisplayActions()
     if #actions == 0 and not self:showContextButton() then
-        UIManager:show(InfoMessage:new({ text = _("No Shortcut Dock actions are configured.") }))
+        UIManager:show(InfoMessage:new({ text = _("No Quick Dock actions are configured.") }))
         return
     end
 
@@ -1293,5 +1216,5 @@ function ShortcutDock:showDock(page, side, info_panel_data)
     UIManager:show(dialog, "[ui]")
 end
 
-dofile(PLUGIN_DIR .. "modules/menu.lua")(ShortcutDock, MODULE_CONSTANTS)
-return ShortcutDock
+dofile(PLUGIN_DIR .. "modules/menu.lua")(QuickDock, MODULE_CONSTANTS)
+return QuickDock

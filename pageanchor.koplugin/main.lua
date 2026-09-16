@@ -23,7 +23,7 @@ local SETTING_ENABLED = "pageanchor_enabled"
 local SETTING_SHOW_PAGE = "pageanchor_show_page"
 local SETTING_PERCENTAGE = "pageanchor_percentage"
 
--- Match Shortcut Dock's main action buttons, including their roomier padding.
+-- Match Quick Dock's main action buttons, including their roomier padding.
 local BUTTON_ICON_SIZE = Screen:scaleBySize(22)
 local BUTTON_HEIGHT = Screen:scaleBySize(42)
 local BUTTON_PADDING = Screen:scaleBySize(6)

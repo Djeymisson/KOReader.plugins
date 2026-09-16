@@ -1,6 +1,6 @@
-# Shortcut Dock ![Version](https://img.shields.io/badge/version-v0.22.1-blue)
+# Quick Dock ![Version](https://img.shields.io/badge/version-v0.22.1-blue)
 
-Shortcut Dock adds a floating, vertical shortcut bar to KOReader. It is designed for touch devices and can be assigned to any gesture supported by KOReader.
+Quick Dock adds a floating action dock with lighting controls and an optional information panel to KOReader. It is designed for touch devices and can be assigned to any gesture supported by KOReader.
 
 ## Features
 
@@ -55,11 +55,11 @@ Brightness is controlled by the dedicated slider, so incremental brightness butt
 
 In the file browser or reader, open:
 
-`Top menu > Tools > Shortcut Dock`
+`Top menu > Tools > Quick Dock`
 
 The settings follow the same grouped layout as the other plugins in this repository:
 
-- `Show Shortcut Dock`: opens the dock immediately.
+- `Show Quick Dock`: opens the dock immediately.
 - `Behavior`: controls where the dock opens and how its visible blocks close.
   - `Dock side: <current side>`: selects `Left`, `Right`, or `Follow gesture side`. Following the gesture is enabled by default, and the configured fixed side is used as a fallback when the dock is opened without gesture coordinates.
   - `Dock and panel closing`: selects `One block at a time` (the default sequential behavior) or `All blocks at once` (one non-flashing update over the smallest rectangle containing the visible elements).
@@ -98,26 +98,26 @@ The side selector and visibility options keep their menu open after a change, ma
 
 1. Open **Settings > Taps and gestures > Gesture manager**.
 2. Choose a gesture.
-3. Select **Show Shortcut Dock** from the general actions.
+3. Select **Show Quick Dock** from the general actions.
 
 With **Behavior > Dock side > Follow gesture side** enabled, the dock opens on the left or right according to the gesture's starting position. Opening it from the Tools menu, a keyboard action, or any event without screen coordinates uses the last fixed side.
 
-The dock can also be opened from **Tools > Shortcut Dock > Show Shortcut Dock**.
+The dock can also be opened from **Tools > Quick Dock > Show Quick Dock**.
 
 ## Configuring buttons
 
-Open **Tools > Shortcut Dock > Actions and buttons > Buttons and order**. KOReader's native action selector lets you add or remove actions and arrange their order. The first configured action is shown at the bottom of the dock, and subsequent actions grow upward.
+Open **Tools > Quick Dock > Actions and buttons > Buttons and order**. KOReader's native action selector lets you add or remove actions and arrange their order. The first configured action is shown at the bottom of the dock, and subsequent actions grow upward.
 
 Selecting **Nothing** removes every configurable action and remains effective when switching between the file browser and reader. The reader/browser button may still be displayed independently when its visibility option is enabled.
 
-Open **Tools > Shortcut Dock > Actions and buttons > Action visibility > Per-action visibility** to choose one of these options for each configured action:
+Open **Tools > Quick Dock > Actions and buttons > Action visibility > Per-action visibility** to choose one of these options for each configured action:
 
 - **Automatic**: uses the native-action classification when automatic visibility is enabled.
 - **Everywhere**: displays the action in every supported screen; this is the default when automatic visibility is disabled.
 - **Reader only**: displays the action only while a document is open.
 - **File browser and Bookshelf only**: displays the action in the file browser and in Bookshelf, including when Bookshelf is covering a parked reader.
 
-Enable **Tools > Shortcut Dock > Actions and buttons > Action visibility > Automatic visibility** to classify native KOReader actions automatically. Book map, Table of contents, Bookmarks, reading navigation, typography, and document-layout actions are treated as reader-only. File search, folder navigation, sorting, and file-browser display actions are treated as file-browser and Bookshelf only. General actions such as Wi-Fi, lighting, history, and power controls remain available everywhere.
+Enable **Tools > Quick Dock > Actions and buttons > Action visibility > Automatic visibility** to classify native KOReader actions automatically. Book map, Table of contents, Bookmarks, reading navigation, typography, and document-layout actions are treated as reader-only. File search, folder navigation, sorting, and file-browser display actions are treated as file-browser and Bookshelf only. General actions such as Wi-Fi, lighting, history, and power controls remain available everywhere.
 
 Manual selections always override the automatic result. Unknown actions and actions registered by other plugins default to **Everywhere**. At the top of the visibility menu, **Use automatic visibility for all actions** clears manual overrides when automatic mode is enabled; with automatic mode disabled, the same command is shown as **Show all actions everywhere**.
 
@@ -127,7 +127,7 @@ The **Show close button**, **Show side-switch button**, and **Show reader/browse
 
 The information panel appears at the opposite edge of the screen: when the dock opens on the left, the panel opens on the right; when the dock opens on the right, the panel opens on the left. It is bottom-aligned using the same screen margin as the dock and uses the same border, white background, and rounded-corner style as its buttons. Reading information is enabled by default, while network information is optional.
 
-The open book's cover is also enabled by default and appears centered at the top of the reading panel when one is available. Shortcut Dock obtains it through KOReader's current-document cover API, scales it down once to the panel's maximum dimensions, and reuses that thumbnail while the same document and dock scale remain active. Missing covers are cached as unavailable too, avoiding repeated extraction attempts. There is no background loading or polling. Configure these options at **Tools > Shortcut Dock > Appearance > Information panel**.
+The open book's cover is also enabled by default and appears centered at the top of the reading panel when one is available. Quick Dock obtains it through KOReader's current-document cover API, scales it down once to the panel's maximum dimensions, and reuses that thumbnail while the same document and dock scale remain active. Missing covers are cached as unavailable too, avoiding repeated extraction attempts. There is no background loading or polling. Configure these options at **Tools > Quick Dock > Appearance > Information panel**.
 
 While reading, the panel shows the document title and primary author, current/total page and book percentage, chapter title and progress, estimated time remaining for the book and chapter, today's pages and reading time, the clock, and battery state. It does not show remaining page counts. Stable page labels are used for the displayed book page numbers when enabled, while percentages and estimates continue to follow actual page turns.
 
@@ -143,7 +143,7 @@ Wi-Fi uses KOReader's native network manager and its standard connection events,
 
 The same status block displays button help for three seconds when a dock button is held, including pagination arrows and the fixed controls. These messages are non-modal and do not block touches on the dock, lighting sliders, or the underlying screen. A newer Wi-Fi state always replaces an older help message safely.
 
-Shortcut Dock does not add a second connectivity polling loop. It relies on KOReader's existing checks and schedules only one final timeout check for an attempted connection. Closing the dock also closes its Wi-Fi status block; the underlying network operation continues normally.
+Quick Dock does not add a second connectivity polling loop. It relies on KOReader's existing checks and schedules only one final timeout check for an attempted connection. Closing the dock also closes its Wi-Fi status block; the underlying network operation continues normally.
 
 ## Lighting controls
 
@@ -151,25 +151,25 @@ On devices with a frontlight, the slider is enabled by default and appears in it
 
 A separate compact button at the bottom of this column toggles the frontlight. It uses `icons/light_on.svg` while the light is active and `icons/light_off.svg` while it is off. Turning the light off disables and dims the slider until the same button turns it back on.
 
-The frontlight and warmth columns have the same total height as the rendered action-button dock, including when its maximum height is set to 60% or 33%. Each slider fills the space above its bottom button, and all columns remain aligned along the bottom edge. Disable **Tools > Shortcut Dock > Appearance > Lighting controls > Show frontlight control** to remove the brightness controls.
+The frontlight and warmth columns have the same total height as the rendered action-button dock, including when its maximum height is set to 60% or 33%. Each slider fills the space above its bottom button, and all columns remain aligned along the bottom edge. Disable **Tools > Quick Dock > Appearance > Lighting controls > Show frontlight control** to remove the brightness controls.
 
-On devices with natural-light support, **Show warmth control** adds a second optional column. Tap or drag upward for a warmer tone and downward for a cooler tone. Shortcut Dock uses KOReader's native warmth conversion, so devices with ranges such as 0–10, 0–24, or 0–100 retain their actual hardware steps. The control is disabled while the frontlight is off and reads the value only while being drawn or operated; it does not poll in the background.
+On devices with natural-light support, **Show warmth control** adds a second optional column. Tap or drag upward for a warmer tone and downward for a cooler tone. Quick Dock uses KOReader's native warmth conversion, so devices with ranges such as 0–10, 0–24, or 0–100 retain their actual hardware steps. The control is disabled while the frontlight is off and reads the value only while being drawn or operated; it does not poll in the background.
 
-The warmth column is enabled by default on supported devices. Its bottom button uses `icons/warmth.svg`; tapping it displays the current native warmth level. It can be hidden at **Tools > Shortcut Dock > Appearance > Lighting controls > Show warmth control**. When both lighting columns are enabled, brightness remains next to the action buttons and warmth is placed beside brightness.
+The warmth column is enabled by default on supported devices. Its bottom button uses `icons/warmth.svg`; tapping it displays the current native warmth level. It can be hidden at **Tools > Quick Dock > Appearance > Lighting controls > Show warmth control**. When both lighting columns are enabled, brightness remains next to the action buttons and warmth is placed beside brightness.
 
-Open **Tools > Shortcut Dock > Appearance > Expected icon filenames** to see the exact custom `.svg` and `.png` filenames for every dock action and fixed control, including the frontlight states.
+Open **Tools > Quick Dock > Appearance > Expected icon filenames** to see the exact custom `.svg` and `.png` filenames for every dock action and fixed control, including the frontlight states.
 
 ## Bookshelf compatibility
 
-When the Bookshelf plugin is displayed over a parked reader, Shortcut Dock treats it as a separate context. The fixed button changes to `last_doc.svg` and resumes the parked reader instead of sending another `Home` event. This prevents the button from closing Bookshelf while still showing the reader-exit icon.
+When the Bookshelf plugin is displayed over a parked reader, Quick Dock treats it as a separate context. The fixed button changes to `last_doc.svg` and resumes the parked reader instead of sending another `Home` event. This prevents the button from closing Bookshelf while still showing the reader-exit icon.
 
-While Bookshelf is in the foreground, **Search current context** opens its **Search library** dialog. If the reader is above a still-loaded Bookshelf screen, the same button opens the full-text search for the current document. The configured **History** action opens the first shelf whose source is **Recent**, including a renamed or customized Recent shelf. From the reader, it brings the still-loaded Bookshelf back to the foreground already on that shelf. If either integration point is unavailable in the installed Bookshelf version, Shortcut Dock falls back to the corresponding native KOReader action.
+While Bookshelf is in the foreground, **Search current context** opens its **Search library** dialog. If the reader is above a still-loaded Bookshelf screen, the same button opens the full-text search for the current document. The configured **History** action opens the first shelf whose source is **Recent**, including a renamed or customized Recent shelf. From the reader, it brings the still-loaded Bookshelf back to the foreground already on that shelf. If either integration point is unavailable in the installed Bookshelf version, Quick Dock falls back to the corresponding native KOReader action.
 
-The integration only uses Bookshelf modules that are already loaded. Bookshelf remains an optional plugin and is not loaded or required by Shortcut Dock.
+The integration only uses Bookshelf modules that are already loaded. Bookshelf remains an optional plugin and is not loaded or required by Quick Dock.
 
 ## Custom icons
 
-Put `.svg` or `.png` files in `shortcutdock.koplugin/icons/`. The plugin checks custom files before using KOReader's built-in icon.
+Put `.svg` or `.png` files in `quickdock.koplugin/icons/`. The plugin checks custom files before using KOReader's built-in icon.
 
 Resolution order for regular actions:
 
@@ -182,37 +182,37 @@ Resolution order for regular actions:
 
 The two stateful actions use their state-specific names before the regular resolution order: `day_mode.svg` / `night_mode.svg` and `wifi_on.svg` / `wifi_off.svg`. These files are checked only when the dock is drawn or the corresponding action changes state; there is no periodic polling.
 
-Examples for regular actions include `history.svg`, `increase_frontlight.svg`, and `shortcutdock_context_search.svg`. The plugin also includes matching chevrons for pagination and changing the dock side, `close.svg` for the optional close button, `exit_reader.svg` / `last_doc.svg` for the reader/browser button, `reading_info.svg` / `network_info.svg` for the information-panel switch, `light_on.svg` / `light_off.svg` for the frontlight toggle, and `warmth.svg` for the warmth column.
+Examples for regular actions include `history.svg`, `increase_frontlight.svg`, and `quickdock_context_search.svg`. The plugin also includes matching chevrons for pagination and changing the dock side, `close.svg` for the optional close button, `exit_reader.svg` / `last_doc.svg` for the reader/browser button, `reading_info.svg` / `network_info.svg` for the information-panel switch, `light_on.svg` / `light_off.svg` for the frontlight toggle, and `warmth.svg` for the warmth column.
 
 For the reader/browser button, use `exit_reader.svg` while reading and `last_doc.svg` in the file browser or when Bookshelf is covering a parked reader. In that Bookshelf state, the button resumes the reader instead of sending another Home command. The same names with a `.png` extension are also accepted.
 
 ## Saved settings
 
-Shortcut Dock stores its preferences through KOReader's reader settings using these keys:
+Quick Dock stores its preferences through KOReader's reader settings using these keys:
 
 | Setting key | Purpose |
 |---|---|
-| `shortcutdock_actions` | Enabled actions and their order |
-| `shortcutdock_action_contexts` | Per-action reader/browser visibility |
-| `shortcutdock_auto_visibility` | Enables automatic context classification |
-| `shortcutdock_side` | Left or right dock position |
-| `shortcutdock_side_mode` | Selects a fixed position or follows the gesture side; gesture following is the default |
-| `shortcutdock_show_side_button` | Visibility of the floating side-switch button |
-| `shortcutdock_show_close_button` | Visibility of the floating close button; disabled by default |
-| `shortcutdock_show_context_button` | Visibility of the reader/browser button |
-| `shortcutdock_show_frontlight_slider` | Visibility of the frontlight slider column |
-| `shortcutdock_show_warmth_slider` | Visibility of the frontlight warmth column; enabled by default on supported devices |
-| `shortcutdock_show_info_panel` | Visibility of the reading-information panel; enabled by default |
-| `shortcutdock_show_network_info_panel` | Visibility of the network-information panel; disabled by default |
-| `shortcutdock_show_info_panel_cover` | Visibility of the open book's cover at the top of the information panel; enabled by default |
-| `shortcutdock_info_panel_text_alignment` | Left, centered, or nearest-screen-edge alignment for all information-panel text |
-| `shortcutdock_dock_size` | Selected Small, Medium, or Large dock scale |
-| `shortcutdock_max_action_dock_height` | Maximum dock-column height as 100%, 60%, or 33% of the screen; defaults to 100% |
-| `shortcutdock_close_together` | Closes all blocks in one non-flashing update over their smallest encompassing rectangle; disabled by default |
+| `quickdock_actions` | Enabled actions and their order |
+| `quickdock_action_contexts` | Per-action reader/browser visibility |
+| `quickdock_auto_visibility` | Enables automatic context classification |
+| `quickdock_side` | Left or right dock position |
+| `quickdock_side_mode` | Selects a fixed position or follows the gesture side; gesture following is the default |
+| `quickdock_show_side_button` | Visibility of the floating side-switch button |
+| `quickdock_show_close_button` | Visibility of the floating close button; disabled by default |
+| `quickdock_show_context_button` | Visibility of the reader/browser button |
+| `quickdock_show_frontlight_slider` | Visibility of the frontlight slider column |
+| `quickdock_show_warmth_slider` | Visibility of the frontlight warmth column; enabled by default on supported devices |
+| `quickdock_show_info_panel` | Visibility of the reading-information panel; enabled by default |
+| `quickdock_show_network_info_panel` | Visibility of the network-information panel; disabled by default |
+| `quickdock_show_info_panel_cover` | Visibility of the open book's cover at the top of the information panel; enabled by default |
+| `quickdock_info_panel_text_alignment` | Left, centered, or nearest-screen-edge alignment for all information-panel text |
+| `quickdock_dock_size` | Selected Small, Medium, or Large dock scale |
+| `quickdock_max_action_dock_height` | Maximum dock-column height as 100%, 60%, or 33% of the screen; defaults to 100% |
+| `quickdock_close_together` | Closes all blocks in one non-flashing update over their smallest encompassing rectangle; disabled by default |
 
 ## Code organization
 
-- `main.lua`: plugin lifecycle, saved state, migrations, dock sizing, pagination, information-panel coordination, and action dispatch.
+- `main.lua`: plugin lifecycle, saved state, dock sizing, pagination, information-panel coordination, and action dispatch.
 - `modules/controls.lua`: action, context, pagination, side-switch, close, information-panel, frontlight, and warmth control factories.
 - `modules/widgets.lua`: low-level slider and button widget classes, fixed positioning, and multi-column layout.
 - `modules/info_panel.lua`: safe collection and opposite-edge rendering of reading and network details, covers, statistics, clock, battery, and transient status panels.
@@ -223,11 +223,11 @@ Shortcut Dock stores its preferences through KOReader's reader settings using th
 
 ## Installation
 
-Extract `shortcutdock.koplugin` into KOReader's `plugins` directory and restart KOReader.
+Extract `quickdock.koplugin` into KOReader's `plugins` directory and restart KOReader.
 
-- Kindle: `/mnt/us/koreader/plugins/shortcutdock.koplugin`
-- Kobo: `/mnt/onboard/.adds/koreader/plugins/shortcutdock.koplugin`
-- Android: `<KOReader data directory>/plugins/shortcutdock.koplugin`
+- Kindle: `/mnt/us/koreader/plugins/quickdock.koplugin`
+- Kobo: `/mnt/onboard/.adds/koreader/plugins/quickdock.koplugin`
+- Android: `<KOReader data directory>/plugins/quickdock.koplugin`
 
 ## Version
 

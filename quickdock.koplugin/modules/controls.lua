@@ -10,7 +10,7 @@ local math_max = math.max
 -- Button and lighting-control factories. Keeping these out of main.lua makes
 -- the plugin lifecycle and dock orchestration easier to audit independently
 -- from widget construction details.
-return function(ShortcutDock, options)
+return function(QuickDock, options)
     local ACTION_HOME = options.action_home
     local STATEFUL_ACTIONS = options.stateful_actions
     local applyButtonMetrics = options.apply_button_metrics
@@ -20,11 +20,11 @@ return function(ShortcutDock, options)
     local FrontlightToggleButton = options.widgets.FrontlightToggleButton
     local InfoPanelToggleButton = options.widgets.InfoPanelToggleButton
 
-function ShortcutDock:getFrontlightSliderHeight(dock_height)
+function QuickDock:getFrontlightSliderHeight(dock_height)
     return math_max(1, tonumber(dock_height) or 1)
 end
 
-function ShortcutDock:makeFrontlightToggleButton(width, dialog, slider, metrics)
+function QuickDock:makeFrontlightToggleButton(width, dialog, slider, metrics)
     local powerd = slider.powerd
     local function getStateIcon()
         return self:getIcon(slider.enabled and "light_on" or "light_off")
@@ -32,7 +32,7 @@ function ShortcutDock:makeFrontlightToggleButton(width, dialog, slider, metrics)
 
     local icon = getStateIcon()
     local config = applyHighlightedButtonMetrics({
-        id = "shortcutdock_toggle_frontlight",
+        id = "quickdock_toggle_frontlight",
         enabled = true,
         show_parent = dialog,
         slider = slider,
@@ -59,7 +59,7 @@ function ShortcutDock:makeFrontlightToggleButton(width, dialog, slider, metrics)
     return FrontlightToggleButton:new(config)
 end
 
-function ShortcutDock:makeFrontlightSlider(dock_height, dialog, metrics)
+function QuickDock:makeFrontlightSlider(dock_height, dialog, metrics)
     local column_height = self:getFrontlightSliderHeight(dock_height)
     local slider_height = math_max(
         1,
@@ -92,14 +92,14 @@ function ShortcutDock:makeFrontlightSlider(dock_height, dialog, metrics)
     return column
 end
 
-function ShortcutDock:makeWarmthInfoButton(width, dialog, slider, metrics)
+function QuickDock:makeWarmthInfoButton(width, dialog, slider, metrics)
     local function showWarmthLevel()
         slider:syncFromPower()
         self:showButtonHelp(_("Warmth") .. ": " .. tostring(slider.value))
     end
     local icon = self:getIcon("warmth")
     local config = applyHighlightedButtonMetrics({
-        id = "shortcutdock_frontlight_warmth",
+        id = "quickdock_frontlight_warmth",
         enabled = true,
         show_parent = dialog,
         callback = showWarmthLevel,
@@ -113,7 +113,7 @@ function ShortcutDock:makeWarmthInfoButton(width, dialog, slider, metrics)
     return Button:new(config)
 end
 
-function ShortcutDock:makeWarmthSlider(dock_height, dialog, metrics)
+function QuickDock:makeWarmthSlider(dock_height, dialog, metrics)
     local powerd = Device:getPowerDevice()
     local column_height = self:getFrontlightSliderHeight(dock_height)
     local slider_height = math_max(
@@ -152,12 +152,12 @@ function ShortcutDock:makeWarmthSlider(dock_height, dialog, metrics)
     return column
 end
 
-function ShortcutDock:refreshStatefulActionButton(action_id)
+function QuickDock:refreshStatefulActionButton(action_id)
     if not STATEFUL_ACTIONS[action_id] or not self.dialog then
         return
     end
     local dialog = self.dialog
-    local button = dialog:getButtonById("shortcutdock_" .. action_id)
+    local button = dialog:getButtonById("quickdock_" .. action_id)
     if not button then
         return
     end
@@ -169,10 +169,10 @@ function ShortcutDock:refreshStatefulActionButton(action_id)
     end
 end
 
-function ShortcutDock:makeActionButton(item, metrics)
+function QuickDock:makeActionButton(item, metrics)
     local icon = self:getIcon(item.key)
     local button = {
-        id = "shortcutdock_" .. item.key,
+        id = "quickdock_" .. item.key,
         enabled = true,
         callback = function()
             self:executeAction(item.key)
@@ -191,7 +191,7 @@ function ShortcutDock:makeActionButton(item, metrics)
     return applyButtonMetrics(button, metrics)
 end
 
-function ShortcutDock:makeContextButton(metrics)
+function QuickDock:makeContextButton(metrics)
     local bookshelf = self:getParkedBookshelfContext()
     local in_reader = self:isReaderContext()
     local text
@@ -204,12 +204,12 @@ function ShortcutDock:makeContextButton(metrics)
     end
     local icon = self:getIcon(ACTION_HOME)
     local button = {
-        id = "shortcutdock_context_home",
+        id = "quickdock_context_home",
         enabled = true,
         callback = function()
             self:closeDock()
             UIManager:scheduleIn(0.05, function()
-                self:onShortcutDockContextHome()
+                self:onQuickDockContextHome()
             end)
         end,
         hold_callback = function()
@@ -226,11 +226,11 @@ function ShortcutDock:makeContextButton(metrics)
     return applyButtonMetrics(button, metrics)
 end
 
-function ShortcutDock:makePageButton(direction, target_page, metrics)
+function QuickDock:makePageButton(direction, target_page, metrics)
     local is_next = direction == "next"
     local icon = self:getIcon(is_next and "chevron-up" or "chevron-down")
     local button = {
-        id = is_next and "shortcutdock_next" or "shortcutdock_previous",
+        id = is_next and "quickdock_next" or "quickdock_previous",
         enabled = true,
         callback = function()
             self:showDock(target_page, self.current_dock_side, self.info_panel_data)
@@ -250,12 +250,12 @@ function ShortcutDock:makePageButton(direction, target_page, metrics)
     return applyButtonMetrics(button, metrics)
 end
 
-function ShortcutDock:makeSideButton(width, dialog, metrics)
+function QuickDock:makeSideButton(width, dialog, metrics)
     local current_side = self.current_dock_side or self:getSide()
     local target_side = current_side == "left" and "right" or "left"
     local icon = self:getIcon("chevron-" .. target_side)
     local button = applyHighlightedButtonMetrics({
-        id = "shortcutdock_switch_side",
+        id = "quickdock_switch_side",
         enabled = true,
         show_parent = dialog,
         callback = function()
@@ -283,17 +283,17 @@ function ShortcutDock:makeSideButton(width, dialog, metrics)
     return Button:new(button)
 end
 
-function ShortcutDock:makeCloseButton(width, dialog, metrics)
+function QuickDock:makeCloseButton(width, dialog, metrics)
     local icon = self:getIcon("close")
     local button = applyHighlightedButtonMetrics({
-        id = "shortcutdock_close",
+        id = "quickdock_close",
         enabled = true,
         show_parent = dialog,
         callback = function()
             self:closeDock()
         end,
         hold_callback = function()
-            self:showButtonHelp(_("Close Shortcut Dock"))
+            self:showButtonHelp(_("Close Quick Dock"))
         end,
     }, width, metrics)
     if icon then
@@ -306,17 +306,17 @@ function ShortcutDock:makeCloseButton(width, dialog, metrics)
     return Button:new(button)
 end
 
-function ShortcutDock:getInfoPanelToggleDisplay()
+function QuickDock:getInfoPanelToggleDisplay()
     if self.current_info_panel_kind == "network" then
         return self:getIcon("network_info"), _("N")
     end
     return self:getIcon("reading_info"), _("R")
 end
 
-function ShortcutDock:makeInfoPanelToggleButton(width, dialog, metrics)
+function QuickDock:makeInfoPanelToggleButton(width, dialog, metrics)
     local icon, fallback = self:getInfoPanelToggleDisplay()
     local button = applyHighlightedButtonMetrics({
-        id = "shortcutdock_switch_info_panel",
+        id = "quickdock_switch_info_panel",
         enabled = true,
         show_parent = dialog,
         display_provider = function()
