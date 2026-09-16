@@ -1,4 +1,4 @@
-# Quick Dock ![Version](https://img.shields.io/badge/version-v0.22.2-blue)
+# Quick Dock ![Version](https://img.shields.io/badge/version-v0.22.3-blue)
 
 Quick Dock adds a floating action dock with lighting controls and an optional information panel to KOReader. It is designed for touch devices and can be assigned to any gesture supported by KOReader.
 
@@ -63,9 +63,9 @@ The settings follow the same grouped layout as the other plugins in this reposit
 - `Behavior`: controls where the dock opens and how its visible blocks close.
   - `Dock side: <current side>`: selects `Left`, `Right`, or `Follow gesture side`. Following the gesture is enabled by default, and the configured fixed side is used as a fallback when the dock is opened without gesture coordinates.
   - `Dock and panel closing`: selects `One block at a time` (the default sequential behavior) or `All blocks at once` (one non-flashing update over the smallest rectangle containing the visible elements).
-- `Actions and buttons`: controls configurable actions, dock controls, and context visibility.
-  - `Buttons and order`: opens KOReader's native action selector and shows the current number of configured actions.
-  - `Dock controls`:
+- `Actions`: controls configurable actions, extra buttons, and context visibility.
+  - `Configured actions`: opens KOReader's native action selector and shows the current number of configured actions.
+  - `Extra buttons`:
     - `Show reader/browser button`: shows the first dock button; it opens the file browser while reading, opens the last document from the file browser, and returns from Bookshelf to the reader.
     - `Show side-switch button`: shows a separate chevron above the dock that changes its side without opening the settings.
     - `Show close button`: shows a separate close control above the dock. Fixed external controls remain stacked above the action column.
@@ -84,13 +84,13 @@ The settings follow the same grouped layout as the other plugins in this reposit
   - `Lighting controls`:
     - `Show frontlight control`: shows or hides the brightness slider and light toggle on devices with a frontlight.
     - `Show warmth control`: shows or hides the optional warmth slider on devices with natural-light support.
-  - `Expected icon filenames`: lists the custom SVG and PNG names accepted for every action.
+  - `Custom icon filenames`: lists the custom SVG and PNG names accepted for every action.
 - `Reset`:
-  - `Reset behavior to defaults`: restores gesture-following placement, right-side fallback, and one-block-at-a-time closing while preserving actions, buttons, and appearance.
-  - `Reset buttons to defaults`: restores the initial buttons and their order after confirmation without changing the other plugin settings.
-  - `Reset behavior and buttons`: additionally restores fixed buttons, default actions, order, and visibility while preserving appearance.
+  - `Reset behavior to defaults`: restores gesture-following placement, right-side fallback, and one-block-at-a-time closing while preserving actions, extra buttons, and appearance.
+  - `Reset actions to defaults`: restores the initial actions and their order after confirmation without changing the other plugin settings.
+  - `Reset behavior and actions`: additionally restores extra buttons, default actions, order, and visibility while preserving appearance.
 - `Gesture setup`: displays instructions for assigning the dock to a KOReader gesture.
-- `Version: v0.22.1`: shows the installed plugin version.
+- `Version: v0.22.3`: shows the installed plugin version.
 
 The side selector and visibility options keep their menu open after a change, making it easier to review related settings.
 
@@ -106,18 +106,18 @@ The dock can also be opened from **Tools > Quick Dock > Show Quick Dock**.
 
 ## Configuring buttons
 
-Open **Tools > Quick Dock > Actions and buttons > Buttons and order**. KOReader's native action selector lets you add or remove actions and arrange their order. The first configured action is shown at the bottom of the dock, and subsequent actions grow upward.
+Open **Tools > Quick Dock > Actions > Configured actions**. KOReader's native action selector lets you add or remove actions and arrange their order. The first configured action is shown at the bottom of the dock, and subsequent actions grow upward.
 
 Selecting **Nothing** removes every configurable action and remains effective when switching between the file browser and reader. The reader/browser button may still be displayed independently when its visibility option is enabled.
 
-Open **Tools > Quick Dock > Actions and buttons > Action visibility > Per-action visibility** to choose one of these options for each configured action:
+Open **Tools > Quick Dock > Actions > Action visibility > Per-action visibility** to choose one of these options for each configured action:
 
 - **Automatic**: uses the native-action classification when automatic visibility is enabled.
 - **Everywhere**: displays the action in every supported screen; this is the default when automatic visibility is disabled.
 - **Reader only**: displays the action only while a document is open.
 - **File browser and Bookshelf only**: displays the action in the file browser and in Bookshelf, including when Bookshelf is covering a parked reader.
 
-Enable **Tools > Quick Dock > Actions and buttons > Action visibility > Automatic visibility** to classify native KOReader actions automatically. Book map, Table of contents, Bookmarks, reading navigation, typography, and document-layout actions are treated as reader-only. File search, folder navigation, sorting, and file-browser display actions are treated as file-browser and Bookshelf only. General actions such as Wi-Fi, lighting, history, and power controls remain available everywhere.
+Enable **Tools > Quick Dock > Actions > Action visibility > Automatic visibility** to classify native KOReader actions automatically. Book map, Table of contents, Bookmarks, reading navigation, typography, and document-layout actions are treated as reader-only. File search, folder navigation, sorting, and file-browser display actions are treated as file-browser and Bookshelf only. General actions such as Wi-Fi, lighting, history, and power controls remain available everywhere.
 
 Manual selections always override the automatic result. Unknown actions and actions registered by other plugins default to **Everywhere**. At the top of the visibility menu, **Use automatic visibility for all actions** clears manual overrides when automatic mode is enabled; with automatic mode disabled, the same command is shown as **Show all actions everywhere**.
 
@@ -157,7 +157,7 @@ On devices with natural-light support, **Show warmth control** adds a second opt
 
 The warmth column is enabled by default on supported devices. Its bottom button uses `icons/warmth.svg`; tapping it displays the current native warmth level. It can be hidden at **Tools > Quick Dock > Appearance > Lighting controls > Show warmth control**. When both lighting columns are enabled, brightness remains next to the action buttons and warmth is placed beside brightness.
 
-Open **Tools > Quick Dock > Appearance > Expected icon filenames** to see the exact custom `.svg` and `.png` filenames for every dock action and fixed control, including the frontlight states.
+Open **Tools > Quick Dock > Appearance > Custom icon filenames** to see the exact custom `.svg` and `.png` filenames for every dock action and fixed control, including the frontlight states.
 
 ## Bookshelf compatibility
 
@@ -236,4 +236,4 @@ Extract `quickdock.koplugin` into KOReader's `plugins` directory and restart KOR
 
 ## Version
 
-v0.22.2
+v0.22.3

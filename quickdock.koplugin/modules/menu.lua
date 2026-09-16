@@ -70,11 +70,11 @@ local function showResetConfirmation(plugin, touchmenu_instance, text, ok_text, 
     }))
 end
 
-function QuickDock:showResetButtonsConfirmation(touchmenu_instance)
+function QuickDock:showResetActionsConfirmation(touchmenu_instance)
     showResetConfirmation(
         self,
         touchmenu_instance,
-        _("Reset the Quick Dock buttons and their order to the defaults?"),
+        _("Reset the Quick Dock actions and their order to the defaults?"),
         _("Reset"),
         self.resetActions
     )
@@ -84,17 +84,17 @@ function QuickDock:showResetBehaviorConfirmation(touchmenu_instance)
     showResetConfirmation(
         self,
         touchmenu_instance,
-        _("Reset Quick Dock behavior to its defaults? Your buttons and their order will be kept."),
+        _("Reset Quick Dock behavior to its defaults? Your actions and their order will be kept."),
         _("Reset"),
         self.resetBehavior
     )
 end
 
-function QuickDock:showResetBehaviorAndButtonsConfirmation(touchmenu_instance)
+function QuickDock:showResetBehaviorAndActionsConfirmation(touchmenu_instance)
     showResetConfirmation(
         self,
         touchmenu_instance,
-        _("Reset Quick Dock behavior and buttons to their defaults? Appearance settings will be kept."),
+        _("Reset Quick Dock behavior and actions to their defaults? Appearance settings will be kept."),
         _("Reset all"),
         self.resetBehaviorAndButtons
     )
@@ -344,7 +344,7 @@ function QuickDock:getBehaviorMenu()
     return { side_item, closing_item }
 end
 
-function QuickDock:getDockControlsMenu()
+function QuickDock:getExtraButtonsMenu()
     return {
         makeToggleOption(
             _("Show reader/browser button"),
@@ -371,7 +371,7 @@ function QuickDock:getActionSettingsMenu()
     return {
         {
             text_func = function()
-                return T(_("Buttons and order: %1"), #self:getConfiguredActions())
+                return T(_("Configured actions: %1"), #self:getConfiguredActions())
             end,
             help_text = _("Choose the actions shown in the dock and arrange their order."),
             sub_item_table_func = function()
@@ -379,10 +379,10 @@ function QuickDock:getActionSettingsMenu()
             end,
         },
         {
-            text = _("Dock controls"),
-            help_text = _("Show or hide the reader/browser, side-switch, and close controls."),
+            text = _("Extra buttons"),
+            help_text = _("Show or hide the reader/browser, side-switch, and close buttons around the dock. These are not configurable actions."),
             sub_item_table_func = function()
-                return self:getDockControlsMenu()
+                return self:getExtraButtonsMenu()
             end,
         },
         {
@@ -555,8 +555,8 @@ function QuickDock:getAppearanceMenu()
             sub_item_table_func = function() return self:getLightingControlsMenu() end,
         },
         {
-            text = _("Expected icon filenames"),
-            help_text = _("Shows the custom SVG and PNG filenames expected for each dock action."),
+            text = _("Custom icon filenames"),
+            help_text = _("Reference list of the SVG/PNG filenames Quick Dock looks for when you want to replace an icon."),
             sub_item_table_func = function() return self:getIconFilenamesMenu() end,
         },
     }
@@ -566,23 +566,23 @@ function QuickDock:getResetMenu()
     return {
         {
             text = _("Reset behavior to defaults"),
-            help_text = _("Restores gesture-following placement, right-side fallback, and one-block-at-a-time closing without changing actions, buttons, or appearance."),
+            help_text = _("Restores gesture-following placement, right-side fallback, and one-block-at-a-time closing without changing actions, extra buttons, or appearance."),
             callback = function(touchmenu_instance)
                 self:showResetBehaviorConfirmation(touchmenu_instance)
             end,
         },
         {
-            text = _("Reset buttons to defaults"),
-            help_text = _("Restores the initial buttons and their order without changing other Quick Dock settings."),
+            text = _("Reset actions to defaults"),
+            help_text = _("Restores the initial actions and their order without changing other Quick Dock settings."),
             callback = function(touchmenu_instance)
-                self:showResetButtonsConfirmation(touchmenu_instance)
+                self:showResetActionsConfirmation(touchmenu_instance)
             end,
         },
         {
-            text = _("Reset behavior and buttons"),
-            help_text = _("Restores behavior, dock controls, default actions, order, and action visibility while keeping appearance settings."),
+            text = _("Reset behavior and actions"),
+            help_text = _("Restores behavior, extra buttons, default actions, order, and action visibility while keeping appearance settings."),
             callback = function(touchmenu_instance)
-                self:showResetBehaviorAndButtonsConfirmation(touchmenu_instance)
+                self:showResetBehaviorAndActionsConfirmation(touchmenu_instance)
             end,
         },
     }
@@ -596,6 +596,7 @@ function QuickDock:addToMainMenu(menu_items)
             {
                 text = _("Show Quick Dock"),
                 callback = function() self:showDock(1) end,
+                separator = true,
             },
             {
                 text = _("Behavior"),
@@ -603,8 +604,8 @@ function QuickDock:addToMainMenu(menu_items)
                 sub_item_table_func = function() return self:getBehaviorMenu() end,
             },
             {
-                text = _("Actions and buttons"),
-                help_text = _("Configure actions, dock controls, ordering, and contextual visibility."),
+                text = _("Actions"),
+                help_text = _("Configure actions, extra buttons, ordering, and contextual visibility."),
                 sub_item_table_func = function() return self:getActionSettingsMenu() end,
             },
             {
@@ -614,8 +615,9 @@ function QuickDock:addToMainMenu(menu_items)
             },
             {
                 text = _("Reset"),
-                help_text = _("Restore default behavior, with or without resetting buttons."),
+                help_text = _("Restore default behavior, with or without resetting actions."),
                 sub_item_table_func = function() return self:getResetMenu() end,
+                separator = true,
             },
             {
                 text = _("Gesture setup"),
@@ -633,7 +635,6 @@ function QuickDock:addToMainMenu(menu_items)
                         text = T(_("Quick Dock %1"), PLUGIN_VERSION),
                     }))
                 end,
-                separator = true,
             },
         },
     }

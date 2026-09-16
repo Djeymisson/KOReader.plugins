@@ -18,7 +18,7 @@ local function scaleMetric(value, factor, minimum)
     return math_max(minimum or 1, math_floor(value * factor + 0.5))
 end
 
-local PLUGIN_VERSION = "v0.22.2"
+local PLUGIN_VERSION = "v0.22.3"
 local SETTING_ACTIONS = "quickdock_actions"
 local SETTING_ACTION_CONTEXTS = "quickdock_action_contexts"
 local SETTING_AUTO_VISIBILITY = "quickdock_auto_visibility"
