@@ -322,6 +322,44 @@ local function make_rounded_stencil(w, h, r, stroke, fill, outline)
 	return bb
 end
 
+-- Chrome icons (nav chevrons, gallery Back/Reset) come from a small, fixed
+-- set of SVG assets, but the buttons that carry them (ImageBrowserMoreButton,
+-- ImageBrowserTextButton) are rebuilt from scratch on every update() — every
+-- image switch, zoom step and gallery page turn. Rasterizing the same SVG
+-- again on each of those would redo real decode work on a hot path for a
+-- result that never changes, so it's rendered once per (path, size,
+-- disabled) combination and kept for the plugin's lifetime — the same
+-- bounded-cache pattern as PANEL_SHADOW_CACHE. `false` sentinels a failed
+-- render so it isn't retried every repaint.
+local SVG_ICON_CACHE = {}
+
+local function _cachedSvgIcon(path, size, disabled, disabled_gray)
+	local key = path .. ":" .. size .. ":" .. (disabled and "1" or "0")
+	local cached = SVG_ICON_CACHE[key]
+	if cached ~= nil then
+		return cached or nil
+	end
+	local ok, ibb = pcall(RenderImage.renderSVGImageFile, RenderImage, path, size, size)
+	if not (ok and ibb) then
+		SVG_ICON_CACHE[key] = false
+		return nil
+	end
+	if disabled then
+		-- lift the black strokes to gray, keeping the AA alpha
+		local g = disabled_gray
+		for yy = 0, ibb:getHeight() - 1 do
+			for xx = 0, ibb:getWidth() - 1 do
+				local c = ibb:getPixel(xx, yy):getColorRGB32()
+				if c.alpha > 0 then
+					ibb:setPixel(xx, yy, Blitbuffer.ColorRGB32(g, g, g, c.alpha))
+				end
+			end
+		end
+	end
+	SVG_ICON_CACHE[key] = ibb
+	return ibb
+end
+
 -- The stadium-shaped pill behind the dots / "n / N" counter. Default is
 -- the design's black fill + 2px white stroke (keeps the dots legible over
 -- dark images). `inverted` flips it to a white fill + black stroke: used
@@ -461,24 +499,12 @@ function ImageBrowserMoreButton:paintTo(bb, x, y)
 		)
 	end
 	bb:alphablitFrom(self._bg_bb, x, y, 0, 0, self.size, self.size)
-	-- icon: an SVG (chevrons for prev/next) or the default ⋯ glyph
+	-- icon: an SVG (chevrons for prev/next) or the default ⋯ glyph. Shared
+	-- across every button instance (see _cachedSvgIcon) — update() rebuilds
+	-- this button on every image switch/zoom/page turn, and the icon never
+	-- changes for a given (path, size, disabled) combination.
 	if self.icon and not self._icon_bb then
-		local ok, ibb = pcall(RenderImage.renderSVGImageFile, RenderImage, self.icon, self.icon_size, self.icon_size)
-		if ok and ibb then
-			if self.disabled then
-				-- lift the black strokes to gray, keeping the AA alpha
-				local g = self.disabled_gray
-				for yy = 0, ibb:getHeight() - 1 do
-					for xx = 0, ibb:getWidth() - 1 do
-						local c = ibb:getPixel(xx, yy):getColorRGB32()
-						if c.alpha > 0 then
-							ibb:setPixel(xx, yy, Blitbuffer.ColorRGB32(g, g, g, c.alpha))
-						end
-					end
-				end
-			end
-			self._icon_bb = ibb
-		end
+		self._icon_bb = _cachedSvgIcon(self.icon, self.icon_size, self.disabled, self.disabled_gray)
 	end
 	if self._icon_bb then
 		bb:alphablitFrom(
@@ -517,10 +543,9 @@ function ImageBrowserMoreButton:free()
 		self._bg_bb:free()
 		self._bg_bb = nil
 	end
-	if self._icon_bb then
-		self._icon_bb:free()
-		self._icon_bb = nil
-	end
+	-- _icon_bb is owned by the shared SVG_ICON_CACHE (see _cachedSvgIcon),
+	-- not this instance: just drop the reference.
+	self._icon_bb = nil
 	if self._icon then
 		self._icon:free()
 		self._icon = nil
@@ -672,11 +697,13 @@ function ImageBrowserTextButton:init()
 	})
 	local content_w = self._text_wg:getSize().w
 	if self.icon then
-		-- render once; a black-line SVG on transparent, alpha-blitted so
-		-- it inherits the white button (and night-mode inversion) like text
-		local ok, ibb = pcall(RenderImage.renderSVGImageFile, RenderImage, self.icon, self.icon_size, self.icon_size)
-		if ok and ibb then
-			self._icon_bb = ibb
+		-- Shared cache (see _cachedSvgIcon): a black-line SVG on transparent,
+		-- alpha-blitted so it inherits the white button (and night-mode
+		-- inversion) like text. This button is rebuilt on every gallery page
+		-- turn / Reset-pill repaint, so re-rasterizing the same static SVG
+		-- each time would be wasted work.
+		self._icon_bb = _cachedSvgIcon(self.icon, self.icon_size, false)
+		if self._icon_bb then
 			content_w = content_w + self.icon_size + self.icon_gap
 		end
 	end
@@ -740,10 +767,9 @@ function ImageBrowserTextButton:free()
 		self._bg_bb:free()
 		self._bg_bb = nil
 	end
-	if self._icon_bb then
-		self._icon_bb:free()
-		self._icon_bb = nil
-	end
+	-- _icon_bb is owned by the shared SVG_ICON_CACHE (see _cachedSvgIcon),
+	-- not this instance: just drop the reference.
+	self._icon_bb = nil
 	if self._text_wg then
 		self._text_wg:free()
 	end
@@ -3507,9 +3533,7 @@ local function _flatten_on_white(bb)
 	if not bb then
 		return bb
 	end
-	local ok, btype = pcall(function()
-		return bb:getType()
-	end)
+	local ok, btype = pcall(bb.getType, bb)
 	if not ok then
 		return bb
 	end
@@ -3857,14 +3881,10 @@ function ImageBrowser:showViewer(whole_book_once)
 			local doc = self.ui.document
 			if meta.node_path and doc and doc.isXPointerInDocument then
 				local xp = string.format("/body/DocFragment[%d]/body/%s", meta.spine_index, meta.node_path)
-				local ok = pcall(function()
-					return doc:isXPointerInDocument(xp)
-				end) and doc:isXPointerInDocument(xp)
-				if ok then
+				local ok, in_doc = pcall(doc.isXPointerInDocument, doc, xp)
+				if ok and in_doc then
 					local fname = meta.path and meta.path:match("[^/]+$")
-					local ok2, html = pcall(function()
-						return doc:getHTMLFromXPointer(xp, 0)
-					end)
+					local ok2, html = pcall(doc.getHTMLFromXPointer, doc, xp, 0)
 					if ok2 and html and fname and html:find(fname, 1, true) then
 						target = xp
 					end
@@ -4425,7 +4445,7 @@ function ImageBrowser:_menuItems()
 			keep_menu_open = true,
 			callback = function()
 				UIManager:show(InfoMessage:new({
-					text = T(_("Image Browser v%1\n\nBased on the Glimpse plugin."), _installed_version()),
+					text = T(_("Image Browser %1\n\nBased on the Glimpse plugin."), _installed_version()),
 				}))
 			end,
 		},
