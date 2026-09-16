@@ -18,7 +18,7 @@ local math_max = math.max
 local math_min = math.min
 local math_sqrt = math.sqrt
 
-local PLUGIN_VERSION = "v1.0.5"
+local PLUGIN_VERSION = "v1.0.6"
 local QR_MESSAGE_MODULE = "ui/widget/qrmessage"
 
 local BUTTON_ICON_SIZE = Screen:scaleBySize(22)
@@ -412,10 +412,12 @@ function SelectionToolbar:addToMainMenu(menu_items)
     local action_items = {
         {
             text = _("Show all actions"),
+            help_text = _("Re-enables every selection toolbar action at once."),
             callback = function()
                 self:resetActions()
                 UIManager:show(InfoMessage:new({ text = _("All selection toolbar actions are enabled.") }))
             end,
+            separator = true,
         },
     }
 
@@ -441,6 +443,7 @@ function SelectionToolbar:addToMainMenu(menu_items)
         sub_item_table = {
             {
                 text = _("Use compact selection toolbar"),
+                help_text = _("Replaces KOReader's default centered selection menu with a compact icon toolbar near the selection."),
                 checked_func = function()
                     return self:isEnabled()
                 end,
@@ -451,9 +454,11 @@ function SelectionToolbar:addToMainMenu(menu_items)
                     end
                 end,
                 keep_menu_open = true,
+                separator = true,
             },
             {
                 text = _("Appearance"),
+                help_text = _("Show or hide the toolbar's drop shadow."),
                 sub_item_table = {
                     {
                         text = _("Show toolbar shadow"),
@@ -472,14 +477,15 @@ function SelectionToolbar:addToMainMenu(menu_items)
             },
             {
                 text = _("Visible actions"),
+                help_text = _("Choose which actions appear in the selection toolbar."),
                 sub_item_table = action_items,
+                separator = true,
             },
             {
                 text = _("Version") .. ": " .. PLUGIN_VERSION,
                 callback = function()
                     UIManager:show(InfoMessage:new({ text = _("Selection Toolbar Plugin") .. " " .. PLUGIN_VERSION }))
                 end,
-                separator = true,
             },
         },
     }

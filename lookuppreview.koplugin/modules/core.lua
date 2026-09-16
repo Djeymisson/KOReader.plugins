@@ -111,6 +111,7 @@ return function(ctx)
 				local mode = self:useRoundedCards() and _("Rounded") or _("Square")
 				return string.format("%s: %s", _("Card corners"), mode)
 			end,
+			help_text = _("Choose square or rounded corners for the preview cards."),
 			sub_item_table = {
 				{
 					text = _("Square"),
@@ -140,6 +141,7 @@ return function(ctx)
 				local mode = self:useTabsMode() and _("Tabs") or _("Full cards")
 				return string.format("%s: %s", _("Side card previews"), mode)
 			end,
+			help_text = _("Choose how the other available cards (dictionary, translation, Wikipedia) are shown beside the active one."),
 			sub_item_table = {
 				{
 					text = _("Full cards"),
@@ -169,6 +171,7 @@ return function(ctx)
 				local mode = self:useManualOnlineCardLoading() and _("Manual only") or _("Automatic")
 				return string.format("%s: %s", _("Online card loading"), mode)
 			end,
+			help_text = _("Choose whether translation and Wikipedia cards load automatically or only when you open them."),
 			sub_item_table = {
 				{
 					text = _("Automatic"),
@@ -198,6 +201,7 @@ return function(ctx)
 				local mode = self:useFastRawDictionaryHtml() and _("Fast / Raw") or _("Formatted")
 				return string.format("%s: %s", _("Dictionary HTML"), mode)
 			end,
+			help_text = _("Choose between fully formatted dictionary entries or a faster, minimally styled rendering."),
 			sub_item_table = {
 				{
 					text = _("Formatted"),
@@ -224,17 +228,20 @@ return function(ctx)
 
 		local translation_item = {
 			text = _("Translation"),
+			help_text = _("Choose the target language, whether the original text is shown, and which card buttons appear."),
 			sub_item_table = {
 				{
 					text_func = function()
 						return string.format("%s: %s", _("Target language"), self:getTranslationTargetLang())
 					end,
+					help_text = _("Choose the language translations are shown in."),
 					sub_item_table_func = function()
 						return self:getTargetLanguageMenuItems(self.current_state)
 					end,
 				},
 				{
 					text = _("Show source text"),
+					help_text = _("Shows the original selected text above its translation."),
 					checked_func = function()
 						return self:showTranslationSourceText()
 					end,
@@ -248,6 +255,7 @@ return function(ctx)
 				},
 				{
 					text = _("Buttons"),
+					help_text = _("Choose which action buttons appear on the translation card."),
 					sub_item_table = {
 						{
 							text = _("Show copy button"),
@@ -286,15 +294,18 @@ return function(ctx)
 			sub_item_table = {
 				{
 					text = _("Enable lookup preview"),
+					help_text = _("Turns the floating lookup preview on or off without removing the plugin."),
 					checked_func = function()
 						return self:isPreviewEnabled()
 					end,
 					callback = function()
 						self:setPreviewEnabled(not self:isPreviewEnabled())
 					end,
+					separator = true,
 				},
 				{
 					text = _("Appearance"),
+					help_text = _("Choose the card corner style, side card previews, shadows, and custom icon filenames."),
 					sub_item_table = {
 						card_corners_item,
 						side_previews_item,
@@ -311,7 +322,7 @@ return function(ctx)
 							end,
 						},
 						{
-							text = _("Expected icon filenames"),
+							text = _("Custom icon filenames"),
 							help_text = _("Lists the SVG and PNG filenames accepted from the plugin's icons folder."),
 							sub_item_table_func = function()
 								return self:getExpectedIconFilenamesMenu()
@@ -321,6 +332,8 @@ return function(ctx)
 				},
 				{
 					text = _("Content"),
+					help_text = _("Choose how online cards load, dictionary HTML rendering, and Wikipedia/translation language and buttons."),
+					separator = true,
 					sub_item_table = {
 						online_loading_item,
 						dictionary_html_item,
@@ -328,6 +341,7 @@ return function(ctx)
 							text_func = function()
 								return string.format("%s: %s", _("Wikipedia language"), self:getWikipediaLang())
 							end,
+							help_text = _("Choose the language Wikipedia articles are shown in."),
 							sub_item_table_func = function()
 								return self:getWikipediaLanguageMenuItems(self.current_state)
 							end,
@@ -340,7 +354,6 @@ return function(ctx)
 					callback = function()
 						self:notify(string.format("%s %s", _("Lookup Preview"), version))
 					end,
-					separator = true,
 				},
 			},
 		}

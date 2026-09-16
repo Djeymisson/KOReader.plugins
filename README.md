@@ -10,9 +10,9 @@ Each plugin is kept in its own `.koplugin/` folder and has a dedicated documenta
 |---|---|---|---|
 | Dictionary Preview | v1.1.4 | `dictionarypreview.koplugin/` | [dictionarypreview.koplugin.md](./dictionarypreview.koplugin.md) |
 | Translator Preview | v1.0.2 | `translatorpreview.koplugin/` | [translatorpreview.koplugin.md](./translatorpreview.koplugin.md) |
-| Lookup Preview | v1.0.20 | `lookuppreview.koplugin/` | [lookuppreview.koplugin.md](./lookuppreview.koplugin.md) |
-| Reader Header Footer | v1.0.9 | `readerheaderfooter.koplugin/` | [readerheaderfooter.koplugin.md](./readerheaderfooter.koplugin.md) |
-| Selection Toolbar | v1.0.5 | `selectiontoolbar.koplugin/` | [selectiontoolbar.koplugin.md](./selectiontoolbar.koplugin.md) |
+| Lookup Preview | v1.0.21 | `lookuppreview.koplugin/` | [lookuppreview.koplugin.md](./lookuppreview.koplugin.md) |
+| Reader Header Footer | v1.0.10 | `readerheaderfooter.koplugin/` | [readerheaderfooter.koplugin.md](./readerheaderfooter.koplugin.md) |
+| Selection Toolbar | v1.0.6 | `selectiontoolbar.koplugin/` | [selectiontoolbar.koplugin.md](./selectiontoolbar.koplugin.md) |
 | Quick Dock | v0.22.3 | `quickdock.koplugin/` | [quickdock.koplugin.md](./quickdock.koplugin.md) |
 | Image Browser | v0.2.6 | `imagebrowser.koplugin/` | [imagebrowser.koplugin.md](./imagebrowser.koplugin.md) |
 | Page Anchor | v1.3.2 | `pageanchor.koplugin/` | [pageanchor.koplugin.md](./pageanchor.koplugin.md) |

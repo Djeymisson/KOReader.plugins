@@ -1,4 +1,4 @@
-# Reader Header Footer ![Version](https://img.shields.io/badge/version-v1.0.9-blue)
+# Reader Header Footer ![Version](https://img.shields.io/badge/version-v1.0.10-blue)
 
 Plugin for [KOReader](https://koreader.rocks/) that adds discreet header and footer information while reading.
 
@@ -115,49 +115,19 @@ The plugin adds an item to the reader's main menu:
 Header/footer indicators
 ```
 
-From this menu, you can configure:
+The settings follow the same grouped layout as the other plugins in this repository:
 
-### Enable or disable
-
-Turns the indicators on or off without removing the plugin.
-
-### Bottom-left information
-
-Switches between:
-
-- pages left in the current chapter;
-- pages left in the book.
-
-### Font
-
-Allows changing the indicator font size.
-
-Supported values:
-
-```text
-minimum: 10
-default: 16
-maximum: 28
-```
-
-There is also an option to restore the default size.
-
-### Margins
-
-By default, the plugin tries to follow the document's real margins, aligning the indicators with the reading area.
-
-You can also disable this behavior and define manual margins:
-
-- left margin;
-- right margin;
-- common side margin for both sides.
-
-Supported values:
-
-```text
-minimum: 0
-maximum: 300
-```
+- `Show header/footer`: turns every indicator on or off without removing the plugin.
+- `Appearance`: chooses which indicators are shown, what the bottom-left counter tracks, and the indicator font size and margins.
+  - `Displayed items`: shows or hides each indicator independently — `Wi-Fi status`, `Clock`, `Battery status`, `Battery percentage` (only while battery status is shown), `Bottom-left pages left`, and `Reading percentage`.
+  - `Bottom-left info`: selects whether the bottom-left counter tracks `Pages left in chapter` or `Pages left in book`. Disabled while the bottom-left indicator itself is hidden.
+  - `Font`:
+    - `Font size`: opens a spinner for the indicator font size (minimum `10`, default `16`, maximum `28`).
+    - `Reset font size`: restores the default size.
+  - `Margins`:
+    - `Follow document margins`: aligns the indicators with the document's real margins (enabled by default).
+    - `Custom side margins`, `Custom left margin`, `Custom right margin`: manual margins in points (minimum `0`, maximum `300`), used only while document margins are not followed.
+- `Version: vX.Y.Z`: shows the installed plugin version.
 
 ## Saved settings
 

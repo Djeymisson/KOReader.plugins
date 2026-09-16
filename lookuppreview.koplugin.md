@@ -1,4 +1,4 @@
-# KOReader Lookup Preview ![Version](https://img.shields.io/badge/version-v1.0.20-blue)
+# KOReader Lookup Preview ![Version](https://img.shields.io/badge/version-v1.0.21-blue)
 
 **Lookup Preview** is a KOReader reader plugin that changes the lookup flow for selected text. Instead of opening each native lookup window immediately, it first shows a compact floating carousel with preview cards for **Dictionary**, **Translate**, and **Wikipedia**.
 
@@ -127,7 +127,7 @@ Expected primary filenames:
 
 The Highlight action also accepts `lookuppreview.highlight` and `dictionarypreview.highlight`; search also accepts `appbar.search`; and Full Wikipedia article also accepts `lookuppreview.wikipedia` and `dictionarypreview.wikipedia`, each with an `.svg` or `.png` extension. If `read_more` is absent, Open native details falls back to KOReader's `chevron.up` icon. If `menu` is absent, the card selector falls back to KOReader's `appbar.menu` icon. Highlight, Copy translation, Add translation note, and Full Wikipedia article fall back to their text labels when their local icons are absent.
 
-The same list is available on the device under **Lookup preview → Appearance → Expected icon filenames**.
+The same list is available on the device under **Lookup preview → Appearance → Custom icon filenames**.
 
 The final path should look like this:
 
@@ -148,7 +148,7 @@ The menu contains:
   - **Card corners**: switches between square and rounded card corners;
   - **Side card previews**: switches between full side cards and tabs;
   - **Show card shadows**: enables or disables the dithered right and bottom shadows;
-  - **Expected icon filenames**: lists every supported local SVG and PNG filename.
+  - **Custom icon filenames**: lists every supported local SVG and PNG filename.
 - **Content**:
   - **Online card loading**: switches between automatic and manual online loading;
   - **Dictionary HTML**: selects formatted or fast/raw dictionary rendering;

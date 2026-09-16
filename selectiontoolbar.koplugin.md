@@ -1,4 +1,4 @@
-# Selection Toolbar ![Version](https://img.shields.io/badge/version-v1.0.5-blue)
+# Selection Toolbar ![Version](https://img.shields.io/badge/version-v1.0.6-blue)
 
 A KOReader plugin that replaces the centered text-selection menu with a compact toolbar displayed near the selected text.
 

@@ -40,7 +40,7 @@ local math_min = math.min
 -- ============================================================================
 
 local PLUGIN_NAME = "reader_header_footer"
-local PLUGIN_VERSION = "v1.0.9"
+local PLUGIN_VERSION = "v1.0.10"
 
 local SETTINGS = {
     enabled = "reader_header_footer_enabled",
@@ -542,9 +542,8 @@ function ReaderHeaderFooter:addToMainMenu(menu_items)
         sorting_hint = "tools",
         sub_item_table = {
             {
-                text_func = function()
-                    return self:isEnabled() and _("Show header/footer") or _("Show header/footer")
-                end,
+                text = _("Show header/footer"),
+                help_text = _("Turns every header and footer indicator on or off without removing the plugin."),
 
                 checked_func = function()
                     return self:isEnabled()
@@ -557,408 +556,306 @@ function ReaderHeaderFooter:addToMainMenu(menu_items)
                         touchmenu_instance:updateItems()
                     end
                 end,
+
+                separator = true,
             },
 
             {
-                text = _("Displayed items"),
+                text = _("Appearance"),
+                help_text = _("Choose which indicators are shown, what the bottom-left counter tracks, and the indicator font size and margins."),
 
-                -- Keep submenu visible, but disabled when the plugin is off.
+                -- Keep visible, but disabled when the plugin is off.
                 enabled_func = function()
                     return self:isEnabled()
                 end,
 
-                sub_item_table = {
-                    {
-                        text = _("Wi-Fi status"),
-
-                        checked_func = function()
-                            return self:showsWifi()
-                        end,
-
-                        callback = function(touchmenu_instance)
-                            if not self:isEnabled() then
-                                return
-                            end
-
-                            self:toggleShowWifi()
-
-                            if touchmenu_instance and touchmenu_instance.updateItems then
-                                touchmenu_instance:updateItems()
-                            end
-
-                            UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
-                                self:requestTopIndicatorRefresh()
-                            end)
-                        end,
-                    },
-
-                    {
-                        text = _("Clock"),
-
-                        checked_func = function()
-                            return self:showsClock()
-                        end,
-
-                        callback = function(touchmenu_instance)
-                            if not self:isEnabled() then
-                                return
-                            end
-
-                            self:toggleShowClock()
-
-                            if touchmenu_instance and touchmenu_instance.updateItems then
-                                touchmenu_instance:updateItems()
-                            end
-
-                            UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
-                                self:requestTopIndicatorRefresh()
-                            end)
-                        end,
-                    },
-
-                    {
-                        text = _("Battery status"),
-
-                        enabled_func = function()
-                            return self:isEnabled() and Device:hasBattery()
-                        end,
-
-                        checked_func = function()
-                            return self:showsBatteryStatus()
-                        end,
-
-                        callback = function(touchmenu_instance)
-                            if not self:isEnabled() or not Device:hasBattery() then
-                                return
-                            end
-
-                            self:toggleShowBatteryStatus()
-
-                            if touchmenu_instance and touchmenu_instance.updateItems then
-                                touchmenu_instance:updateItems()
-                            end
-
-                            UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
-                                self:requestTopIndicatorRefresh()
-                            end)
-                        end,
-                    },
-
-                    {
-                        text = _("Battery percentage"),
-
-                        enabled_func = function()
-                            return self:isEnabled() and Device:hasBattery() and self:showsBatteryStatus()
-                        end,
-
-                        checked_func = function()
-                            return self:showsBatteryPercentage()
-                        end,
-
-                        callback = function(touchmenu_instance)
-                            if not self:isEnabled() or not Device:hasBattery() or not self:showsBatteryStatus() then
-                                return
-                            end
-
-                            self:toggleShowBatteryPercentage()
-
-                            if touchmenu_instance and touchmenu_instance.updateItems then
-                                touchmenu_instance:updateItems()
-                            end
-
-                            UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
-                                self:requestTopIndicatorRefresh()
-                            end)
-                        end,
-                    },
-
-                    {
-                        text = _("Bottom-left pages left"),
-
-                        checked_func = function()
-                            return self:showsFooterLeft()
-                        end,
-
-                        callback = function(touchmenu_instance)
-                            if not self:isEnabled() then
-                                return
-                            end
-
-                            self:toggleShowFooterLeft()
-
-                            if touchmenu_instance and touchmenu_instance.updateItems then
-                                touchmenu_instance:updateItems()
-                            end
-
-                            UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
-                                self:requestBottomIndicatorRefresh()
-                            end)
-                        end,
-                    },
-
-                    {
-                        text = _("Reading percentage"),
-
-                        checked_func = function()
-                            return self:showsReadPercentage()
-                        end,
-
-                        callback = function(touchmenu_instance)
-                            if not self:isEnabled() then
-                                return
-                            end
-
-                            self:toggleShowReadPercentage()
-
-                            if touchmenu_instance and touchmenu_instance.updateItems then
-                                touchmenu_instance:updateItems()
-                            end
-
-                            UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
-                                self:requestBottomIndicatorRefresh()
-                            end)
-                        end,
-                    },
-                },
-            },
-
-            {
-                text_func = function()
-                    if self.footer_left_mode == "book" then
-                        return _("Bottom-left info: pages left in book")
-                    end
-
-                    return _("Bottom-left info: pages left in chapter")
-                end,
-
-                -- Keep visible but disabled when the bottom-left footer is hidden.
-                enabled_func = function()
-                    return self:isEnabled() and self:showsFooterLeft()
-                end,
-
-                callback = function(touchmenu_instance)
-                    if not self:isEnabled() or not self:showsFooterLeft() then
-                        return
-                    end
-
-                    self:toggleFooterLeftMode()
-
-                    if touchmenu_instance and touchmenu_instance.updateItems then
-                        touchmenu_instance:updateItems()
-                    end
-
-                    UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
-                        self:requestBottomIndicatorRefresh()
-                    end)
-                end,
-            },
-
-            {
-                text = _("Font"),
-
-                -- Keep submenu visible, but disabled when the plugin is off.
-                enabled_func = function()
-                    return self:isEnabled()
-                end,
+                separator = true,
 
                 sub_item_table = {
                     {
-                        text_func = function()
-                            return string.format(_("Font size: %d"), self.font_size)
-                        end,
+                        text = _("Displayed items"),
+                        help_text = _("Choose which indicators appear in the top corners and the bottom-right percentage."),
 
-                        callback = function(touchmenu_instance)
-                            if not self:isEnabled() then
-                                return
-                            end
-
-                            local widget = SpinWidget:new({
-                                title_text = _("Header/footer font size"),
-                                value = self.font_size,
-                                value_min = FONT.min_size,
-                                value_max = FONT.max_size,
-                                default_value = FONT.default_size,
-                                keep_shown_on_apply = false,
-
-                                callback = function(spin)
-                                    self:setFontSize(spin.value)
-
-                                    if touchmenu_instance and touchmenu_instance.updateItems then
-                                        touchmenu_instance:updateItems()
-                                    end
-
-                                    -- Let the spin dialog close first; otherwise the regional
-                                    -- refresh could be deferred by the menu protection logic.
-                                    UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
-                                        self:requestAllIndicatorRefresh()
-                                    end)
-                                end,
-                            })
-
-                            UIManager:show(widget)
-                        end,
-                    },
-
-                    {
-                        text = _("Reset font size"),
-
-                        callback = function(touchmenu_instance)
-                            if not self:isEnabled() then
-                                return
-                            end
-
-                            self:resetFontSize()
-
-                            if touchmenu_instance and touchmenu_instance.updateItems then
-                                touchmenu_instance:updateItems()
-                            end
-
-                            UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
-                                self:requestAllIndicatorRefresh()
-                            end)
-                        end,
-                    },
-                },
-            },
-
-            {
-                text = _("Margins"),
-
-                -- Keep submenu visible, but disabled when the plugin is off.
-                enabled_func = function()
-                    return self:isEnabled()
-                end,
-
-                sub_item_table = {
-                    {
-                        text = _("Follow document margins"),
-
-                        checked_func = function()
-                            return self:usesDocumentMargins()
-                        end,
-
-                        callback = function(touchmenu_instance)
-                            if not self:isEnabled() then
-                                return
-                            end
-
-                            self:setFollowDocumentMargins(not self:usesDocumentMargins())
-
-                            if touchmenu_instance and touchmenu_instance.updateItems then
-                                touchmenu_instance:updateItems()
-                            end
-
-                            UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
-                                self:requestAllIndicatorRefresh()
-                            end)
-                        end,
-                    },
-
-                    {
-                        text_func = function()
-                            return string.format(_("Custom side margins: %d"), self.custom_horizontal_margin)
-                        end,
-
-                        -- Applies the same custom margin to both sides. Like the
-                        -- individual controls, it is only meaningful in manual mode.
+                        -- Keep submenu visible, but disabled when the plugin is off.
                         enabled_func = function()
-                            return self:isEnabled() and not self:usesDocumentMargins()
+                            return self:isEnabled()
                         end,
 
-                        callback = function(touchmenu_instance)
-                            if not self:isEnabled() or self:usesDocumentMargins() then
-                                return
-                            end
+                        sub_item_table = {
+                            {
+                                text = _("Wi-Fi status"),
+                                help_text = _("Shows the Wi-Fi icon in the top-right corner."),
 
-                            local widget = SpinWidget:new({
-                                title_text = _("Custom side indicator margins"),
-                                value = self.custom_horizontal_margin,
-                                value_min = INDICATOR_MARGINS.min,
-                                value_max = INDICATOR_MARGINS.max,
-                                default_value = INDICATOR_MARGINS.default_left,
-                                keep_shown_on_apply = false,
+                                checked_func = function()
+                                    return self:showsWifi()
+                                end,
 
-                                callback = function(spin)
-                                    self:setCustomHorizontalMargin(spin.value)
+                                callback = function(touchmenu_instance)
+                                    if not self:isEnabled() then
+                                        return
+                                    end
+
+                                    self:toggleShowWifi()
 
                                     if touchmenu_instance and touchmenu_instance.updateItems then
                                         touchmenu_instance:updateItems()
                                     end
 
                                     UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
-                                        self:requestAllIndicatorRefresh()
+                                        self:requestTopIndicatorRefresh()
                                     end)
                                 end,
-                            })
+                            },
 
-                            UIManager:show(widget)
-                        end,
+                            {
+                                text = _("Clock"),
+                                help_text = _("Shows the current time in the top-right corner."),
+
+                                checked_func = function()
+                                    return self:showsClock()
+                                end,
+
+                                callback = function(touchmenu_instance)
+                                    if not self:isEnabled() then
+                                        return
+                                    end
+
+                                    self:toggleShowClock()
+
+                                    if touchmenu_instance and touchmenu_instance.updateItems then
+                                        touchmenu_instance:updateItems()
+                                    end
+
+                                    UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
+                                        self:requestTopIndicatorRefresh()
+                                    end)
+                                end,
+                            },
+
+                            {
+                                text = _("Battery status"),
+                                help_text = _("Shows the battery icon in the top-right corner."),
+
+                                enabled_func = function()
+                                    return self:isEnabled() and Device:hasBattery()
+                                end,
+
+                                checked_func = function()
+                                    return self:showsBatteryStatus()
+                                end,
+
+                                callback = function(touchmenu_instance)
+                                    if not self:isEnabled() or not Device:hasBattery() then
+                                        return
+                                    end
+
+                                    self:toggleShowBatteryStatus()
+
+                                    if touchmenu_instance and touchmenu_instance.updateItems then
+                                        touchmenu_instance:updateItems()
+                                    end
+
+                                    UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
+                                        self:requestTopIndicatorRefresh()
+                                    end)
+                                end,
+                            },
+
+                            {
+                                text = _("Battery percentage"),
+                                help_text = _("Shows the battery percentage next to its icon."),
+
+                                enabled_func = function()
+                                    return self:isEnabled() and Device:hasBattery() and self:showsBatteryStatus()
+                                end,
+
+                                checked_func = function()
+                                    return self:showsBatteryPercentage()
+                                end,
+
+                                callback = function(touchmenu_instance)
+                                    if not self:isEnabled() or not Device:hasBattery() or not self:showsBatteryStatus() then
+                                        return
+                                    end
+
+                                    self:toggleShowBatteryPercentage()
+
+                                    if touchmenu_instance and touchmenu_instance.updateItems then
+                                        touchmenu_instance:updateItems()
+                                    end
+
+                                    UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
+                                        self:requestTopIndicatorRefresh()
+                                    end)
+                                end,
+                            },
+
+                            {
+                                text = _("Bottom-left pages left"),
+                                help_text = _("Shows the pages-left counter in the bottom-left corner."),
+
+                                checked_func = function()
+                                    return self:showsFooterLeft()
+                                end,
+
+                                callback = function(touchmenu_instance)
+                                    if not self:isEnabled() then
+                                        return
+                                    end
+
+                                    self:toggleShowFooterLeft()
+
+                                    if touchmenu_instance and touchmenu_instance.updateItems then
+                                        touchmenu_instance:updateItems()
+                                    end
+
+                                    UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
+                                        self:requestBottomIndicatorRefresh()
+                                    end)
+                                end,
+                            },
+
+                            {
+                                text = _("Reading percentage"),
+                                help_text = _("Shows the percentage of the document read in the bottom-right corner."),
+
+                                checked_func = function()
+                                    return self:showsReadPercentage()
+                                end,
+
+                                callback = function(touchmenu_instance)
+                                    if not self:isEnabled() then
+                                        return
+                                    end
+
+                                    self:toggleShowReadPercentage()
+
+                                    if touchmenu_instance and touchmenu_instance.updateItems then
+                                        touchmenu_instance:updateItems()
+                                    end
+
+                                    UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
+                                        self:requestBottomIndicatorRefresh()
+                                    end)
+                                end,
+                            },
+                        },
                     },
 
                     {
                         text_func = function()
-                            return string.format(_("Custom left margin: %d"), self.custom_left_margin)
+                            local mode = self.footer_left_mode == "book"
+                                and _("pages left in book")
+                                or _("pages left in chapter")
+                            return string.format("%s: %s", _("Bottom-left info"), mode)
                         end,
+                        help_text = _("Choose what the bottom-left counter tracks."),
 
-                        -- Custom margins only apply when the document-margin checkbox is off.
+                        -- Keep visible but disabled when the bottom-left footer is hidden.
                         enabled_func = function()
-                            return self:isEnabled() and not self:usesDocumentMargins()
+                            return self:isEnabled() and self:showsFooterLeft()
                         end,
 
-                        callback = function(touchmenu_instance)
-                            if not self:isEnabled() or self:usesDocumentMargins() then
-                                return
-                            end
+                        sub_item_table = {
+                            {
+                                text = _("Pages left in chapter"),
+                                radio = true,
+                                checked_func = function()
+                                    return self.footer_left_mode ~= "book"
+                                end,
+                                callback = function(touchmenu_instance)
+                                    if self.footer_left_mode ~= "chapter" then
+                                        self:setFooterLeftMode("chapter")
 
-                            local widget = SpinWidget:new({
-                                title_text = _("Custom left indicator margin"),
-                                value = self.custom_left_margin,
-                                value_min = INDICATOR_MARGINS.min,
-                                value_max = INDICATOR_MARGINS.max,
-                                default_value = INDICATOR_MARGINS.default_left,
-                                keep_shown_on_apply = false,
-
-                                callback = function(spin)
-                                    self:setCustomIndicatorMargin("left", spin.value)
+                                        UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
+                                            self:requestBottomIndicatorRefresh()
+                                        end)
+                                    end
 
                                     if touchmenu_instance and touchmenu_instance.updateItems then
                                         touchmenu_instance:updateItems()
                                     end
-
-                                    UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
-                                        self:requestAllIndicatorRefresh()
-                                    end)
                                 end,
-                            })
+                            },
+                            {
+                                text = _("Pages left in book"),
+                                radio = true,
+                                checked_func = function()
+                                    return self.footer_left_mode == "book"
+                                end,
+                                callback = function(touchmenu_instance)
+                                    if self.footer_left_mode ~= "book" then
+                                        self:setFooterLeftMode("book")
 
-                            UIManager:show(widget)
-                        end,
+                                        UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
+                                            self:requestBottomIndicatorRefresh()
+                                        end)
+                                    end
+
+                                    if touchmenu_instance and touchmenu_instance.updateItems then
+                                        touchmenu_instance:updateItems()
+                                    end
+                                end,
+                            },
+                        },
                     },
 
                     {
-                        text_func = function()
-                            return string.format(_("Custom right margin: %d"), self.custom_right_margin)
-                        end,
+                        text = _("Font"),
+                        help_text = _("Change the indicator font size, or restore the default."),
 
+                        -- Keep submenu visible, but disabled when the plugin is off.
                         enabled_func = function()
-                            return self:isEnabled() and not self:usesDocumentMargins()
+                            return self:isEnabled()
                         end,
 
-                        callback = function(touchmenu_instance)
-                            if not self:isEnabled() or self:usesDocumentMargins() then
-                                return
-                            end
+                        sub_item_table = {
+                            {
+                                text_func = function()
+                                    return string.format(_("Font size: %d"), self.font_size)
+                                end,
 
-                            local widget = SpinWidget:new({
-                                title_text = _("Custom right indicator margin"),
-                                value = self.custom_right_margin,
-                                value_min = INDICATOR_MARGINS.min,
-                                value_max = INDICATOR_MARGINS.max,
-                                default_value = INDICATOR_MARGINS.default_right,
-                                keep_shown_on_apply = false,
+                                callback = function(touchmenu_instance)
+                                    if not self:isEnabled() then
+                                        return
+                                    end
 
-                                callback = function(spin)
-                                    self:setCustomIndicatorMargin("right", spin.value)
+                                    local widget = SpinWidget:new({
+                                        title_text = _("Header/footer font size"),
+                                        value = self.font_size,
+                                        value_min = FONT.min_size,
+                                        value_max = FONT.max_size,
+                                        default_value = FONT.default_size,
+                                        keep_shown_on_apply = false,
+
+                                        callback = function(spin)
+                                            self:setFontSize(spin.value)
+
+                                            if touchmenu_instance and touchmenu_instance.updateItems then
+                                                touchmenu_instance:updateItems()
+                                            end
+
+                                            -- Let the spin dialog close first; otherwise the regional
+                                            -- refresh could be deferred by the menu protection logic.
+                                            UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
+                                                self:requestAllIndicatorRefresh()
+                                            end)
+                                        end,
+                                    })
+
+                                    UIManager:show(widget)
+                                end,
+                            },
+
+                            {
+                                text = _("Reset font size"),
+
+                                callback = function(touchmenu_instance)
+                                    if not self:isEnabled() then
+                                        return
+                                    end
+
+                                    self:resetFontSize()
 
                                     if touchmenu_instance and touchmenu_instance.updateItems then
                                         touchmenu_instance:updateItems()
@@ -968,10 +865,164 @@ function ReaderHeaderFooter:addToMainMenu(menu_items)
                                         self:requestAllIndicatorRefresh()
                                     end)
                                 end,
-                            })
+                            },
+                        },
+                    },
 
-                            UIManager:show(widget)
+                    {
+                        text = _("Margins"),
+                        help_text = _("Follow the document's margins automatically, or set manual left, right, or combined margins."),
+
+                        -- Keep submenu visible, but disabled when the plugin is off.
+                        enabled_func = function()
+                            return self:isEnabled()
                         end,
+
+                        sub_item_table = {
+                            {
+                                text = _("Follow document margins"),
+
+                                checked_func = function()
+                                    return self:usesDocumentMargins()
+                                end,
+
+                                callback = function(touchmenu_instance)
+                                    if not self:isEnabled() then
+                                        return
+                                    end
+
+                                    self:setFollowDocumentMargins(not self:usesDocumentMargins())
+
+                                    if touchmenu_instance and touchmenu_instance.updateItems then
+                                        touchmenu_instance:updateItems()
+                                    end
+
+                                    UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
+                                        self:requestAllIndicatorRefresh()
+                                    end)
+                                end,
+                            },
+
+                            {
+                                text_func = function()
+                                    return string.format(_("Custom side margins: %d"), self.custom_horizontal_margin)
+                                end,
+
+                                -- Applies the same custom margin to both sides. Like the
+                                -- individual controls, it is only meaningful in manual mode.
+                                enabled_func = function()
+                                    return self:isEnabled() and not self:usesDocumentMargins()
+                                end,
+
+                                callback = function(touchmenu_instance)
+                                    if not self:isEnabled() or self:usesDocumentMargins() then
+                                        return
+                                    end
+
+                                    local widget = SpinWidget:new({
+                                        title_text = _("Custom side indicator margins"),
+                                        value = self.custom_horizontal_margin,
+                                        value_min = INDICATOR_MARGINS.min,
+                                        value_max = INDICATOR_MARGINS.max,
+                                        default_value = INDICATOR_MARGINS.default_left,
+                                        keep_shown_on_apply = false,
+
+                                        callback = function(spin)
+                                            self:setCustomHorizontalMargin(spin.value)
+
+                                            if touchmenu_instance and touchmenu_instance.updateItems then
+                                                touchmenu_instance:updateItems()
+                                            end
+
+                                            UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
+                                                self:requestAllIndicatorRefresh()
+                                            end)
+                                        end,
+                                    })
+
+                                    UIManager:show(widget)
+                                end,
+                            },
+
+                            {
+                                text_func = function()
+                                    return string.format(_("Custom left margin: %d"), self.custom_left_margin)
+                                end,
+
+                                -- Custom margins only apply when the document-margin checkbox is off.
+                                enabled_func = function()
+                                    return self:isEnabled() and not self:usesDocumentMargins()
+                                end,
+
+                                callback = function(touchmenu_instance)
+                                    if not self:isEnabled() or self:usesDocumentMargins() then
+                                        return
+                                    end
+
+                                    local widget = SpinWidget:new({
+                                        title_text = _("Custom left indicator margin"),
+                                        value = self.custom_left_margin,
+                                        value_min = INDICATOR_MARGINS.min,
+                                        value_max = INDICATOR_MARGINS.max,
+                                        default_value = INDICATOR_MARGINS.default_left,
+                                        keep_shown_on_apply = false,
+
+                                        callback = function(spin)
+                                            self:setCustomIndicatorMargin("left", spin.value)
+
+                                            if touchmenu_instance and touchmenu_instance.updateItems then
+                                                touchmenu_instance:updateItems()
+                                            end
+
+                                            UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
+                                                self:requestAllIndicatorRefresh()
+                                            end)
+                                        end,
+                                    })
+
+                                    UIManager:show(widget)
+                                end,
+                            },
+
+                            {
+                                text_func = function()
+                                    return string.format(_("Custom right margin: %d"), self.custom_right_margin)
+                                end,
+
+                                enabled_func = function()
+                                    return self:isEnabled() and not self:usesDocumentMargins()
+                                end,
+
+                                callback = function(touchmenu_instance)
+                                    if not self:isEnabled() or self:usesDocumentMargins() then
+                                        return
+                                    end
+
+                                    local widget = SpinWidget:new({
+                                        title_text = _("Custom right indicator margin"),
+                                        value = self.custom_right_margin,
+                                        value_min = INDICATOR_MARGINS.min,
+                                        value_max = INDICATOR_MARGINS.max,
+                                        default_value = INDICATOR_MARGINS.default_right,
+                                        keep_shown_on_apply = false,
+
+                                        callback = function(spin)
+                                            self:setCustomIndicatorMargin("right", spin.value)
+
+                                            if touchmenu_instance and touchmenu_instance.updateItems then
+                                                touchmenu_instance:updateItems()
+                                            end
+
+                                            UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
+                                                self:requestAllIndicatorRefresh()
+                                            end)
+                                        end,
+                                    })
+
+                                    UIManager:show(widget)
+                                end,
+                            },
+                        },
                     },
                 },
             },
