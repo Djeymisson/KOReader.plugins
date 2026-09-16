@@ -1,4 +1,4 @@
-# KOReader Translator Preview ![Version](https://img.shields.io/badge/version-v1.0.1-blue)
+# KOReader Translator Preview ![Version](https://img.shields.io/badge/version-v1.0.2-blue)
 
 **Translator Preview** is a KOReader reader plugin that changes the translation flow. Instead of immediately opening KOReader's full translator window, it first shows the translation in a compact, cleaner preview panel.
 
@@ -168,7 +168,7 @@ The translation content is rendered through `ScrollHtmlWidget`, with a small bot
 
 The plugin keeps the preview lightweight by avoiding unnecessary parsing of detailed translation data. It extracts only the main translated text for the compact preview and leaves the full detailed result to KOReader's original translator view.
 
-It also avoids repeated UI lookups where possible, caches clipboard availability during initialization, and reuses the current reader UI reference when available.
+It also avoids repeated UI lookups where possible, caches clipboard availability during initialization, and reuses the current reader UI reference when available. Repeated internal lookups (widget sizing, the language menu, the reader UI reference) use a direct method reference instead of allocating a temporary wrapper function each time.
 
 Screen dimensions are still evaluated when the preview is created, so the layout can react correctly to orientation or screen-size changes.
 
