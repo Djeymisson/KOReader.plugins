@@ -60,6 +60,48 @@ return function(ctx)
 		return copy
 	end
 
+	-- Network helpers ----------------------------------------------------------
+	-- Shared by translation.lua and wikipedia.lua, which both need to skip a
+	-- blocking online lookup when the device has no connectivity, and to turn
+	-- a raw pcall error into a user-facing message.
+
+	function isNetworkUnavailable()
+		local ok, NetworkMgr = pcall(require, "ui/network/manager")
+		if not ok or type(NetworkMgr) ~= "table" then
+			return false
+		end
+
+		local probes = { "isOnline", "isConnected", "isWifiConnected", "isWifiOn" }
+		for _, name in ipairs(probes) do
+			local fn = NetworkMgr[name]
+			if type(fn) == "function" then
+				local probe_ok, available = pcall(fn, NetworkMgr)
+				if probe_ok and available ~= nil then
+					return not available
+				end
+			end
+		end
+
+		return false
+	end
+
+	function onlineLookupError(err, fallback)
+		local message = tostring(err or "")
+		local lower = message:lower()
+		if
+			lower:find("network", 1, true)
+			or lower:find("connection", 1, true)
+			or lower:find("timeout", 1, true)
+			or lower:find("host", 1, true)
+			or lower:find("socket", 1, true)
+			or lower:find("dns", 1, true)
+		then
+			return _("Network unavailable.")
+		end
+
+		return message ~= "" and message or fallback
+	end
+
 	-- Dictionary HTML helpers -------------------------------------------------
 
 	local function appendStyleAttr(attrs, style)
@@ -233,9 +275,13 @@ a {
 	end
 
 	function getWidgetSize(widget)
-		local ok, size = pcall(function()
-			return widget:getSize()
-		end)
+		if not widget then
+			return Geom:new({ w = 0, h = 0 })
+		end
+
+		-- Called from CardTabButton:paintTo on every tab repaint, so avoid
+		-- allocating a wrapper closure just to call widget:getSize().
+		local ok, size = pcall(widget.getSize, widget)
 		if ok and size then
 			return size
 		end

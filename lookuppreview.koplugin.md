@@ -1,4 +1,4 @@
-# KOReader Lookup Preview ![Version](https://img.shields.io/badge/version-v1.0.19-blue)
+# KOReader Lookup Preview ![Version](https://img.shields.io/badge/version-v1.0.20-blue)
 
 **Lookup Preview** is a KOReader reader plugin that changes the lookup flow for selected text. Instead of opening each native lookup window immediately, it first shows a compact floating carousel with preview cards for **Dictionary**, **Translate**, and **Wikipedia**.
 
@@ -313,6 +313,8 @@ Lookup Preview keeps the carousel lightweight in several ways:
 - Side cards remain intact while navigating between dictionary results.
 - The plugin caches icon lookups for custom button icons.
 - The preview uses compact payload objects to separate card content from widget rendering.
+- Carousel tab widgets are measured with a direct method reference instead of a temporary wrapper function on every repaint.
+- Translation and Wikipedia lookups share a single implementation of their network-availability and error-message checks.
 
 These optimizations are especially useful on e-ink devices, where recreating the entire popup for each dictionary result can make navigation feel slower.
 

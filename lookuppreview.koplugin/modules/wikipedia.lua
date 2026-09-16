@@ -7,42 +7,8 @@ return function(ctx)
 		return lang ~= "" and lang or "en"
 	end
 
-	local function isNetworkUnavailable()
-		local ok, NetworkMgr = pcall(require, "ui/network/manager")
-		if not ok or type(NetworkMgr) ~= "table" then
-			return false
-		end
-
-		local probes = { "isOnline", "isConnected", "isWifiConnected", "isWifiOn" }
-		for _, name in ipairs(probes) do
-			local fn = NetworkMgr[name]
-			if type(fn) == "function" then
-				local probe_ok, available = pcall(fn, NetworkMgr)
-				if probe_ok and available ~= nil then
-					return not available
-				end
-			end
-		end
-
-		return false
-	end
-
-	local function onlineLookupError(err, fallback)
-		local message = tostring(err or "")
-		local lower = message:lower()
-		if
-			lower:find("network", 1, true)
-			or lower:find("connection", 1, true)
-			or lower:find("timeout", 1, true)
-			or lower:find("host", 1, true)
-			or lower:find("socket", 1, true)
-			or lower:find("dns", 1, true)
-		then
-			return _("Network unavailable.")
-		end
-
-		return message ~= "" and message or fallback
-	end
+	-- isNetworkUnavailable and onlineLookupError are shared globals defined in
+	-- modules/utils.lua (also used by translation.lua).
 
 	local function menuDimensions()
 		return Screen:getWidth() - Screen:scaleBySize(80), math.floor(Screen:getHeight() * 0.8)
