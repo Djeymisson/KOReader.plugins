@@ -264,7 +264,7 @@ local FileManager_setupLayout = FileManager.setupLayout
 FileManager.setupLayout = function (self)
     FileManager_setupLayout(self)
 
-    file_chooser_showFileDialog = self.file_chooser.showFileDialog
+    local file_chooser_showFileDialog = self.file_chooser.showFileDialog
     self.file_chooser.showFileDialog = function (self, item)
         if self:getVirtualPathTypePath(item.path) then
             -- Clear book_props to block coverbrowser's showFileDialog
@@ -353,7 +353,7 @@ function FileChooser:getVirtualList(path, collate)
     local fragments = VirtualPath.getFragments(path) or {}
     if #fragments == 0 then
         for i, v in ipairs(VIRTUAL_SUBITEMS_ORDERED) do
-            item = true
+            local item = true
             if collate then -- when collate == nil count only to display in folder mandatory
                 local fake_attributes = {
                     mode = "directory",
@@ -394,7 +394,7 @@ function FileChooser:getVirtualList(path, collate)
                 }
                 local name = v.display_name or v[1] or EMPTY_VALUE_SYMBOL
                 local this_path = path.."/"..encodeVirtualPathValue(v[1])
-                item = self:getListItem(nil, name, this_path, fake_attributes, collate)
+                local item = self:getListItem(nil, name, this_path, fake_attributes, collate)
                 item.nb_sub_files = v[2]
                 item.mandatory = self:getMenuItemMandatory(item)
                 VirtualLeaf.markMetadataLeaf(item, v[2], name)
@@ -794,14 +794,15 @@ userpatch.registerPatchPluginFunc("coverbrowser", function(CoverBrowser)
             return bookinfo
         end
 
-        local ok, results = pcall(function(...)
-            return table.pack(update_func(item, ...))
-        end, ...)
+        -- Avoids allocating a wrapper closure on every list item update: pcall
+        -- runs update_func directly and table.pack captures the ok flag along
+        -- with its return values.
+        local packed = table.pack(pcall(update_func, item, ...))
         BookInfoManager.getBookInfo = original_getBookInfo
-        if not ok then
-            error(results)
+        if not packed[1] then
+            error(packed[2])
         end
-        return table.unpack(results, 1, results.n)
+        return table.unpack(packed, 2, packed.n)
     end
 
     local function getVirtualLeafListKind(item)
@@ -864,16 +865,17 @@ userpatch.registerPatchPluginFunc("coverbrowser", function(CoverBrowser)
             return bookinfo
         end
 
-        local ok, results = pcall(function(...)
-            return table.pack(update_func(item, ...))
-        end, ...)
+        -- Avoids allocating a wrapper closure on every list item update: pcall
+        -- runs update_func directly and table.pack captures the ok flag along
+        -- with its return values.
+        local packed = table.pack(pcall(update_func, item, ...))
         item.mandatory = original_mandatory
         BookInfoManager.getSetting = original_getSetting
         BookInfoManager.getBookInfo = original_getBookInfo
-        if not ok then
-            error(results)
+        if not packed[1] then
+            error(packed[2])
         end
-        return table.unpack(results, 1, results.n)
+        return table.unpack(packed, 2, packed.n)
     end
 
     local function withRepresentativeFileEntry(item, update_func, suppress_text, ...)
@@ -947,7 +949,7 @@ end
 
 -- disable 'Add to folder shortcuts' action for virtual folders
 local FileManagerShortcuts = require("apps/filemanager/filemanagershortcuts")
-FileManagerShortcuts_editShortcut = FileManagerShortcuts.editShortcut
+local FileManagerShortcuts_editShortcut = FileManagerShortcuts.editShortcut
 FileManagerShortcuts.editShortcut = function (self, folder, post_callback)
     if self.ui.file_chooser:getVirtualPathTypePath() then return end
     FileManagerShortcuts_editShortcut(self, folder, post_callback)

@@ -51,9 +51,8 @@ local function plainUIFileManagerIsTopmost(widget)
     if not UIManager or not UIManager.getTopmostVisibleWidget then
         return true
     end
-    local ok, top_widget = pcall(function()
-        return UIManager:getTopmostVisibleWidget()
-    end)
+    -- Avoids allocating a wrapper closure every time the clock timer fires.
+    local ok, top_widget = pcall(UIManager.getTopmostVisibleWidget, UIManager)
     if not ok or not top_widget then
         return true
     end
@@ -2009,20 +2008,7 @@ function PlainUIHeaderStatusBar:init()
     self:scheduleClockRefresh()
 end
 
-function PlainUIHeaderStatusBar:scheduleClockRefresh()
-    if self._clock_scheduled then
-        return
-    end
-    if not plainUIFileManagerIsTopmost(self) then
-        return
-    end
-    local seconds = 60 - tonumber(os.date("%S"))
-    if seconds < 1 or seconds > 60 then
-        seconds = 60
-    end
-    self._clock_scheduled = true
-    UIManager:scheduleIn(seconds, self.refreshStatusIndicators, self)
-end
+PlainUIHeaderStatusBar.scheduleClockRefresh = PlainUIBottomStatusBar.scheduleClockRefresh
 
 function PlainUIHeaderStatusBar:updateStatusIndicators(refresh)
     if not self.battery_button then
