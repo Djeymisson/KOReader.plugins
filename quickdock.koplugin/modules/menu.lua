@@ -174,7 +174,7 @@ function QuickDock:getActionVisibilityMenu()
         return menu
     end
 
-    for _, item in ipairs(actions) do
+    for _idx, item in ipairs(actions) do
         local action_id = item.key
         local action_text = tostring(item.text or action_id)
         menu[#menu + 1] = {
@@ -238,7 +238,7 @@ function QuickDock:getIconFilenamesMenu()
         key = ACTION_HOME,
         text = _("File browser / return to reader / open last document"),
     })
-    for _, item in ipairs(actions) do
+    for _idx, item in ipairs(actions) do
         local basename = tostring(item.key)
         local svg_name = basename .. ".svg"
         local help_text = _("Alternative PNG filename") .. ": " .. basename .. ".png"
