@@ -4187,6 +4187,7 @@ function ImageBrowser:_menuItems()
 				}))
 			end,
 		},
+
 		{
 			text = _("Open Image Browser"),
 			help_text = _(
@@ -4217,156 +4218,73 @@ function ImageBrowser:_menuItems()
 					end
 				end)
 			end,
-		},
-		{
-			-- the full option name, not an abbreviation, so the current
-			-- mode is unambiguous at a glance
-			text_func = function()
-				return self:getScope() == "whole_book" and _("Mode: Show all images")
-					or _("Mode: Show images up to current chapter")
-			end,
-			sub_item_table = {
-				scope_item(
-					"read_so_far",
-					_("Show images up to current chapter"),
-					_(
-						"Images that appear beyond your current position stay hidden, so you can't spoil yourself. Granularity is per chapter: images in the chapter you are currently reading are shown."
-					)
-				),
-				scope_item(
-					"whole_book",
-					_("Show all images"),
-					_("Show reference images from anywhere in the book, including parts you haven't reached yet.")
-				),
-			},
 			separator = true,
 		},
+
 		{
-			text = _("Invert in Night Mode"),
+			text = _("Appearance"),
 			help_text = _(
-				"While KOReader's night mode is on, show images inverted (light lines on a dark background). Also toggleable from the viewer's ⋯ menu."
+				"Choose the popup position and corner style, night-mode inversion, navigation buttons, captions, the top tap zone, and the panel shadow."
 			),
-			checked_func = function()
-				return G_reader_settings:isTrue(INVERT_KEY)
-			end,
-			callback = function()
-				G_reader_settings:saveSetting(INVERT_KEY, not G_reader_settings:isTrue(INVERT_KEY))
-			end,
-		},
-		{
-			text = _("Show Nav Buttons"),
-			help_text = _(
-				"Show ‹ and › buttons in the viewer for switching between images, as an alternative to swiping. A button is grayed out when there is no image on its side."
-			),
-			checked_func = function()
-				return G_reader_settings:isTrue(NAV_BUTTONS_KEY)
-			end,
-			callback = function()
-				G_reader_settings:saveSetting(NAV_BUTTONS_KEY, not G_reader_settings:isTrue(NAV_BUTTONS_KEY))
-			end,
-		},
-		{
-			text_func = function()
-				local labels = {
-					[POPUP_LAYOUT_LEFT_ROUNDED] = _("Left, rounded"),
-					[POPUP_LAYOUT_CENTERED_ROUNDED] = _("Centered, rounded"),
-					[POPUP_LAYOUT_CENTERED_SQUARE] = _("Centered, square"),
-				}
-				return T(_("Popup appearance: %1"), labels[_popup_layout()])
-			end,
-			help_text = _(
-				"Choose the Image Browser position and corner style. Square corners are restricted to the centered popup so the left-side gallery keeps its rounded outer edge."
-			),
-			sub_item_table = {
-				popup_layout_item(
-					POPUP_LAYOUT_LEFT_ROUNDED,
-					_("Left side, rounded"),
-					_(
-						"Show Image Browser as a full-height panel attached to the left edge, with rounded outer corners."
-					)
-				),
-				popup_layout_item(
-					POPUP_LAYOUT_CENTERED_ROUNDED,
-					_("Centered, rounded"),
-					_(
-						"Show Image Browser in a centered popup occupying 80% of the screen, with rounded corners. Tapping outside closes it."
-					)
-				),
-				popup_layout_item(
-					POPUP_LAYOUT_CENTERED_SQUARE,
-					_("Centered, square"),
-					_(
-						"Show Image Browser in a centered popup occupying 80% of the screen, with square corners like Lookup Preview. Tapping outside closes it."
-					)
-				),
-			},
-		},
-		{
-			text = _("Quick Actions"),
-			help_text = _(
-				"Choose which actions appear in the viewer's ⋯ menu. Reset Rotation is automatic (shown while an image is rotated) and Restore ignored images only appears when some are ignored."
-			),
-			sub_item_table = (function()
-				local t = {}
-				for _, d in ipairs(QUICK_ACTIONS) do
-					local key = d.key
-					t[#t + 1] = {
-						text = _quick_label(key),
-						checked_func = function()
-							return _quick_enabled(key)
-						end,
-						keep_menu_open = true,
-						callback = function()
-							local cfg = G_reader_settings:readSetting(QUICK_ACTIONS_KEY)
-							if type(cfg) ~= "table" then
-								cfg = {}
-							end
-							cfg[key] = not _quick_enabled(key)
-							G_reader_settings:saveSetting(QUICK_ACTIONS_KEY, cfg)
-						end,
-					}
-				end
-				return t
-			end)(),
-		},
-		{
-			text_func = function()
-				local n = self:_hiddenCount()
-				if n > 0 then
-					return T(_("Restore ignored images (%1)"), n)
-				end
-				return _("Restore ignored images")
-			end,
-			help_text = _(
-				"Bring back images you ignored with 'Ignore Image' in the viewer's ⋯ menu (or by long-pressing in the Gallery). Remembered per book. Images the relevance filter set aside are added back individually from the Gallery's Ignored tab."
-			),
-			enabled_func = function()
-				return self:_hiddenCount() > 0
-			end,
-			keep_menu_open = true,
-			separator = true,
-			callback = function(touchmenu_instance)
-				self.ui.doc_settings:delSetting("imagebrowser_hidden")
-				UIManager:show(Notification:new({ text = _("Ignored images restored.") }))
-				if touchmenu_instance then
-					touchmenu_instance:updateItems()
-				end
-			end,
-		},
-		{
-			text = _("Advanced"),
 			sub_item_table = {
 				{
-					text = _("Ignore irrelevant images"),
+					text_func = function()
+						local labels = {
+							[POPUP_LAYOUT_LEFT_ROUNDED] = _("Left, rounded"),
+							[POPUP_LAYOUT_CENTERED_ROUNDED] = _("Centered, rounded"),
+							[POPUP_LAYOUT_CENTERED_SQUARE] = _("Centered, square"),
+						}
+						return T(_("Popup appearance: %1"), labels[_popup_layout()])
+					end,
 					help_text = _(
-						"Set aside covers, publisher logos, ornaments and other non-reference imagery, keeping maps, family trees, diagrams and illustrations. Turn off to see every image in the book. Wrongly kept images can be ignored from the viewer's ⋯ menu; wrongly set-aside ones added back from the Gallery's Ignored tab."
+						"Choose the Image Browser position and corner style. Square corners are restricted to the centered popup so the left-side gallery keeps its rounded outer edge."
+					),
+					sub_item_table = {
+						popup_layout_item(
+							POPUP_LAYOUT_LEFT_ROUNDED,
+							_("Left side, rounded"),
+							_(
+								"Show Image Browser as a full-height panel attached to the left edge, with rounded outer corners."
+							)
+						),
+						popup_layout_item(
+							POPUP_LAYOUT_CENTERED_ROUNDED,
+							_("Centered, rounded"),
+							_(
+								"Show Image Browser in a centered popup occupying 80% of the screen, with rounded corners. Tapping outside closes it."
+							)
+						),
+						popup_layout_item(
+							POPUP_LAYOUT_CENTERED_SQUARE,
+							_("Centered, square"),
+							_(
+								"Show Image Browser in a centered popup occupying 80% of the screen, with square corners like Lookup Preview. Tapping outside closes it."
+							)
+						),
+					},
+				},
+				{
+					text = _("Invert in Night Mode"),
+					help_text = _(
+						"While KOReader's night mode is on, show images inverted (light lines on a dark background). Also toggleable from the viewer's ⋯ menu."
 					),
 					checked_func = function()
-						return self:getFilterLevel() ~= "all"
+						return G_reader_settings:isTrue(INVERT_KEY)
 					end,
 					callback = function()
-						local now_on = self:getFilterLevel() ~= "all"
-						G_reader_settings:saveSetting(FILTER_KEY, now_on and "all" or "balanced")
+						G_reader_settings:saveSetting(INVERT_KEY, not G_reader_settings:isTrue(INVERT_KEY))
+					end,
+				},
+				{
+					text = _("Show Nav Buttons"),
+					help_text = _(
+						"Show ‹ and › buttons in the viewer for switching between images, as an alternative to swiping. A button is grayed out when there is no image on its side."
+					),
+					checked_func = function()
+						return G_reader_settings:isTrue(NAV_BUTTONS_KEY)
+					end,
+					callback = function()
+						G_reader_settings:saveSetting(NAV_BUTTONS_KEY, not G_reader_settings:isTrue(NAV_BUTTONS_KEY))
 					end,
 				},
 				{
@@ -4390,7 +4308,6 @@ function ImageBrowser:_menuItems()
 					callback = function()
 						G_reader_settings:flipNilOrTrue(TOP_MENU_KEY)
 					end,
-					separator = true,
 				},
 				{
 					text = _("Disable shadow"),
@@ -4407,7 +4324,51 @@ function ImageBrowser:_menuItems()
 							clearPanelShadowCache()
 						end
 					end,
-					separator = true,
+				},
+			},
+		},
+
+		{
+			text = _("Content"),
+			help_text = _(
+				"Choose which images are found and shown: browsing scope, the relevance filter, and ignored/restored images."
+			),
+			sub_item_table = {
+				{
+					-- the full option name, not an abbreviation, so the current
+					-- mode is unambiguous at a glance
+					text_func = function()
+						return self:getScope() == "whole_book" and _("Mode: Show all images")
+							or _("Mode: Show images up to current chapter")
+					end,
+					help_text = _("Choose how far ahead in the book images are shown."),
+					sub_item_table = {
+						scope_item(
+							"read_so_far",
+							_("Show images up to current chapter"),
+							_(
+								"Images that appear beyond your current position stay hidden, so you can't spoil yourself. Granularity is per chapter: images in the chapter you are currently reading are shown."
+							)
+						),
+						scope_item(
+							"whole_book",
+							_("Show all images"),
+							_("Show reference images from anywhere in the book, including parts you haven't reached yet.")
+						),
+					},
+				},
+				{
+					text = _("Ignore irrelevant images"),
+					help_text = _(
+						"Set aside covers, publisher logos, ornaments and other non-reference imagery, keeping maps, family trees, diagrams and illustrations. Turn off to see every image in the book. Wrongly kept images can be ignored from the viewer's ⋯ menu; wrongly set-aside ones added back from the Gallery's Ignored tab."
+					),
+					checked_func = function()
+						return self:getFilterLevel() ~= "all"
+					end,
+					callback = function()
+						local now_on = self:getFilterLevel() ~= "all"
+						G_reader_settings:saveSetting(FILTER_KEY, now_on and "all" or "balanced")
+					end,
 				},
 				{
 					-- rarely needed, so tucked in here rather than the main list
@@ -4436,8 +4397,62 @@ function ImageBrowser:_menuItems()
 						end
 					end,
 				},
+				{
+					text_func = function()
+						local n = self:_hiddenCount()
+						if n > 0 then
+							return T(_("Restore ignored images (%1)"), n)
+						end
+						return _("Restore ignored images")
+					end,
+					help_text = _(
+						"Bring back images you ignored with 'Ignore Image' in the viewer's ⋯ menu (or by long-pressing in the Gallery). Remembered per book. Images the relevance filter set aside are added back individually from the Gallery's Ignored tab."
+					),
+					enabled_func = function()
+						return self:_hiddenCount() > 0
+					end,
+					keep_menu_open = true,
+					callback = function(touchmenu_instance)
+						self.ui.doc_settings:delSetting("imagebrowser_hidden")
+						UIManager:show(Notification:new({ text = _("Ignored images restored.") }))
+						if touchmenu_instance then
+							touchmenu_instance:updateItems()
+						end
+					end,
+				},
 			},
 		},
+
+		{
+			text = _("Quick Actions"),
+			help_text = _(
+				"Choose which actions appear in the viewer's ⋯ menu. Reset Rotation is automatic (shown while an image is rotated) and Restore ignored images only appears when some are ignored."
+			),
+			sub_item_table = (function()
+				local t = {}
+				for _, d in ipairs(QUICK_ACTIONS) do
+					local key = d.key
+					t[#t + 1] = {
+						text = _quick_label(key),
+						checked_func = function()
+							return _quick_enabled(key)
+						end,
+						keep_menu_open = true,
+						callback = function()
+							local cfg = G_reader_settings:readSetting(QUICK_ACTIONS_KEY)
+							if type(cfg) ~= "table" then
+								cfg = {}
+							end
+							cfg[key] = not _quick_enabled(key)
+							G_reader_settings:saveSetting(QUICK_ACTIONS_KEY, cfg)
+						end,
+					}
+				end
+				return t
+			end)(),
+			separator = true,
+		},
+
 		{
 			text_func = function()
 				return T(_("Version: %1"), _installed_version())

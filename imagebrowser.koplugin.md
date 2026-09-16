@@ -1,4 +1,4 @@
-# Image Browser ![Version](https://img.shields.io/badge/version-v0.2.6-blue)
+# Image Browser ![Version](https://img.shields.io/badge/version-v0.2.7-blue)
 
 **Image Browser** is a KOReader reader plugin for EPUB books. It lets you peek at maps, family trees, diagrams and other reference images from anywhere in the book, without losing your reading position, and browse them in a rounded left-side drawer or a centered popup.
 
@@ -70,7 +70,7 @@ For one-touch access, assign the gesture action **Open Image Browser** under **S
 
 When Image Browser scans a book, it parses the EPUB's raw HTML and OPF directly rather than relying on the rendered document, which gives it real pixel dimensions, `figcaption`/title/alt text, and enough context (repetition across files, classes, filenames, size) to tell reference figures apart from covers, publisher logos and ornaments.
 
-- The scan result is cached per book. It is invalidated automatically when the plugin's scanner format changes (an upgrade) and can be forced with **Advanced → Rescan this book**, useful if the book file was replaced.
+- The scan result is cached per book. It is invalidated automatically when the plugin's scanner format changes (an upgrade) and can be forced with **Content → Rescan this book**, useful if the book file was replaced.
 - The **relevance filter** (on by default) uses this data to set images aside as "Ignored" without deleting anything; both directions are correctable — bring a wrongly set-aside image back from the Gallery's Ignored tab, or send a wrongly kept one there with **Ignore Image** in the viewer's ⋯ menu.
 - The **scope** setting controls how far ahead the image list reaches: "up to current chapter" keeps anything beyond your current chapter hidden, at chapter granularity.
 - Ignored images and per-image rotation are remembered per book (KOReader's `doc_settings`), independent of the plugin's global settings.
@@ -83,30 +83,31 @@ When Image Browser scans a book, it parses the EPUB's raw HTML and OPF directly 
 - **Tap outside the panel** (centered popup layouts): close Image Browser.
 - **Tap the ⋯ button**: open the Quick Actions menu.
 - **Tap the dot indicator**: jump near that position in the image list.
-- **Tap the top edge of the screen**: opens KOReader's own top menu over Image Browser (can be disabled in Advanced settings).
+- **Tap the top edge of the screen**: opens KOReader's own top menu over Image Browser (can be disabled in Appearance settings).
 - **Physical page-turn keys**: same as swiping; flip grid pages while the Gallery is open.
 - **In the Gallery**: tap a thumbnail to open it; long-press a thumbnail to ignore it, or to add it back if it's already in the Ignored tab; tap the Shown/Ignored pill to switch tabs.
 - Optional **‹ ›** on-screen navigation buttons, as an alternative to swiping (off by default; grayed out when there is no image on that side).
 
 ## Configuration
 
-The **Image Browser** menu (reader Tools menu) contains:
+The **Image Browser** menu (reader Tools menu) follows the same grouped layout as the other plugins in this repository:
 
-- **Gesture: …**: shows which gesture currently opens Image Browser, and tapping it explains how to assign one.
-- **Open Image Browser**: opens the viewer directly from the menu. Disabled when no document is open.
-- **Mode: Show images up to current chapter / Show all images**: the viewing scope described above.
-- **Invert in Night Mode**: shows images inverted while KOReader's night mode is on.
-- **Show Nav Buttons**: shows the ‹ › on-screen navigation buttons in the viewer.
-- **Popup appearance**: left-side rounded panel, centered rounded popup, or centered square popup.
-- **Quick Actions**: choose which rows appear in the viewer's ⋯ menu.
-- **Restore ignored images (n)**: brings back every image ignored in the current book. Only enabled when at least one image is ignored.
-- **Advanced**:
-  - **Ignore irrelevant images**: turns the relevance filter on or off.
-  - **Show image captions (beta)**: overlays the image's caption in the viewer's top-left corner.
-  - **Enable top menu tap zone**: lets a tap on the screen's top strip open KOReader's top menu over the viewer.
-  - **Disable shadow**: removes the panel's drop shadow (the main source of e-ink ghosting behind the panel).
-  - **Rescan this book**: discards the cached scan and re-parses the book's images.
-- **Version: X.Y.Z**: displays the current plugin version and the Glimpse attribution.
+- `Gesture: …`: shows which gesture currently opens Image Browser, and tapping it explains how to assign one.
+- `Open Image Browser`: opens the viewer directly from the menu. Disabled when no document is open.
+- `Appearance`: chooses the popup position and corner style, night-mode inversion, navigation buttons, captions, the top tap zone, and the panel shadow.
+  - `Popup appearance`: left-side rounded panel, centered rounded popup, or centered square popup.
+  - `Invert in Night Mode`: shows images inverted while KOReader's night mode is on.
+  - `Show Nav Buttons`: shows the ‹ › on-screen navigation buttons in the viewer.
+  - `Show image captions (beta)`: overlays the image's caption in the viewer's top-left corner.
+  - `Enable top menu tap zone`: lets a tap on the screen's top strip open KOReader's top menu over the viewer.
+  - `Disable shadow`: removes the panel's drop shadow (the main source of e-ink ghosting behind the panel).
+- `Content`: chooses which images are found and shown — browsing scope, the relevance filter, and ignored/restored images.
+  - `Mode: Show images up to current chapter / Show all images`: the viewing scope described above.
+  - `Ignore irrelevant images`: turns the relevance filter on or off.
+  - `Rescan this book`: discards the cached scan and re-parses the book's images.
+  - `Restore ignored images (n)`: brings back every image ignored in the current book. Only enabled when at least one image is ignored.
+- `Quick Actions`: choose which rows appear in the viewer's ⋯ menu.
+- `Version: X.Y.Z`: displays the current plugin version and the Glimpse attribution.
 
 ## Performance notes
 
@@ -115,7 +116,7 @@ Image Browser is built to stay responsive on e-ink hardware:
 - Decoded and scaled bitmaps, gallery thumbnails, and the panel's drop shadow are all cached and reused between openings of the same size, so browsing between images and reopening the panel does not redecode from disk each time.
 - The small set of chrome icons (back, close, gallery, rotate, and the rest of `assets/`) is decoded from SVG once and reused, instead of being re-rasterized on every image switch, zoom step, gallery page turn, or rotation.
 - Scanning a book for images is cached in a per-book sidecar, so reopening Image Browser does not re-parse the EPUB unless the book changed or a manual rescan is requested.
-- The drop shadow — the main cause of e-ink ghosting around the panel — can be turned off entirely from Advanced settings.
+- The drop shadow — the main cause of e-ink ghosting around the panel — can be turned off entirely from Appearance settings.
 
 ## Notes and limitations
 
@@ -142,4 +143,4 @@ Based on the [Glimpse plugin](https://github.com/Fank1/glimpse/tree/main) for KO
 
 ## Version
 
-v0.2.6
+v0.2.7

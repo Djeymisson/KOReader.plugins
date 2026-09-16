@@ -14,7 +14,7 @@ Each plugin is kept in its own `.koplugin/` folder and has a dedicated documenta
 | Reader Header Footer | v1.0.10 | `readerheaderfooter.koplugin/` | [readerheaderfooter.koplugin.md](./readerheaderfooter.koplugin.md) |
 | Selection Toolbar | v1.0.6 | `selectiontoolbar.koplugin/` | [selectiontoolbar.koplugin.md](./selectiontoolbar.koplugin.md) |
 | Quick Dock | v0.22.3 | `quickdock.koplugin/` | [quickdock.koplugin.md](./quickdock.koplugin.md) |
-| Image Browser | v0.2.6 | `imagebrowser.koplugin/` | [imagebrowser.koplugin.md](./imagebrowser.koplugin.md) |
+| Image Browser | v0.2.7 | `imagebrowser.koplugin/` | [imagebrowser.koplugin.md](./imagebrowser.koplugin.md) |
 | Page Anchor | v1.3.2 | `pageanchor.koplugin/` | [pageanchor.koplugin.md](./pageanchor.koplugin.md) |
 
 Each `.koplugin/` folder contains the files required for KOReader to load the plugin, usually including at least:
