@@ -27,7 +27,9 @@ local Blitbuffer = require("ffi/blitbuffer")
 local UIManager = require("ui/uimanager")
 local NetworkMgr = require("ui/network/manager")
 local logger = require("logger")
-local _ = require("gettext")
+local _ = require("readerheaderfooter_l10n")
+local N_ = _.ngettext
+local T = require("ffi/util").template
 
 local math_floor = math.floor
 local math_max = math.max
@@ -38,7 +40,7 @@ local math_min = math.min
 -- ============================================================================
 
 local PLUGIN_NAME = "reader_header_footer"
-local PLUGIN_VERSION = "v1.0.8"
+local PLUGIN_VERSION = "v1.0.9"
 
 local SETTINGS = {
     enabled = "reader_header_footer_enabled",
@@ -1438,10 +1440,12 @@ end
 
 function ReaderHeaderFooter:getLeftBottomStatus()
     if self.footer_left_mode == "book" then
-        return string.format("%d pages left in book", self:getPagesLeftInBook())
+        local n = self:getPagesLeftInBook()
+        return T(N_("%1 page left in book", "%1 pages left in book", n), n)
     end
 
-    return string.format("%d pages left in chapter", self:getPagesLeftInChapter())
+    local n = self:getPagesLeftInChapter()
+    return T(N_("%1 page left in chapter", "%1 pages left in chapter", n), n)
 end
 
 function ReaderHeaderFooter:getCurrentPage()

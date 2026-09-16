@@ -1,4 +1,4 @@
-# Reader Header Footer ![Version](https://img.shields.io/badge/version-v1.0.8-blue)
+# Reader Header Footer ![Version](https://img.shields.io/badge/version-v1.0.9-blue)
 
 Plugin for [KOReader](https://koreader.rocks/) that adds discreet header and footer information while reading.
 
@@ -245,12 +245,17 @@ local INDICATOR_MARGINS = {
 - The chapter title may be empty if the document does not provide a reliable TOC structure.
 - In very unusual layouts, automatic margins may not exactly match the visual text area. In those cases, use manual margins.
 
+## Localization
+
+Reader Header/Footer follows KOReader's active interface language. Plugin-specific messages — the settings menu, the bottom-left "pages left" indicator (with correct singular/plural forms), and the version dialog — are translated into Brazilian and European Portuguese; in other interface languages, plugin-specific messages fall back to English. Document content such as the chapter title and author/title metadata always comes from the book itself and is never translated.
+
 ## Plugin structure
 
 ```text
 reader_header_footer.koplugin/
-├── _meta.lua   # metadata displayed by KOReader
-└── main.lua    # main plugin implementation
+├── _meta.lua                     # metadata displayed by KOReader
+├── main.lua                      # main plugin implementation
+└── readerheaderfooter_l10n.lua   # locale-aware translations, with KOReader gettext fallback
 ```
 
 ## Screenshots

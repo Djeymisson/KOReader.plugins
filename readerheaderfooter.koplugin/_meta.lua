@@ -1,4 +1,4 @@
-local _ = require("gettext")
+local _ = require("readerheaderfooter_l10n")
 
 return {
     name = "reader_header_footer",
