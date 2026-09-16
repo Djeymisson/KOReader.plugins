@@ -8,7 +8,6 @@ Each plugin is kept in its own `.koplugin/` folder and has a dedicated documenta
 
 | Plugin | Version | Folder | Documentation |
 |---|---|---|---|
-| Plain UI Custom | v1.3-custom | `plainui-custom.koplugin/` | [plainui-custom.koplugin.md](./plainui-custom.koplugin.md) |
 | Dictionary Preview | v1.1.4 | `dictionarypreview.koplugin/` | [dictionarypreview.koplugin.md](./dictionarypreview.koplugin.md) |
 | Translator Preview | v1.0.2 | `translatorpreview.koplugin/` | [translatorpreview.koplugin.md](./translatorpreview.koplugin.md) |
 | Lookup Preview | v1.0.20 | `lookuppreview.koplugin/` | [lookuppreview.koplugin.md](./lookuppreview.koplugin.md) |
