@@ -1,4 +1,4 @@
-# Quick Dock ![Version](https://img.shields.io/badge/version-v0.22.1-blue)
+# Quick Dock ![Version](https://img.shields.io/badge/version-v0.22.2-blue)
 
 Quick Dock adds a floating action dock with lighting controls and an optional information panel to KOReader. It is designed for touch devices and can be assigned to any gesture supported by KOReader.
 
@@ -236,4 +236,4 @@ Extract `quickdock.koplugin` into KOReader's `plugins` directory and restart KOR
 
 ## Version
 
-v0.22.1
+v0.22.2

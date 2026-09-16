@@ -71,18 +71,16 @@ function LightSlider:syncFromPower(notify_state_change)
     if self.value_reader then
         level_ok, level = pcall(self.value_reader, self.powerd)
     else
-        level_ok, level = pcall(function()
-            return self.powerd:frontlightIntensity()
-        end)
+        level_ok, level = pcall(self.powerd.frontlightIntensity, self.powerd)
     end
     if level_ok then
         self.value = tonumber(level) or self.minimum
         self.value = math_max(self.minimum, math_min(self.maximum, self.value))
     end
 
-    local state_ok, light_on = pcall(function()
-        return self.powerd:isFrontlightOn()
-    end)
+    -- Avoids allocating a wrapper closure on every paint: this call runs on
+    -- each repaint of the slider, including every step of an active drag.
+    local state_ok, light_on = pcall(self.powerd.isFrontlightOn, self.powerd)
     if state_ok then
         self.enabled = light_on == true
     else

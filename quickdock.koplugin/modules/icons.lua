@@ -67,9 +67,7 @@ function QuickDock:unpatchIconWidget()
 end
 
 function QuickDock:isWifiOn()
-    local ok, enabled = pcall(function()
-        return NetworkMgr:isWifiOn()
-    end)
+    local ok, enabled = pcall(NetworkMgr.isWifiOn, NetworkMgr)
     return ok and enabled == true
 end
 
@@ -77,9 +75,7 @@ function QuickDock:isNightMode()
     if type(Screen.night_mode) == "boolean" then
         return Screen.night_mode
     end
-    local ok, enabled = pcall(function()
-        return G_reader_settings:isTrue("night_mode")
-    end)
+    local ok, enabled = pcall(G_reader_settings.isTrue, G_reader_settings, "night_mode")
     return ok and enabled == true
 end
 
