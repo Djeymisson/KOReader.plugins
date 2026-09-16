@@ -210,6 +210,10 @@ Quick Dock stores its preferences through KOReader's reader settings using these
 | `quickdock_max_action_dock_height` | Maximum dock-column height as 100%, 60%, or 33% of the screen; defaults to 100% |
 | `quickdock_close_together` | Closes all blocks in one non-flashing update over their smallest encompassing rectangle; disabled by default |
 
+## Localization
+
+Quick Dock follows KOReader's active interface language. Plugin-specific messages are translated into Brazilian and European Portuguese; built-in KOReader messages, page plurals, durations, and device-provided network details use KOReader's own translations. In other interface languages, shared terms use KOReader's catalog and plugin-specific messages fall back to English. Action names come from KOReader's localized action picker, while icon filenames and action IDs remain unchanged.
+
 ## Code organization
 
 - `main.lua`: plugin lifecycle, saved state, dock sizing, pagination, information-panel coordination, and action dispatch.
@@ -220,6 +224,7 @@ Quick Dock stores its preferences through KOReader's reader settings using these
 - `modules/context.lua`: reader, file-browser, and optional Bookshelf integration.
 - `modules/icons.lua`: custom/system icon resolution, stateful icons, and safe shared IconWidget patching.
 - `modules/menu.lua`: settings menus, action visibility controls, icon-name help, and reset confirmation.
+- `quickdock_l10n.lua`: locale-aware translations for plugin-specific interface text, with KOReader gettext fallback.
 
 ## Installation
 

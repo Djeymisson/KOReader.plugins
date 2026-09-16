@@ -1,7 +1,7 @@
 local InfoMessage = require("ui/widget/infomessage")
 local Event = require("ui/event")
 local UIManager = require("ui/uimanager")
-local _ = require("gettext")
+local _ = require("quickdock_l10n")
 
 return function(QuickDock, constants)
     local ACTION_CONTEXT_READER = constants.ACTION_CONTEXT_READER

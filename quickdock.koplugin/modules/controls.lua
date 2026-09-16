@@ -3,7 +3,8 @@ local Device = require("device")
 local UIManager = require("ui/uimanager")
 local VerticalGroup = require("ui/widget/verticalgroup")
 local VerticalSpan = require("ui/widget/verticalspan")
-local _ = require("gettext")
+local _ = require("quickdock_l10n")
+local T = require("ffi/util").template
 
 local math_max = math.max
 
@@ -95,7 +96,7 @@ end
 function QuickDock:makeWarmthInfoButton(width, dialog, slider, metrics)
     local function showWarmthLevel()
         slider:syncFromPower()
-        self:showButtonHelp(_("Warmth") .. ": " .. tostring(slider.value))
+        self:showButtonHelp(T(_("Warmth: %1"), slider.value))
     end
     local icon = self:getIcon("warmth")
     local config = applyHighlightedButtonMetrics({
@@ -108,7 +109,7 @@ function QuickDock:makeWarmthInfoButton(width, dialog, slider, metrics)
     if icon then
         config.icon = icon
     else
-        config.text = _("W")
+        config.text = makeFallbackLabel(_("Warmth"), "warmth")
     end
     return Button:new(config)
 end
@@ -308,9 +309,9 @@ end
 
 function QuickDock:getInfoPanelToggleDisplay()
     if self.current_info_panel_kind == "network" then
-        return self:getIcon("network_info"), _("N")
+        return self:getIcon("network_info"), makeFallbackLabel(_("Network information"), "network_info")
     end
-    return self:getIcon("reading_info"), _("R")
+    return self:getIcon("reading_info"), makeFallbackLabel(_("Reading information"), "reading_info")
 end
 
 function QuickDock:makeInfoPanelToggleButton(width, dialog, metrics)

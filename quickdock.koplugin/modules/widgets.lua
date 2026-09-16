@@ -12,7 +12,7 @@ local UIManager = require("ui/uimanager")
 local VerticalGroup = require("ui/widget/verticalgroup")
 local VerticalSpan = require("ui/widget/verticalspan")
 local time = require("ui/time")
-local _ = require("gettext")
+local _ = require("quickdock_l10n")
 
 local Screen = Device.screen
 local math_floor = math.floor

@@ -15,7 +15,7 @@ local UIManager = require("ui/uimanager")
 local VerticalGroup = require("ui/widget/verticalgroup")
 local VerticalSpan = require("ui/widget/verticalspan")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
-local _ = require("gettext")
+local _ = require("quickdock_l10n")
 local N_ = _.ngettext
 local T = require("ffi/util").template
 
@@ -535,7 +535,7 @@ local function build(plugin, metrics, parent, maximum_outer_width, data, panel_s
         if data.network.ssid and not data.network.details then
             addGap(items, gap)
             items[#items + 1] = makePanelText(
-                _("SSID") .. ": " .. tostring(data.network.ssid),
+                T(_("SSID: %1"), data.network.ssid),
                 body_face
             )
         end
@@ -571,11 +571,10 @@ local function build(plugin, metrics, parent, maximum_outer_width, data, panel_s
         local page = data.document.page_label or data.document.page
         local total = data.document.total_label or data.document.total
         local book_lines = {
-            _("Book") .. ": " .. tostring(page) .. " / " .. tostring(total)
-                .. "  ·  " .. tostring(data.document.percentage) .. "%",
+            T(_("Book: %1 / %2  ·  %3%"), page, total, data.document.percentage),
         }
         if data.statistics and data.statistics.book_time_left then
-            book_lines[2] = _("Remaining") .. ": " .. data.statistics.book_time_left
+            book_lines[2] = T(_("Remaining: %1"), data.statistics.book_time_left)
         end
         items[#items + 1] = makePanelText(table.concat(book_lines, "\n"), body_face)
 
@@ -586,13 +585,11 @@ local function build(plugin, metrics, parent, maximum_outer_width, data, panel_s
             items[#items + 1] = makePanelText(chapter_title, body_face, true)
             addGap(items, gap)
             local chapter_lines = {
-                _("Page") .. ": " .. tostring(data.chapter.page)
-                    .. " / " .. tostring(data.chapter.total)
-                    .. "  ·  " .. tostring(data.chapter.percentage) .. "%",
+                T(_("Page: %1 / %2  ·  %3%"), data.chapter.page,
+                    data.chapter.total, data.chapter.percentage),
             }
             if data.statistics and data.statistics.chapter_time_left then
-                chapter_lines[2] = _("Remaining")
-                    .. ": " .. data.statistics.chapter_time_left
+                chapter_lines[2] = T(_("Remaining: %1"), data.statistics.chapter_time_left)
             end
             items[#items + 1] = makePanelText(table.concat(chapter_lines, "\n"), body_face)
         end
@@ -609,9 +606,10 @@ local function build(plugin, metrics, parent, maximum_outer_width, data, panel_s
 
     if data.statistics and data.statistics.today_pages ~= nil then
         addSeparator(items, content_width, gap)
-        local today = _("Today") .. ": " .. pagesLabel(data.statistics.today_pages)
+        local pages = pagesLabel(data.statistics.today_pages)
+        local today = T(_("Today: %1"), pages)
         if data.statistics.today_duration then
-            today = today .. "  ·  " .. data.statistics.today_duration
+            today = T(_("Today: %1  ·  %2"), pages, data.statistics.today_duration)
         end
         items[#items + 1] = makePanelText(today, body_face)
     end

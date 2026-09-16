@@ -1,7 +1,7 @@
 local InfoMessage = require("ui/widget/infomessage")
 local NetworkMgr = require("ui/network/manager")
 local UIManager = require("ui/uimanager")
-local _ = require("gettext")
+local _ = require("quickdock_l10n")
 
 local INLINE_ACTIONS = {
     night_mode = true,

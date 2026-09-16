@@ -7,7 +7,7 @@ local InfoMessage = require("ui/widget/infomessage")
 local Size = require("ui/size")
 local UIManager = require("ui/uimanager")
 local util = require("util")
-local _ = require("gettext")
+local _ = require("quickdock_l10n")
 
 local Screen = Device.screen
 local math_floor = math.floor

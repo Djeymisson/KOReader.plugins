@@ -1,4 +1,4 @@
-local _ = require("gettext")
+local _ = require("quickdock_l10n")
 
 return {
     name = "quickdock",

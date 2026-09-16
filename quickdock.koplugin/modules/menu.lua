@@ -3,7 +3,8 @@ local Dispatcher = require("dispatcher")
 local ConfirmBox = require("ui/widget/confirmbox")
 local InfoMessage = require("ui/widget/infomessage")
 local UIManager = require("ui/uimanager")
-local _ = require("gettext")
+local _ = require("quickdock_l10n")
+local T = require("ffi/util").template
 
 local function refreshMenu(touchmenu_instance)
     if touchmenu_instance and touchmenu_instance.updateItems then
@@ -119,8 +120,8 @@ end
 function QuickDock:getActionVisibilitySummary(action_id)
     local mode = self:getActionVisibilityMode(action_id)
     if mode == ACTION_CONTEXT_AUTOMATIC then
-        return self:getActionVisibilityLabel(mode)
-            .. " (" .. self:getActionVisibilityLabel(self:getEffectiveActionVisibility(action_id)) .. ")"
+        return T(_("Automatic (%1)"),
+            self:getActionVisibilityLabel(self:getEffectiveActionVisibility(action_id)))
     end
     return self:getActionVisibilityLabel(mode)
 end
@@ -178,7 +179,7 @@ function QuickDock:getActionVisibilityMenu()
         local action_text = tostring(item.text or action_id)
         menu[#menu + 1] = {
             text_func = function()
-                return action_text .. ": " .. self:getActionVisibilitySummary(action_id)
+                return T(_("%1: %2"), action_text, self:getActionVisibilitySummary(action_id))
             end,
             sub_item_table = {
                 self:makeActionVisibilityOption(action_id, ACTION_CONTEXT_AUTOMATIC),
@@ -280,7 +281,7 @@ function QuickDock:getBehaviorMenu()
             local side = self:getSideMode() == SIDE_MODE_GESTURE
                 and _("Follow gesture")
                 or (self:getSide() == "left" and _("Left") or _("Right"))
-            return _("Dock side") .. ": " .. side
+            return T(_("Dock side: %1"), side)
         end,
         help_text = _("Choose a fixed side or place the dock on the side where its gesture started."),
         sub_item_table = {
@@ -322,7 +323,7 @@ function QuickDock:getBehaviorMenu()
             local mode = self:closeDockTogether()
                 and _("All blocks at once")
                 or _("One block at a time")
-            return _("Dock and panel closing") .. ": " .. mode
+            return T(_("Dock and panel closing: %1"), mode)
         end,
         help_text = _("Choose whether the dock and its panels disappear in the same repaint cycle or close separately."),
         sub_item_table = {
@@ -370,7 +371,7 @@ function QuickDock:getActionSettingsMenu()
     return {
         {
             text_func = function()
-                return _("Buttons and order") .. ": " .. tostring(#self:getConfiguredActions())
+                return T(_("Buttons and order: %1"), #self:getConfiguredActions())
             end,
             help_text = _("Choose the actions shown in the dock and arrange their order."),
             sub_item_table_func = function()
@@ -414,7 +415,7 @@ function QuickDock:getDockLayoutMenu()
     }
     local scale_item = {
         text_func = function()
-            return _("Dock scale") .. ": " .. size_labels[self:getDockSize()]
+            return T(_("Dock scale: %1"), size_labels[self:getDockSize()])
         end,
         help_text = _("Change the size of buttons, icons, pagination controls, and lighting columns."),
         sub_item_table = {
@@ -437,7 +438,7 @@ function QuickDock:getDockLayoutMenu()
     }
     local height_item = {
         text_func = function()
-            return _("Maximum dock height") .. ": " .. self:getMaxActionDockHeight() .. "%"
+            return T(_("Maximum dock height: %1%"), self:getMaxActionDockHeight())
         end,
         help_text = _("Limits the action and lighting columns to the selected percentage of the screen and paginates buttons when necessary."),
         sub_item_table = {
@@ -489,8 +490,7 @@ function QuickDock:getInformationPanelMenu()
         ),
         {
             text_func = function()
-                return _("Panel text alignment")
-                    .. ": " .. alignment_labels[self:getInfoPanelTextAlignment()]
+                return T(_("Panel text alignment: %1"), alignment_labels[self:getInfoPanelTextAlignment()])
             end,
             help_text = _("Aligns every line in the selected information panel, including the clock and battery."),
             enabled_func = function() return self:showInfoPanel() end,
@@ -627,10 +627,10 @@ function QuickDock:addToMainMenu(menu_items)
                 end,
             },
             {
-                text = _("Version") .. ": " .. PLUGIN_VERSION,
+                text = T(_("Version: %1"), PLUGIN_VERSION),
                 callback = function()
                     UIManager:show(InfoMessage:new({
-                        text = _("Quick Dock") .. " " .. PLUGIN_VERSION,
+                        text = T(_("Quick Dock %1"), PLUGIN_VERSION),
                     }))
                 end,
                 separator = true,
