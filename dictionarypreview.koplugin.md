@@ -1,4 +1,4 @@
-# KOReader Dictionary Preview ![Version](https://img.shields.io/badge/version-v1.1.1-blue)
+# KOReader Dictionary Preview ![Version](https://img.shields.io/badge/version-v1.1.4-blue)
 
 **Dictionary Preview** is a KOReader reader plugin that changes the dictionary lookup flow. Instead of immediately opening KOReader's full dictionary popup, it first shows a compact preview with the dictionary result. The preview can be displayed either as a bottom panel or as an optional floating card that automatically avoids covering the selected word.
 
@@ -172,7 +172,7 @@ For dictionaries that do not provide CSS, the plugin applies a fallback normaliz
 
 ## Performance notes
 
-The plugin keeps the preview lightweight by avoiding unnecessary recalculations and by reusing small cached values where safe, such as icon lookup results, static layout values, and repeated HTML class style mappings.
+The plugin keeps the preview lightweight by avoiding unnecessary recalculations and by reusing small cached values where safe, such as icon lookup results, static layout values, and repeated HTML class style mappings. Repeated widget-measurement calls reuse a direct method reference instead of allocating a temporary wrapper function each time, and the highlight-restoration guard used by the highlight, search, and Wikipedia actions is now a single shared helper.
 
 Screen dimensions are still evaluated when the preview is created, so the layout can react correctly to orientation or screen-size changes.
 
