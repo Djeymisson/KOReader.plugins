@@ -54,7 +54,7 @@ local SETTINGS = {
     follow_document_margins = "reader_header_footer_follow_document_margins",
     custom_left_margin = "reader_header_footer_custom_left_margin",
     custom_right_margin = "reader_header_footer_custom_right_margin",
-    custom_horizontal_margin = "reader_header_footer_custom_horizontal_margin",
+    custom_margin_linked = "reader_header_footer_custom_margin_linked",
     footer_left_mode_setting_key = "reader_header_footer_left_footer_mode",
     footer_left_mode = "chapter",
 }
@@ -110,7 +110,7 @@ local ReaderHeaderFooter = WidgetContainer:extend({
     follow_document_margins = INDICATOR_MARGINS.default_follow_document,
     custom_left_margin = INDICATOR_MARGINS.default_left,
     custom_right_margin = INDICATOR_MARGINS.default_right,
-    custom_horizontal_margin = INDICATOR_MARGINS.default_left,
+    custom_margin_linked = true,
 
     -- Used to clear the old larger region after font size changes.
     refresh_region_font_size = FONT.default_size,
@@ -251,17 +251,19 @@ function ReaderHeaderFooter:loadSettings()
 
     local saved_left_margin = G_reader_settings:readSetting(SETTINGS.custom_left_margin)
     local saved_right_margin = G_reader_settings:readSetting(SETTINGS.custom_right_margin)
-    local saved_horizontal_margin = G_reader_settings:readSetting(SETTINGS.custom_horizontal_margin)
 
     self.custom_left_margin = self:normalizeIndicatorMargin(saved_left_margin or INDICATOR_MARGINS.default_left)
     self.custom_right_margin = self:normalizeIndicatorMargin(saved_right_margin or INDICATOR_MARGINS.default_right)
 
-    -- This value feeds the “both margins” menu item. It is intentionally
-    -- independent from left/right so the menu can remember the last common
-    -- margin used, even after fine-tuning only one side later.
-    self.custom_horizontal_margin = self:normalizeIndicatorMargin(
-        saved_horizontal_margin or self.custom_left_margin or INDICATOR_MARGINS.default_left
-    )
+    local saved_margin_linked = G_reader_settings:readSetting(SETTINGS.custom_margin_linked)
+
+    if saved_margin_linked == nil then
+        -- Upgrading from a version without an explicit link flag: infer it
+        -- from whether the two saved margins already matched.
+        saved_margin_linked = self.custom_left_margin == self.custom_right_margin
+    end
+
+    self.custom_margin_linked = saved_margin_linked ~= false
 
     local saved_footer_left_mode = G_reader_settings:readSetting(SETTINGS.footer_left_mode_setting_key)
 
@@ -445,26 +447,42 @@ function ReaderHeaderFooter:setCustomIndicatorMargin(side, value)
     end
 end
 
-function ReaderHeaderFooter:setCustomHorizontalMargin(value)
-    local new_value = self:normalizeIndicatorMargin(value)
+function ReaderHeaderFooter:isMarginLinked()
+    return self.custom_margin_linked ~= false
+end
 
-    if
-        self.custom_left_margin == new_value
-        and self.custom_right_margin == new_value
-        and self.custom_horizontal_margin == new_value
-    then
+function ReaderHeaderFooter:setMarginLinked(enabled)
+    local new_value = enabled == true
+
+    if self.custom_margin_linked == new_value then
         return
     end
 
-    -- Capture the old top/bottom regions before moving both sides, so a
-    -- regional refresh also clears stale text at the previous coordinates.
+    self.custom_margin_linked = new_value
+    G_reader_settings:saveSetting(SETTINGS.custom_margin_linked, self.custom_margin_linked)
+
+    -- Re-linking mirrors the left margin onto the right side immediately, so
+    -- the single "both sides" spinner never disagrees with the value actually
+    -- used to draw the right-hand indicators.
+    if new_value and self.custom_left_margin ~= self.custom_right_margin then
+        self:rememberIndicatorRegionsForCleanup()
+        self.custom_right_margin = self.custom_left_margin
+        G_reader_settings:saveSetting(SETTINGS.custom_right_margin, self.custom_right_margin)
+    end
+end
+
+function ReaderHeaderFooter:setLinkedMargin(value)
+    local new_value = self:normalizeIndicatorMargin(value)
+
+    if self.custom_left_margin == new_value and self.custom_right_margin == new_value then
+        return
+    end
+
     self:rememberIndicatorRegionsForCleanup()
 
-    self.custom_horizontal_margin = new_value
     self.custom_left_margin = new_value
     self.custom_right_margin = new_value
 
-    G_reader_settings:saveSetting(SETTINGS.custom_horizontal_margin, self.custom_horizontal_margin)
     G_reader_settings:saveSetting(SETTINGS.custom_left_margin, self.custom_left_margin)
     G_reader_settings:saveSetting(SETTINGS.custom_right_margin, self.custom_right_margin)
 end
@@ -871,7 +889,7 @@ function ReaderHeaderFooter:addToMainMenu(menu_items)
 
                     {
                         text = _("Margins"),
-                        help_text = _("Follow the document's margins automatically, or set manual left, right, or combined margins."),
+                        help_text = _("Follow the document's margins automatically, or set a manual margin, either the same on both sides or independently."),
 
                         -- Keep submenu visible, but disabled when the plugin is off.
                         enabled_func = function()
@@ -904,12 +922,14 @@ function ReaderHeaderFooter:addToMainMenu(menu_items)
                             },
 
                             {
-                                text_func = function()
-                                    return string.format(_("Custom side margins: %d"), self.custom_horizontal_margin)
+                                text = _("Use the same margin for both sides"),
+                                help_text = _("On: set a single margin below. Off: set the left and right margins independently."),
+
+                                checked_func = function()
+                                    return self:isMarginLinked()
                                 end,
 
-                                -- Applies the same custom margin to both sides. Like the
-                                -- individual controls, it is only meaningful in manual mode.
+                                -- Only meaningful once custom (non-document) margins are active.
                                 enabled_func = function()
                                     return self:isEnabled() and not self:usesDocumentMargins()
                                 end,
@@ -919,16 +939,42 @@ function ReaderHeaderFooter:addToMainMenu(menu_items)
                                         return
                                     end
 
+                                    self:setMarginLinked(not self:isMarginLinked())
+
+                                    if touchmenu_instance and touchmenu_instance.updateItems then
+                                        touchmenu_instance:updateItems()
+                                    end
+
+                                    UIManager:scheduleIn(REFRESH.after_dialog_close_delay, function()
+                                        self:requestAllIndicatorRefresh()
+                                    end)
+                                end,
+                            },
+
+                            {
+                                text_func = function()
+                                    return string.format(_("Margin (both sides): %d"), self.custom_left_margin)
+                                end,
+
+                                enabled_func = function()
+                                    return self:isEnabled() and not self:usesDocumentMargins() and self:isMarginLinked()
+                                end,
+
+                                callback = function(touchmenu_instance)
+                                    if not self:isEnabled() or self:usesDocumentMargins() or not self:isMarginLinked() then
+                                        return
+                                    end
+
                                     local widget = SpinWidget:new({
-                                        title_text = _("Custom side indicator margins"),
-                                        value = self.custom_horizontal_margin,
+                                        title_text = _("Indicator margin (both sides)"),
+                                        value = self.custom_left_margin,
                                         value_min = INDICATOR_MARGINS.min,
                                         value_max = INDICATOR_MARGINS.max,
                                         default_value = INDICATOR_MARGINS.default_left,
                                         keep_shown_on_apply = false,
 
                                         callback = function(spin)
-                                            self:setCustomHorizontalMargin(spin.value)
+                                            self:setLinkedMargin(spin.value)
 
                                             if touchmenu_instance and touchmenu_instance.updateItems then
                                                 touchmenu_instance:updateItems()
@@ -946,21 +992,22 @@ function ReaderHeaderFooter:addToMainMenu(menu_items)
 
                             {
                                 text_func = function()
-                                    return string.format(_("Custom left margin: %d"), self.custom_left_margin)
+                                    return string.format(_("Left margin: %d"), self.custom_left_margin)
                                 end,
 
-                                -- Custom margins only apply when the document-margin checkbox is off.
+                                -- Independent margins only apply once custom margins are
+                                -- active and the two sides are unlinked.
                                 enabled_func = function()
-                                    return self:isEnabled() and not self:usesDocumentMargins()
+                                    return self:isEnabled() and not self:usesDocumentMargins() and not self:isMarginLinked()
                                 end,
 
                                 callback = function(touchmenu_instance)
-                                    if not self:isEnabled() or self:usesDocumentMargins() then
+                                    if not self:isEnabled() or self:usesDocumentMargins() or self:isMarginLinked() then
                                         return
                                     end
 
                                     local widget = SpinWidget:new({
-                                        title_text = _("Custom left indicator margin"),
+                                        title_text = _("Left indicator margin"),
                                         value = self.custom_left_margin,
                                         value_min = INDICATOR_MARGINS.min,
                                         value_max = INDICATOR_MARGINS.max,
@@ -986,20 +1033,20 @@ function ReaderHeaderFooter:addToMainMenu(menu_items)
 
                             {
                                 text_func = function()
-                                    return string.format(_("Custom right margin: %d"), self.custom_right_margin)
+                                    return string.format(_("Right margin: %d"), self.custom_right_margin)
                                 end,
 
                                 enabled_func = function()
-                                    return self:isEnabled() and not self:usesDocumentMargins()
+                                    return self:isEnabled() and not self:usesDocumentMargins() and not self:isMarginLinked()
                                 end,
 
                                 callback = function(touchmenu_instance)
-                                    if not self:isEnabled() or self:usesDocumentMargins() then
+                                    if not self:isEnabled() or self:usesDocumentMargins() or self:isMarginLinked() then
                                         return
                                     end
 
                                     local widget = SpinWidget:new({
-                                        title_text = _("Custom right indicator margin"),
+                                        title_text = _("Right indicator margin"),
                                         value = self.custom_right_margin,
                                         value_min = INDICATOR_MARGINS.min,
                                         value_max = INDICATOR_MARGINS.max,
