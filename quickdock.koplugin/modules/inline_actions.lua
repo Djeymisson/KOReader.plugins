@@ -54,7 +54,8 @@ function QuickDock:showStatusPanel(text, timeout)
         side,
         dock_margin,
         text,
-        self.info_panel_widget
+        self.info_panel_widget,
+        self:getSiblingOverlayClearance(side)
     )
     self.status_panel_widget = status_panel_widget
     self.status_panel_text = text

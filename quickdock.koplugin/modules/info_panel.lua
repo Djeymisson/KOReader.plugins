@@ -31,6 +31,10 @@ local InfoPanelOverlay = WidgetContainer:extend({
     -- becoming the input target above the dock. Unlike Notification, this
     -- widget does not close itself on input.
     toast = true,
+    -- Extra room reserved above the usual screen margin, e.g. to clear a
+    -- sibling plugin's own floating overlay sitting on this same side. Left
+    -- untouched (0) unless a caller has a reason to reserve more.
+    extra_bottom_margin = 0,
 })
 
 local StatusPanelOverlay = WidgetContainer:extend({
@@ -39,6 +43,9 @@ local StatusPanelOverlay = WidgetContainer:extend({
     -- taps or the controls of a network-selection dialog.
     modal = false,
     toast = true,
+    -- Same meaning as InfoPanelOverlay's own field above; only used when
+    -- there's no lower_widget to stack above instead.
+    extra_bottom_margin = 0,
 })
 
 function InfoPanelOverlay:init()
@@ -48,9 +55,13 @@ function InfoPanelOverlay:init()
     if self.panel_side == "right" then
         left = Screen:getWidth() - margin - panel_size.w
     end
+    -- Only the bottom offset grows here -- the horizontal margin stays the
+    -- screen-edge one, so reserving room for a sibling overlay never pushes
+    -- this panel sideways.
+    local bottom_margin = margin + math_max(0, tonumber(self.extra_bottom_margin) or 0)
     self.dimen = Geom:new({
         x = math_floor(left),
-        y = math_floor(math_max(margin, Screen:getHeight() - margin - panel_size.h)),
+        y = math_floor(math_max(margin, Screen:getHeight() - bottom_margin - panel_size.h)),
         w = panel_size.w,
         h = panel_size.h,
     })
@@ -77,7 +88,10 @@ function StatusPanelOverlay:init()
         left = Screen:getWidth() - margin - panel_size.w
     end
 
-    local bottom = Screen:getHeight() - margin
+    -- With a lower_widget, this already stacks above whatever bottom offset
+    -- that widget resolved to (extra margin included), so extra_bottom_margin
+    -- only needs to apply to the fallback, lower_widget-less case below.
+    local bottom = Screen:getHeight() - margin - math_max(0, tonumber(self.extra_bottom_margin) or 0)
     local lower_dimen = self.lower_widget and self.lower_widget.dimen
     if lower_dimen then
         bottom = lower_dimen.y - (self.panel_gap or Size.padding.default)
@@ -638,7 +652,7 @@ local function build(plugin, metrics, parent, maximum_outer_width, data, panel_s
     })
 end
 
-local function createOverlay(plugin, metrics, panel_side, screen_margin, data)
+local function createOverlay(plugin, metrics, panel_side, screen_margin, data, extra_bottom_margin)
     screen_margin = math_max(0, tonumber(screen_margin) or Size.padding.large)
     local maximum_width = maximumPanelWidth(screen_margin)
     local panel = build(plugin, metrics, nil, maximum_width, data, panel_side)
@@ -647,12 +661,13 @@ local function createOverlay(plugin, metrics, panel_side, screen_margin, data)
         panel_side = panel_side == "left" and "left" or "right",
         screen_margin = screen_margin,
         dithered = data and data.cover ~= nil,
+        extra_bottom_margin = extra_bottom_margin,
     })
     panel.show_parent = overlay
     return overlay
 end
 
-local function createStatusOverlay(metrics, panel_side, screen_margin, text, lower_widget)
+local function createStatusOverlay(metrics, panel_side, screen_margin, text, lower_widget, extra_bottom_margin)
     local factor = tonumber(metrics and metrics.scale_factor) or 1
     local padding = math_max(Size.padding.small, math_floor(Screen:scaleBySize(8) * factor + 0.5))
     local content_width = panelContentWidth(metrics, maximumPanelWidth(screen_margin))
@@ -673,6 +688,7 @@ local function createStatusOverlay(metrics, panel_side, screen_margin, text, low
         screen_margin = screen_margin,
         panel_gap = Size.padding.default,
         lower_widget = lower_widget,
+        extra_bottom_margin = extra_bottom_margin,
     })
     panel.show_parent = overlay
     return overlay

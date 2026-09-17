@@ -4,6 +4,7 @@ local Device = require("device")
 local Dispatcher = require("dispatcher")
 local Geom = require("ui/geometry")
 local InfoMessage = require("ui/widget/infomessage")
+local logger = require("logger")
 local Size = require("ui/size")
 local UIManager = require("ui/uimanager")
 local util = require("util")
@@ -690,6 +691,41 @@ function QuickDock:getDockMetrics()
     return metrics
 end
 
+-- Optional integration with sibling floating-button plugins (currently just
+-- Page Anchor): if one is visible on the given side, add whatever extra
+-- clearance it reports so this dock (or its info/status panels) doesn't
+-- render on top of it. Never a hard dependency -- duck-typed and
+-- pcall-wrapped, so a missing plugin, a missing method, or a bug on the
+-- other side just falls back to 0 extra margin instead of breaking the dock.
+function QuickDock:getSiblingOverlayClearance(side)
+    local sibling = self.ui and self.ui.pageanchor
+    local getter = sibling and sibling.getOverlayClearance
+    if type(getter) ~= "function" then
+        return 0
+    end
+    local ok, clearance = pcall(getter, sibling, side)
+    if not ok then
+        if not self._logged_sibling_clearance_error then
+            self._logged_sibling_clearance_error = true
+            logger.warn("QuickDock: getOverlayClearance from Page Anchor failed:", clearance)
+        end
+        return 0
+    end
+    if type(clearance) == "number" and clearance > 0 then
+        return clearance
+    end
+    return 0
+end
+
+-- Optional integration point for sibling plugins (currently just Page
+-- Anchor): whether the dock is currently on screen, so a plugin whose own
+-- floating element sits nearby can hold off on something -- e.g. not
+-- auto-dismissing itself and leaving an empty gap under an already-open
+-- dock -- while it's up.
+function QuickDock:isDockVisible()
+    return self.dialog ~= nil
+end
+
 function QuickDock:showSideButton()
     return G_reader_settings:readSetting(SETTING_SHOW_SIDE_BUTTON) ~= false
 end
@@ -813,12 +849,16 @@ function QuickDock:collectInfoPanelData(kind, metrics)
 end
 
 function QuickDock:createInfoPanelOverlay(data, metrics)
+    -- Always the side opposite the dock, so it can collide with a sibling
+    -- overlay sitting there even when the dock itself is on the other side.
+    local panel_side = self.current_dock_side == "left" and "right" or "left"
     return InfoPanel.createOverlay(
         self,
         metrics,
-        self.current_dock_side == "left" and "right" or "left",
+        panel_side,
         DOCK_MARGIN,
-        data
+        data,
+        self:getSiblingOverlayClearance(panel_side)
     )
 end
 
@@ -1189,9 +1229,10 @@ function QuickDock:showDock(page, side, info_panel_data)
             else
                 left = Screen:getWidth() - DOCK_MARGIN - dialog_size.w
             end
+            local bottom_margin = DOCK_MARGIN + self:getSiblingOverlayClearance(side)
             return Geom:new({
                 x = math_floor(left),
-                y = Screen:getHeight() - DOCK_MARGIN,
+                y = Screen:getHeight() - bottom_margin,
                 -- Giving the anchor the dialog width keeps x as the physical
                 -- left edge in both regular and mirrored UI layouts.
                 w = dialog_size.w,
