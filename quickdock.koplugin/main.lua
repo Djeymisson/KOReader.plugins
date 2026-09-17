@@ -224,7 +224,6 @@ local DEFAULT_ACTIONS = {
 }
 
 local ACTION_ICONS = {
-    [ACTION_HOME] = "book.opened",
     [ACTION_SEARCH] = "appbar.search",
     filemanager = "appbar.filebrowser",
     open_previous_document = "appbar.filebrowser",
