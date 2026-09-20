@@ -16,6 +16,7 @@ Each plugin is kept in its own `.koplugin/` folder and has a dedicated documenta
 | Quick Dock | v0.22.3 | `quickdock.koplugin/` | [quickdock.koplugin.md](./quickdock.koplugin.md) |
 | Image Browser | v0.2.7 | `imagebrowser.koplugin/` | [imagebrowser.koplugin.md](./imagebrowser.koplugin.md) |
 | Page Anchor | v1.3.2 | `pageanchor.koplugin/` | [pageanchor.koplugin.md](./pageanchor.koplugin.md) |
+| Dictionary Explorer | v1.0.0 | `dictionaryexplorer.koplugin/` | [dictionaryexplorer.koplugin.md](./dictionaryexplorer.koplugin.md) |
 
 Each `.koplugin/` folder contains the files required for KOReader to load the plugin, usually including at least:
 
@@ -105,6 +106,8 @@ new-plugin.koplugin.md
 ```
 
 The root-level `.md` file should explain the plugin's purpose, installation steps, configuration options, and known limitations.
+
+Tests, performance budgets and benchmarks live in [`tools/`](./tools/README.md), outside the plugin folders, so they are not part of a release.
 
 ## License
 
