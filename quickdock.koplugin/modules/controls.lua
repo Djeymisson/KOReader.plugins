@@ -310,6 +310,8 @@ end
 function QuickDock:getInfoPanelToggleDisplay()
     if self.current_info_panel_kind == "network" then
         return self:getIcon("network_info"), makeFallbackLabel(_("Network information"), "network_info")
+    elseif self.current_info_panel_kind == "stats" then
+        return self:getIcon("stats_info"), makeFallbackLabel(_("Book statistics"), "stats_info")
     end
     return self:getIcon("reading_info"), makeFallbackLabel(_("Reading information"), "reading_info")
 end
@@ -324,16 +326,20 @@ function QuickDock:makeInfoPanelToggleButton(width, dialog, metrics)
             return self:getInfoPanelToggleDisplay()
         end,
         callback = function()
-            local target = self.current_info_panel_kind == "network"
-                and "reading"
-                or "network"
-            self:switchInfoPanel(target)
+            self:switchInfoPanel(self:getNextInfoPanelKind())
         end,
         hold_callback = function()
-            local message = self.current_info_panel_kind == "network"
-                and _("Showing network information. Tap to show reading information.")
-                or _("Showing reading information. Tap to show network information.")
-            self:showButtonHelp(message)
+            local names = {
+                reading = _("reading information"),
+                stats = _("book statistics"),
+                network = _("network information"),
+            }
+            local next_kind = self:getNextInfoPanelKind()
+            self:showButtonHelp(T(
+                _("Showing %1. Tap to show %2."),
+                names[self.current_info_panel_kind] or names.reading,
+                names[next_kind] or names.reading
+            ))
         end,
     }, width, metrics)
     if icon then

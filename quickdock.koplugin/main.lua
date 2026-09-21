@@ -19,7 +19,7 @@ local function scaleMetric(value, factor, minimum)
     return math_max(minimum or 1, math_floor(value * factor + 0.5))
 end
 
-local PLUGIN_VERSION = "v0.22.3"
+local PLUGIN_VERSION = "v0.23.0"
 local SETTING_ACTIONS = "quickdock_actions"
 local SETTING_ACTION_CONTEXTS = "quickdock_action_contexts"
 local SETTING_AUTO_VISIBILITY = "quickdock_auto_visibility"
@@ -32,6 +32,7 @@ local SETTING_SHOW_FRONTLIGHT_SLIDER = "quickdock_show_frontlight_slider"
 local SETTING_SHOW_WARMTH_SLIDER = "quickdock_show_warmth_slider"
 local SETTING_SHOW_INFO_PANEL = "quickdock_show_info_panel"
 local SETTING_SHOW_NETWORK_INFO_PANEL = "quickdock_show_network_info_panel"
+local SETTING_SHOW_STATS_INFO_PANEL = "quickdock_show_stats_info_panel"
 local SETTING_SHOW_INFO_PANEL_COVER = "quickdock_show_info_panel_cover"
 local SETTING_INFO_PANEL_TEXT_ALIGNMENT = "quickdock_info_panel_text_alignment"
 local SETTING_DOCK_SIZE = "quickdock_dock_size"
@@ -41,6 +42,7 @@ local SETTING_CLOSE_TOGETHER = "quickdock_close_together"
 local SIDE_MODE_FIXED = "fixed"
 local SIDE_MODE_GESTURE = "gesture"
 
+local INFO_PANEL_KINDS = { "reading", "stats", "network" }
 local INFO_PANEL_TEXT_LEFT = "left"
 local INFO_PANEL_TEXT_CENTER = "center"
 local INFO_PANEL_TEXT_SCREEN_EDGE = "screen_edge"
@@ -244,6 +246,7 @@ local ACTION_ICONS = {
     toggle_wifi = "wifi",
     reading_info = "book.opened",
     network_info = "wifi",
+    stats_info = "stats",
     show_network_info = "wifi",
     show_frontlight_dialog = "frontlight",
     toggle_frontlight = "frontlight",
@@ -789,22 +792,59 @@ function QuickDock:setShowNetworkInfoPanel(enabled)
     )
 end
 
+function QuickDock:showStatsInfoPanel()
+    return G_reader_settings:readSetting(SETTING_SHOW_STATS_INFO_PANEL) == true
+end
+
+function QuickDock:setShowStatsInfoPanel(enabled)
+    G_reader_settings:saveSetting(
+        SETTING_SHOW_STATS_INFO_PANEL,
+        enabled and true or false
+    )
+end
+
+function QuickDock:isInfoPanelKindEnabled(kind)
+    if kind == "reading" then
+        return self:showReadingInfoPanel()
+    elseif kind == "stats" then
+        return self:showStatsInfoPanel()
+    elseif kind == "network" then
+        return self:showNetworkInfoPanel()
+    end
+    return false
+end
+
+-- Enabled panels in the order the switch button cycles through them.
+function QuickDock:getEnabledInfoPanelKinds()
+    local kinds = {}
+    for __, kind in ipairs(INFO_PANEL_KINDS) do
+        if self:isInfoPanelKindEnabled(kind) then
+            kinds[#kinds + 1] = kind
+        end
+    end
+    return kinds
+end
+
 function QuickDock:showInfoPanel()
-    return self:showReadingInfoPanel() or self:showNetworkInfoPanel()
+    return #self:getEnabledInfoPanelKinds() > 0
 end
 
 function QuickDock:getInfoPanelKind()
-    local reading = self:showReadingInfoPanel()
-    local network = self:showNetworkInfoPanel()
-    if self.current_info_panel_kind == "network" and network then
-        return "network"
-    elseif self.current_info_panel_kind == "reading" and reading then
-        return "reading"
-    elseif reading then
-        return "reading"
-    elseif network then
-        return "network"
+    local kinds = self:getEnabledInfoPanelKinds()
+    if self:isInfoPanelKindEnabled(self.current_info_panel_kind) then
+        return self.current_info_panel_kind
     end
+    return kinds[1]
+end
+
+function QuickDock:getNextInfoPanelKind()
+    local kinds = self:getEnabledInfoPanelKinds()
+    for index, kind in ipairs(kinds) do
+        if kind == self.current_info_panel_kind then
+            return kinds[index % #kinds + 1]
+        end
+    end
+    return kinds[1]
 end
 
 function QuickDock:showInfoPanelCover()
@@ -823,7 +863,7 @@ function QuickDock:getInfoPanelTextAlignment()
     if INFO_PANEL_TEXT_ALIGNMENTS[alignment] then
         return alignment
     end
-    return INFO_PANEL_TEXT_LEFT
+    return INFO_PANEL_TEXT_SCREEN_EDGE
 end
 
 function QuickDock:setInfoPanelTextAlignment(alignment)
@@ -831,13 +871,20 @@ function QuickDock:setInfoPanelTextAlignment(alignment)
         SETTING_INFO_PANEL_TEXT_ALIGNMENT,
         INFO_PANEL_TEXT_ALIGNMENTS[alignment]
             and alignment
-            or INFO_PANEL_TEXT_LEFT
+            or INFO_PANEL_TEXT_SCREEN_EDGE
     )
 end
 
 function QuickDock:collectInfoPanelData(kind, metrics)
     if kind == "network" then
         return InfoPanel.collectNetwork()
+    elseif kind == "stats" then
+        return InfoPanel.collectStats(
+            self,
+            metrics,
+            DOCK_MARGIN,
+            self:showInfoPanelCover()
+        )
     end
     return InfoPanel.collect(
         self,
@@ -862,7 +909,7 @@ function QuickDock:createInfoPanelOverlay(data, metrics)
 end
 
 function QuickDock:showInfoPanelToggleButton()
-    return self:showReadingInfoPanel() and self:showNetworkInfoPanel()
+    return #self:getEnabledInfoPanelKinds() > 1
 end
 
 function QuickDock:replaceInfoPanel(kind, metrics)
@@ -886,9 +933,7 @@ end
 function QuickDock:switchInfoPanel(kind)
     if
         not self.dialog
-        or (kind ~= "reading" and kind ~= "network")
-        or (kind == "reading" and not self:showReadingInfoPanel())
-        or (kind == "network" and not self:showNetworkInfoPanel())
+        or not self:isInfoPanelKindEnabled(kind)
     then
         return
     end

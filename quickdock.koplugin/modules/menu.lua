@@ -222,11 +222,13 @@ function QuickDock:getIconFilenamesMenu()
             _("Warmth control") .. "\n\nSVG: warmth.svg\nPNG: warmth.png"
         ),
         makeIconInfoItem(
-            _("Information panel switch") .. ": reading_info.svg / network_info.svg",
-            _("Uses a dedicated icon for the visible reading or network information panel."),
+            _("Information panel switch") .. ": reading_info.svg / stats.svg / network_info.svg",
+            _("Uses a dedicated icon for the visible reading, book statistics, or network information panel."),
             _("Information panel switch")
                 .. "\n\n" .. _("Reading information")
                 .. ": reading_info.svg / reading_info.png"
+                .. "\n" .. _("Book statistics")
+                .. ": stats.svg / stats.png"
                 .. "\n" .. _("Network information")
                 .. ": network_info.svg / network_info.png"
         ),
@@ -476,6 +478,12 @@ function QuickDock:getInformationPanelMenu()
             function(enabled) self:setShowReadingInfoPanel(enabled) end
         ),
         makeToggleOption(
+            _("Show book statistics"),
+            _("Shows the open book's reading time, remaining time, progress, daily average, reading speed, start date, and estimated end date, as recorded by KOReader's Statistics plugin."),
+            function() return self:showStatsInfoPanel() end,
+            function(enabled) self:setShowStatsInfoPanel(enabled) end
+        ),
+        makeToggleOption(
             _("Show network information"),
             _("Shows Wi-Fi state and the network details reported by KOReader in the information panel."),
             function() return self:showNetworkInfoPanel() end,
@@ -483,10 +491,10 @@ function QuickDock:getInformationPanelMenu()
         ),
         makeToggleOption(
             _("Show book cover at the top"),
-            _("Shows the open book's cover above the reading information. The thumbnail is loaded once and reused while the document remains open."),
+            _("Shows the open book's cover above the reading information and book statistics. The thumbnail is loaded once and reused while the document remains open."),
             function() return self:showInfoPanelCover() end,
             function(enabled) self:setShowInfoPanelCover(enabled) end,
-            function() return self:showReadingInfoPanel() end
+            function() return self:showReadingInfoPanel() or self:showStatsInfoPanel() end
         ),
         {
             text_func = function()

@@ -5,9 +5,12 @@ local Device = require("device")
 local Font = require("ui/font")
 local FrameContainer = require("ui/widget/container/framecontainer")
 local Geom = require("ui/geometry")
+local HorizontalGroup = require("ui/widget/horizontalgroup")
+local HorizontalSpan = require("ui/widget/horizontalspan")
 local ImageWidget = require("ui/widget/imagewidget")
 local LineWidget = require("ui/widget/linewidget")
 local NetworkMgr = require("ui/network/manager")
+local ProgressWidget = require("ui/widget/progresswidget")
 local RenderImage = require("ui/renderimage")
 local Size = require("ui/size")
 local TextBoxWidget = require("ui/widget/textboxwidget")
@@ -23,6 +26,8 @@ local Screen = Device.screen
 local math_floor = math.floor
 local math_max = math.max
 local math_min = math.min
+
+local STATS_FONT_SCALE = 0.85
 
 local InfoPanelOverlay = WidgetContainer:extend({
     modal = false,
@@ -358,6 +363,20 @@ local function getChapterData(ui, page, book_total)
     }
 end
 
+local function isStatisticsEnabled(statistics)
+    return statistics ~= nil
+        and statistics.settings ~= nil
+        and statistics.settings.is_enabled == true
+end
+
+local function getAveragePageTime(statistics)
+    local average = tonumber(statistics.avg_time)
+    if not average or average ~= average or average <= 0 then
+        return nil
+    end
+    return average
+end
+
 local function getStatisticsData(ui, book_left, chapter_left)
     local statistics = ui and ui.statistics
     if
@@ -381,10 +400,7 @@ local function getStatisticsData(ui, book_left, chapter_left)
         today_pages = nil
     end
 
-    local average = tonumber(statistics.avg_time)
-    if not average or average ~= average or average <= 0 then
-        average = nil
-    end
+    local average = getAveragePageTime(statistics)
 
     return {
         today_pages = today_pages,
@@ -441,6 +457,115 @@ local function collect(plugin, metrics, screen_margin, include_cover)
         data.document.total_label = safeCall(function()
             return ui.pagemap:getLastPageLabel(true)
         end, total)
+    end
+    return data
+end
+
+-- KOReader keeps the book's capped reading time and average page time in
+-- memory, but not when the book was started or on how many days it was read;
+-- only its Statistics database has that. One aggregate, read-only query over
+-- the current book, made only while the statistics panel is being collected.
+local function queryReadingSpan(statistics)
+    local id_book = tonumber(statistics.id_curr_book)
+    if not id_book then
+        return nil
+    end
+    local conn
+    local ok, first_open, days = pcall(function()
+        conn = require("lua-ljsqlite3/init").open(
+            require("datastorage"):getSettingsDir() .. "/statistics.sqlite3",
+            "ro"
+        )
+        return conn:rowexec(string.format([[
+            SELECT min(start_time),
+                   count(DISTINCT strftime('%%Y-%%m-%%d', start_time, 'unixepoch', 'localtime'))
+            FROM   page_stat_data
+            WHERE  id_book = %d;
+        ]], id_book))
+    end)
+    if conn then
+        pcall(conn.close, conn)
+    end
+    first_open = ok and tonumber(first_open) or nil
+    days = ok and tonumber(days) or nil
+    if not first_open or first_open <= 0 or not days or days < 1 then
+        return nil
+    end
+    return first_open, days
+end
+
+local function getBookStatistics(ui, page, total)
+    local statistics = ui and ui.statistics
+    local stats = { enabled = isStatisticsEnabled(statistics) }
+    if not stats.enabled then
+        return stats
+    end
+
+    -- Time and pages still waiting for KOReader's next database flush.
+    local pending_time = tonumber(statistics.mem_read_time) or 0
+    local read_time = (tonumber(statistics.book_read_time) or 0) + pending_time
+    local read_pages = (tonumber(statistics.book_read_pages) or 0)
+        + (tonumber(statistics.mem_read_pages) or 0)
+    if read_time > 0 then
+        stats.read_time = read_time
+    end
+
+    -- With no recorded pages KOReader seeds avg_time with a placeholder
+    -- (half of the maximum page time), which is not this reader's speed.
+    local average = read_pages > 0 and getAveragePageTime(statistics) or nil
+    if average then
+        stats.pages_per_minute = 60 / average
+        stats.time_left = (total - page + 1) * average
+    end
+
+    local first_open, days = queryReadingSpan(statistics)
+    if not first_open and pending_time > 0 then
+        first_open = tonumber(statistics.start_current_period)
+        days = 1
+    end
+    local now = os.time()
+    if first_open and first_open > 0 and first_open <= now then
+        stats.first_open = first_open
+        stats.days_ago = math_floor((now - first_open) / 86400)
+        if read_time > 0 then
+            stats.daily_average = read_time / days
+        end
+    end
+
+    if stats.time_left and stats.daily_average then
+        stats.finish_date = now + math.ceil(stats.time_left / stats.daily_average) * 86400
+    end
+    return stats
+end
+
+local function collectStats(plugin, metrics, screen_margin, include_cover)
+    local ui = plugin and plugin.ui or nil
+    local data = {
+        kind = "stats",
+        clock = datetime.secondsToHour(
+            os.time(),
+            G_reader_settings:isTrue("twelve_hour_clock")
+        ),
+        battery = getBatteryText(),
+    }
+    if not ui or not ui.document then
+        clearCoverCache(plugin)
+        return data
+    end
+
+    local page = getCurrentPage(ui)
+    local total = getPageCount(ui)
+    local props = ui.doc_props or {}
+    data.document = {
+        title = tostring(props.display_title or props.title or _("Document")),
+        author = primaryAuthor(props.authors or props.author),
+        percentage = math_floor(clamp(page / total * 100, 0, 100)),
+    }
+    data.book_stats = getBookStatistics(ui, page, total)
+    if include_cover then
+        data.cover = getCover(plugin, ui, metrics, screen_margin)
+    else
+        clearCoverCache(plugin)
     end
     return data
 end
@@ -525,8 +650,11 @@ local function build(plugin, metrics, parent, maximum_outer_width, data, panel_s
     local padding = math_max(Size.padding.small, math_floor(Screen:scaleBySize(8) * factor + 0.5))
     local gap = math_max(1, math_floor(Screen:scaleBySize(3) * factor + 0.5))
     local content_width = panelContentWidth(metrics, maximum_outer_width)
-    local title_face = Font:getFace("infofont", math_floor(16 * factor + 0.5))
-    local body_face = Font:getFace("smallinfofont", math_floor(13 * factor + 0.5))
+    -- The statistics panel packs more lines than the others, so all of its
+    -- fonts (including the shared header and footer) are scaled down together.
+    local font_factor = data and data.kind == "stats" and factor * STATS_FONT_SCALE or factor
+    local title_face = Font:getFace("infofont", math_floor(16 * font_factor + 0.5))
+    local body_face = Font:getFace("smallinfofont", math_floor(13 * font_factor + 0.5))
     local alignment_setting = plugin.getInfoPanelTextAlignment
         and plugin:getInfoPanelTextAlignment()
         or "left"
@@ -542,22 +670,8 @@ local function build(plugin, metrics, parent, maximum_outer_width, data, panel_s
     data = data or collect(plugin)
     local items = {}
 
-    if data.kind == "network" then
-        items[#items + 1] = makePanelText(_("Network information"), title_face, true)
-        addGap(items, gap)
-        items[#items + 1] = makePanelText(data.network.status, body_face, true)
-        if data.network.ssid and not data.network.details then
-            addGap(items, gap)
-            items[#items + 1] = makePanelText(
-                T(_("SSID: %1"), data.network.ssid),
-                body_face
-            )
-        end
-        if data.network.details then
-            addSeparator(items, content_width, gap)
-            items[#items + 1] = makePanelText(data.network.details, body_face)
-        end
-    elseif data.document then
+    -- Cover, title, and author: the top of both the reading and statistics panels.
+    local function addDocumentHeader()
         if data.cover and data.cover.bb then
             items[#items + 1] = CenterContainer:new({
                 dimen = Geom:new({ w = content_width, h = data.cover.height }),
@@ -581,6 +695,124 @@ local function build(plugin, metrics, parent, maximum_outer_width, data, panel_s
             )
         end
         addSeparator(items, content_width, gap)
+    end
+
+    if data.kind == "network" then
+        items[#items + 1] = makePanelText(_("Network information"), title_face, true)
+        addGap(items, gap)
+        items[#items + 1] = makePanelText(data.network.status, body_face, true)
+        if data.network.ssid and not data.network.details then
+            addGap(items, gap)
+            items[#items + 1] = makePanelText(
+                T(_("SSID: %1"), data.network.ssid),
+                body_face
+            )
+        end
+        if data.network.details then
+            addSeparator(items, content_width, gap)
+            items[#items + 1] = makePanelText(data.network.details, body_face)
+        end
+    elseif data.kind == "stats" then
+        if data.document then
+            addDocumentHeader()
+            local stats = data.book_stats
+            local half_gap = 2 * gap
+            local half_width = math_floor((content_width - half_gap) / 2)
+            local hero_face = Font:getFace("infofont", math_floor(28 * font_factor + 0.5))
+            local value_face = Font:getFace("infofont", math_floor(17 * font_factor + 0.5))
+            local caption_face = Font:getFace("smallinfofont", math_floor(11 * font_factor + 0.5))
+            local gray = Blitbuffer.COLOR_DARK_GRAY
+
+            -- A large value over a small gray caption. Missing values are
+            -- flagged with a gray, non-bold "N/A" rather than left out.
+            local function statCell(value, caption, width, face)
+                return VerticalGroup:new({
+                    makeText(value or _("N/A"), face or value_face, width, value ~= nil,
+                        value ~= nil and Blitbuffer.COLOR_BLACK or gray, text_alignment),
+                    makeText(caption, caption_face, width, false, gray, text_alignment),
+                })
+            end
+            local function statRow(left_value, left_caption, right_value, right_caption)
+                return HorizontalGroup:new({
+                    statCell(left_value, left_caption, half_width),
+                    HorizontalSpan:new({ width = half_gap }),
+                    statCell(right_value, right_caption, half_width),
+                })
+            end
+            local function duration(seconds)
+                return seconds and compactDuration(seconds) or nil
+            end
+
+            local progress_height = math_max(4, math_floor(Screen:scaleBySize(8) * factor + 0.5))
+            items[#items + 1] = statCell(
+                data.document.percentage .. "%", _("Progress"), content_width, hero_face
+            )
+            addGap(items, gap)
+            items[#items + 1] = ProgressWidget:new({
+                width = content_width,
+                height = progress_height,
+                percentage = data.document.percentage / 100,
+                margin_h = Screen:scaleBySize(1),
+                margin_v = Screen:scaleBySize(1),
+                radius = math_floor(progress_height / 2),
+                bordersize = Size.border.thin,
+                bgcolor = Blitbuffer.COLOR_WHITE,
+                fillcolor = Blitbuffer.COLOR_BLACK,
+            })
+            addSeparator(items, content_width, gap)
+
+            items[#items + 1] = statRow(
+                duration(stats.read_time), _("Time read"),
+                duration(stats.time_left), _("Time left")
+            )
+            addGap(items, 2 * gap)
+            items[#items + 1] = statRow(
+                duration(stats.daily_average), _("Daily average"),
+                stats.pages_per_minute and string.format("%.1f", stats.pages_per_minute) or nil,
+                _("Pages/min")
+            )
+            addSeparator(items, content_width, gap)
+
+            -- Not N_: ngettext does not read this plugin's own catalog.
+            local started_value, started_caption
+            if stats.first_open then
+                if stats.days_ago == 0 then
+                    started_value = _("Today")
+                elseif stats.days_ago == 1 then
+                    started_value = _("1 day ago")
+                else
+                    started_value = T(_("%1 days ago"), stats.days_ago)
+                end
+                started_caption = T(_("Started on %1"), datetime.secondsToDate(stats.first_open, true))
+            end
+            items[#items + 1] = statCell(started_value, started_caption or _("Started"), content_width)
+            addGap(items, 2 * gap)
+            items[#items + 1] = statCell(
+                stats.finish_date and datetime.secondsToDate(stats.finish_date, true) or nil,
+                _("Estimated end"),
+                content_width
+            )
+            if not stats.enabled then
+                addGap(items, gap)
+                items[#items + 1] = makePanelText(
+                    _("Enable KOReader's Statistics plugin to collect reading data."),
+                    body_face,
+                    false,
+                    Blitbuffer.COLOR_DARK_GRAY
+                )
+            end
+        else
+            items[#items + 1] = makePanelText(_("Book statistics"), title_face, true)
+            addGap(items, gap)
+            items[#items + 1] = makePanelText(
+                _("No document is currently open."),
+                body_face,
+                false,
+                Blitbuffer.COLOR_DARK_GRAY
+            )
+        end
+    elseif data.document then
+        addDocumentHeader()
 
         local page = data.document.page_label or data.document.page
         local total = data.document.total_label or data.document.total
@@ -698,6 +930,7 @@ return {
     build = build,
     clearCoverCache = clearCoverCache,
     collect = collect,
+    collectStats = collectStats,
     collectNetwork = collectNetwork,
     createOverlay = createOverlay,
     createStatusOverlay = createStatusOverlay,

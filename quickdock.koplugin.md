@@ -1,4 +1,4 @@
-# Quick Dock ![Version](https://img.shields.io/badge/version-v0.22.3-blue)
+# Quick Dock ![Version](https://img.shields.io/badge/version-v0.23.0-blue)
 
 Quick Dock adds a floating action dock with lighting controls and an optional information panel to KOReader. It is designed for touch devices and can be assigned to any gesture supported by KOReader.
 
@@ -19,7 +19,7 @@ Quick Dock adds a floating action dock with lighting controls and an optional in
 - Configurable closing method: one block at a time by default, or all blocks at once using the smallest encompassing rectangle and a non-flashing UI update.
 - Optional vertical frontlight slider in a separate column beside the action buttons, with a circular thumb, live brightness adjustment, and a dedicated frontlight toggle button.
 - Optional second lighting column for frontlight warmth on supported devices, using each device's native warmth range.
-- Optional information panel on the screen edge opposite the dock. It can show reading information, network information, or both; when both are enabled, one highlighted button immediately above the action dock switches its content without closing the dock.
+- Optional information panel on the screen edge opposite the dock. It can show reading information, book statistics, network information, or any combination; when two or more are enabled, one highlighted button immediately above the action dock cycles through them without closing the dock.
 - Holding a dock button shows its help text in the compact opposite-edge status block above the information panel instead of opening a modal message.
 - Night mode and Wi-Fi execute in place without destroying and rebuilding the dock.
 - Wi-Fi progress appears in a compact opposite-edge status panel instead of KOReader's informational popups during inline toggles.
@@ -78,9 +78,10 @@ The settings follow the same grouped layout as the other plugins in this reposit
     - `Maximum dock height: <current percentage>`: limits the action, brightness, and warmth columns to approximately `100%`, `60%`, or `33%` of the screen height. Buttons are paginated when they reach the selected limit; the exact height can vary slightly to preserve complete button rows and usable navigation controls. The default is `100%`.
   - `Information panel`:
     - `Show reading information`: shows or hides the Mini Receipt-inspired reading content. Enabled by default.
+    - `Show book statistics`: shows or hides the open book's statistics panel (see [Information panels](#information-panels)). Disabled by default.
     - `Show network information`: shows or hides Wi-Fi state and KOReader's interface, MAC, SSID, IP, gateway, and connectivity details. Disabled by default.
-    - `Show book cover at the top`: shows or hides the open document's cover above the reading information.
-    - `Panel text alignment`: aligns every line of either panel, including the clock and battery, to the `Left`, `Center`, or `Nearest screen edge`. The last option aligns left when the panel is on the left and right when it is on the right. `Left` is the default.
+    - `Show book cover at the top`: shows or hides the open document's cover above the reading information and the book statistics.
+    - `Panel text alignment`: aligns every line of either panel, including the clock and battery, to the `Left`, `Center`, or `Nearest screen edge`. The last option aligns left when the panel is on the left and right when it is on the right. `Nearest screen edge` is the default.
   - `Lighting controls`:
     - `Show frontlight control`: shows or hides the brightness slider and light toggle on devices with a frontlight.
     - `Show warmth control`: shows or hides the optional warmth slider on devices with natural-light support.
@@ -90,7 +91,7 @@ The settings follow the same grouped layout as the other plugins in this reposit
   - `Reset actions to defaults`: restores the initial actions and their order after confirmation without changing the other plugin settings.
   - `Reset behavior and actions`: additionally restores extra buttons, default actions, order, and visibility while preserving appearance.
 - `Gesture setup`: displays instructions for assigning the dock to a KOReader gesture.
-- `Version: v0.22.3`: shows the installed plugin version.
+- `Version: v0.23.0`: shows the installed plugin version.
 
 The side selector and visibility options keep their menu open after a change, making it easier to review related settings.
 
@@ -131,9 +132,23 @@ The open book's cover is also enabled by default and appears centered at the top
 
 While reading, the panel shows the document title and primary author, current/total page and book percentage, chapter title and progress, estimated time remaining for the book and chapter, today's pages and reading time, the clock, and battery state. It does not show remaining page counts. Stable page labels are used for the displayed book page numbers when enabled, while percentages and estimates continue to follow actual page turns.
 
-In the file browser or Bookshelf, no document-specific fields are invented: the reading panel shows the available daily reading summary, clock, and battery state. Reading-time fields appear only when KOReader's Statistics plugin is enabled and has data. The statistics API is queried once when the dock opens, and the same snapshot is reused across pagination and side changes; there is no timer, background polling, direct database access, or global ReaderUI/FileManager patch.
+In the file browser or Bookshelf, no document-specific fields are invented: the reading panel shows the available daily reading summary, clock, and battery state. Reading-time fields appear only when KOReader's Statistics plugin is enabled and has data. The statistics API is queried once when the dock opens, and the same snapshot is reused across pagination and side changes; there is no timer, background polling, or global ReaderUI/FileManager patch, and the reading and network panels never touch the database directly (the statistics panel's single read-only query is described below).
 
-The network panel displays the current Wi-Fi state and uses KOReader's native network-information provider for available interface, MAC, SSID, IPv4/IPv6, gateway, and gateway-test details. This data is collected when the network panel is opened or selected and refreshed from KOReader's connection events when the dock's Wi-Fi button changes state; there is no background polling. With both reading and network information enabled, one square button immediately above the action dock alternates between them without rebuilding or closing the dock. It uses the same dimensions, border, rounded corners, and press feedback as the frontlight toggle. Its icon indicates the panel currently visible: `reading_info.svg` (with the system open-book icon as fallback) for Reading, or `network_info.svg` for Network. Holding the button describes the current panel and the tap action.
+The network panel displays the current Wi-Fi state and uses KOReader's native network-information provider for available interface, MAC, SSID, IPv4/IPv6, gateway, and gateway-test details. This data is collected when the network panel is opened or selected and refreshed from KOReader's connection events when the dock's Wi-Fi button changes state; there is no background polling. With two or more panels enabled, one square button immediately above the action dock cycles through them (Reading, Statistics, Network, skipping disabled ones) without rebuilding or closing the dock. It uses the same dimensions, border, rounded corners, and press feedback as the frontlight toggle. Its icon indicates the panel currently visible: `reading_info.svg` (with the system open-book icon as fallback) for Reading, `stats.svg` for Statistics, or `network_info.svg` for Network. Holding the button describes the current panel and the tap action.
+
+### Book statistics panel
+
+Optional and disabled by default (`Appearance > Information panel > Show book statistics`). It shows the open book's cover (governed by the same `Show book cover at the top` option as the reading panel), title and primary author, then:
+
+- time read and estimated time left;
+- progress in percent;
+- average daily reading time for this book and reading speed in pages per minute;
+- how many days ago the book was started, with the start date below;
+- the estimated end date.
+
+Everything comes from KOReader's Statistics plugin, using the same definitions as its own book statistics screen: the reading time and average page time are read from the values it already keeps in memory (including pages not yet flushed to its database), the daily average is the reading time divided by the number of distinct days with reading, and the end date is today plus the days the remaining time would take at that daily average. The start date and the number of reading days are the only values KOReader does not keep in memory, so they come from one read-only aggregate query over the current book, made only when this panel is collected. Nothing is written, cached, or polled.
+
+Any value KOReader cannot supply is shown as `N/A` instead of being invented: when the Statistics plugin is disabled (a note says so), when the book has no recorded reading yet (KOReader's placeholder average page time is ignored), or when no document is open.
 
 ## Inline actions and Wi-Fi status
 
@@ -219,7 +234,7 @@ Quick Dock follows KOReader's active interface language. Plugin-specific message
 - `main.lua`: plugin lifecycle, saved state, dock sizing, pagination, information-panel coordination, and action dispatch.
 - `modules/controls.lua`: action, context, pagination, side-switch, close, information-panel, frontlight, and warmth control factories.
 - `modules/widgets.lua`: low-level slider and button widget classes, fixed positioning, and multi-column layout.
-- `modules/info_panel.lua`: safe collection and opposite-edge rendering of reading and network details, covers, statistics, clock, battery, and transient status panels.
+- `modules/info_panel.lua`: safe collection and opposite-edge rendering of reading, book statistics, and network details, covers, statistics, clock, battery, and transient status panels.
 - `modules/inline_actions.lua`: in-place night-mode and Wi-Fi execution, including Wi-Fi progress redirection and timeout handling.
 - `modules/context.lua`: reader, file-browser, and optional Bookshelf integration.
 - `modules/icons.lua`: custom/system icon resolution, stateful icons, and safe shared IconWidget patching.
@@ -236,4 +251,4 @@ Extract `quickdock.koplugin` into KOReader's `plugins` directory and restart KOR
 
 ## Version
 
-v0.22.3
+v0.23.0
