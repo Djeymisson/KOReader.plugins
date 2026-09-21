@@ -240,6 +240,7 @@ return function(ctx)
 			subtitle_callback = function()
 				return self:showWikipediaArticleMenu(state)
 			end,
+			subtitle_hint = _("Choose which article to show"),
 			html_body = '<div class="lp-title">' .. plainTextToHtml(title) .. "</div>" .. plainTextToHtml(extract),
 			css = FALLBACK_CSS,
 		}
@@ -279,6 +280,7 @@ return function(ctx)
 		return {
 			{
 				spec = { text = tostring((state and state.wikipedia_lang) or self:getWikipediaLang()):upper() },
+				hint = _("Choose the Wikipedia language"),
 				weight = 1,
 				callback = function()
 					return self:showWikipediaLanguageMenu(state)
@@ -292,6 +294,7 @@ return function(ctx)
 		return {
 			{
 				spec = { text = tostring((state and state.wikipedia_lang) or self:getWikipediaLang()):upper() },
+				hint = _("Choose the Wikipedia language"),
 				weight = 0.8,
 				callback = function()
 					return self:showWikipediaLanguageMenu(state)
@@ -299,6 +302,7 @@ return function(ctx)
 			},
 			{
 				spec = { text = label or _("Load") },
+				hint = _("Query Wikipedia"),
 				weight = 1.6,
 				callback = function()
 					return self:requestWikipediaLoad(state)
@@ -312,6 +316,7 @@ return function(ctx)
 		return {
 			{
 				spec = { text = tostring((state and state.wikipedia_lang) or self:getWikipediaLang()):upper() },
+				hint = _("Choose the Wikipedia language"),
 				weight = 0.8,
 				callback = function()
 					return self:showWikipediaLanguageMenu(state)
@@ -319,6 +324,7 @@ return function(ctx)
 			},
 			{
 				spec = self:getLoadingButtonSpec(),
+				hint = _("Loading…"),
 				weight = 1.6,
 			},
 		}
@@ -359,6 +365,7 @@ return function(ctx)
 		local buttons = {
 			{
 				spec = { text = tostring(state.wikipedia_lang or self:getWikipediaLang()):upper() },
+				hint = _("Choose the Wikipedia language"),
 				weight = 0.9,
 				callback = function()
 					return self:showWikipediaLanguageMenu(state)
@@ -369,6 +376,7 @@ return function(ctx)
 		if count > 1 then
 			buttons[#buttons + 1] = {
 				spec = { icon = ICON_PREVIOUS },
+				hint = _("Previous article"),
 				weight = 0.85,
 				callback = function()
 					return self:switchWikipediaResult((state.wikipedia_index or 1) - 1)
@@ -379,11 +387,13 @@ return function(ctx)
 					text = string.format("%d / %d", state.wikipedia_index or 1, count),
 					bold = false,
 				},
+				hint = string.format(_("Article %d of %d"), state.wikipedia_index or 1, count),
 				weight = 0.8,
 				separator_before = false,
 			}
 			buttons[#buttons + 1] = {
 				spec = { icon = ICON_NEXT },
+				hint = _("Next article"),
 				weight = 0.85,
 				separator_before = false,
 				callback = function()
@@ -395,6 +405,7 @@ return function(ctx)
 		buttons[#buttons + 1] = {
 			spec = full_article_icon and { icon_file = full_article_icon }
 				or { text = C_("Wikipedia", "Full article") },
+			hint = _("Open the full Wikipedia article"),
 			weight = full_article_icon and 0.85 or 1.75,
 			callback = function()
 				return self:openFullWikipediaArticleFromState(state)
@@ -403,6 +414,7 @@ return function(ctx)
 
 		buttons[#buttons + 1] = {
 			spec = { plugin_icon = ICON_DETAILS, icon = ICON_DETAILS_FALLBACK },
+			hint = _("Open KOReader's original Wikipedia widget"),
 			weight = 0.85,
 			callback = function()
 				return self:openOriginalWikipediaFromState(state)

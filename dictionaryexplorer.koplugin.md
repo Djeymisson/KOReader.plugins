@@ -70,6 +70,10 @@ You don't need to look a word up in a book first: the dictionary can be opened s
 - As a gesture, profile action or Quick Dock button: the same action is registered with KOReader's Dispatcher as **Dictionary Explorer: open at a word**, under **General** in the action lists. Assign it in **Settings > Taps and gestures > Gesture manager** (or in a profile), or pick it in Quick Dock's action picker, like any other KOReader action. Quick Dock shows a two-letter abbreviation for it unless you give it a custom icon in Quick Dock's settings.
 - Which dictionary opens is set in **Tools > Dictionary Explorer > Starting dictionary**: **Automatic**, the default, uses the first dictionary that can be opened in KOReader's own dictionary order (the order and the enabled state you set in KOReader's dictionary settings), or you can pick one of the dictionaries that can be opened. A dictionary that is no longer installed falls back to Automatic.
 
+## Use from other plugins
+
+Other plugins can open the viewer at a word through the plugin object, `ui.dictionaryexplorer`: `canOpen(dictionary_name)` says whether a dictionary can be opened, and `openWord(dictionary_name, word, definition)` opens it at the word (`definition` is optional and only picks between entries with the same headword). Lookup Preview uses this for its **Go to word** button.
+
 ## Settings
 
 Open the top menu and go to **Tools > Dictionary Explorer**:

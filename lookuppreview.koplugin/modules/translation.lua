@@ -148,6 +148,7 @@ return function(ctx)
 			subtitle_callback = function()
 				return self:showTargetLanguageMenu(state)
 			end,
+			subtitle_hint = _("Choose the language to translate into"),
 			html_body = table.concat(parts, "\n"),
 			css = FALLBACK_CSS,
 		}
@@ -164,6 +165,7 @@ return function(ctx)
 		if self.clipboard_available and self:showTranslationCopyButton() then
 			buttons[#buttons + 1] = {
 				spec = { plugin_icon = ICON_COPY, text = _("Copy") },
+				hint = _("Copy the translation to the clipboard"),
 				callback = function()
 					return self:copyMainTranslation(text_main)
 				end,
@@ -173,6 +175,7 @@ return function(ctx)
 		if self:showTranslationNoteButton() then
 			buttons[#buttons + 1] = {
 				spec = { plugin_icon = ICON_ADD_NOTE, text = _("Note") },
+				hint = _("Save the translation as a note on the highlight"),
 				callback = function()
 					return self:saveMainTranslationToNote(text_main)
 				end,
@@ -181,6 +184,7 @@ return function(ctx)
 
 		buttons[#buttons + 1] = {
 			spec = { plugin_icon = ICON_DETAILS, icon = ICON_DETAILS_FALLBACK },
+			hint = _("Open KOReader's original translator view"),
 			callback = function()
 				return self:openOriginalTranslationFromState(state)
 			end,
@@ -193,6 +197,7 @@ return function(ctx)
 		return {
 			{
 				spec = { text = label or _("Load") },
+				hint = _("Query the translation service"),
 				callback = function()
 					return self:requestTranslationLoad(state)
 				end,
@@ -204,6 +209,7 @@ return function(ctx)
 		return {
 			{
 				spec = self:getLoadingButtonSpec(),
+				hint = _("Loading…"),
 			},
 		}
 	end

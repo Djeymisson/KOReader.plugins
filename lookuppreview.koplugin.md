@@ -1,4 +1,4 @@
-# KOReader Lookup Preview ![Version](https://img.shields.io/badge/version-v1.0.21-blue)
+# KOReader Lookup Preview ![Version](https://img.shields.io/badge/version-v1.0.22-blue)
 
 **Lookup Preview** is a KOReader reader plugin that changes the lookup flow for selected text. Instead of opening each native lookup window immediately, it first shows a compact floating carousel with preview cards for **Dictionary**, **Translate**, and **Wikipedia**.
 
@@ -25,6 +25,7 @@ The plugin metadata registers it as `lookuppreview` with the display name **Look
 - In tabbed mode, uses a square upper-left junction while Dictionary is active, restoring the rounded card corner and extending the Dictionary tab border to meet it on the other tabs.
 - Avoids repeating the Translate and Wikipedia tab labels as card titles in tabbed mode, promoting their useful language and result controls to title styling.
 - Uses matching dithered shadows along the right and bottom edges of each card, following the card radius in rounded mode while preserving square shadows in square mode.
+- Holding any button, the header's card selector button, a clickable subtitle, or a side tab shows a short note saying what it does. The note appears centred on the card, just above it (or below when there is no room), and stays for five seconds after the finger is lifted; a tap or swipe dismisses it sooner.
 - Adds a version entry in the plugin settings menu.
 
 ## Dictionary card
@@ -32,7 +33,7 @@ The plugin metadata registers it as `lookuppreview` with the display name **Look
 - Shows the selected word or text and the current dictionary name.
 - Displays the dictionary definition inside a scrollable preview area.
 - Supports multiple dictionary results.
-- Shows the current dictionary result count in regular text between the Previous and Next footer arrows when more than one result is available, without dividers inside that navigation group. Highlight comes before the navigation group, followed by Search and Details.
+- Shows the current dictionary result count in regular text between the Previous and Next footer arrows when more than one result is available, without dividers inside that navigation group. Highlight comes before the navigation group, followed by Search and the buttons that open the full dictionary (see below).
 - Makes the subtitle clickable to open the dictionary result list.
 - Lists dictionary results as:
 
@@ -44,7 +45,8 @@ found word · dictionary name
   - **Highlight**: creates a highlight from the current selection when available;
   - **Previous / result count / Next**: switches between dictionary results when multiple results are available;
   - **Search**: opens KOReader's full-text search for the selected text;
-  - **Details**: opens KOReader's original dictionary popup.
+  - **Details**: opens KOReader's original dictionary popup;
+  - **Go to word** (`go_to_dict.svg`): when the [Dictionary Explorer](./dictionaryexplorer.koplugin.md) plugin is installed, opens it at the word of the result being shown. Which of these two buttons appear is set in the plugin settings (both by default).
 - Keeps KOReader's original dictionary result order when opening the native dictionary view from the selected preview result.
 
 ## Translation card
@@ -90,10 +92,11 @@ lookuppreview.koplugin/
 ├── icons/
 │   ├── add_note.svg
 │   ├── copy.svg
+│   ├── go_to_dict.svg
 │   ├── highlight.svg
 │   ├── loading.svg
 │   ├── menu.svg
-│   ├── read_more.svg
+│   ├── open_popup.svg
 │   ├── search.svg
 │   └── wikipedia.svg
 └── modules/
@@ -118,14 +121,15 @@ Expected primary filenames:
 | Full-text search | `search.svg` | `search.png` |
 | Previous result | `chevron.left.svg` | `chevron.left.png` |
 | Next result | `chevron.right.svg` | `chevron.right.png` |
-| Open native details | `read_more.svg` | `read_more.png` |
+| Open native details | `open_popup.svg` | `open_popup.png` |
+| Go to word in Dictionary Explorer | `go_to_dict.svg` | `go_to_dict.png` |
 | Copy translation | `copy.svg` | `copy.png` |
 | Add translation note | `add_note.svg` | `add_note.png` |
 | Full Wikipedia article | `wikipedia.svg` | `wikipedia.png` |
 | Loading feedback | `loading.svg` | `loading.png` |
 | Card selector | `menu.svg` | `menu.png` |
 
-The Highlight action also accepts `lookuppreview.highlight` and `dictionarypreview.highlight`; search also accepts `appbar.search`; and Full Wikipedia article also accepts `lookuppreview.wikipedia` and `dictionarypreview.wikipedia`, each with an `.svg` or `.png` extension. If `read_more` is absent, Open native details falls back to KOReader's `chevron.up` icon. If `menu` is absent, the card selector falls back to KOReader's `appbar.menu` icon. Highlight, Copy translation, Add translation note, and Full Wikipedia article fall back to their text labels when their local icons are absent.
+The Highlight action also accepts `lookuppreview.highlight` and `dictionarypreview.highlight`; search also accepts `appbar.search`; and Full Wikipedia article also accepts `lookuppreview.wikipedia` and `dictionarypreview.wikipedia`, each with an `.svg` or `.png` extension. `open_popup` was called `read_more` in earlier versions, and a local `read_more.svg` or `read_more.png` is still accepted. If neither is present, Open native details falls back to KOReader's `chevron.up` icon. If `menu` is absent, the card selector falls back to KOReader's `appbar.menu` icon. Highlight, Go to word, Copy translation, Add translation note, and Full Wikipedia article fall back to their text labels when their local icons are absent.
 
 The same list is available on the device under **Lookup preview → Appearance → Custom icon filenames**.
 
@@ -152,6 +156,7 @@ The menu contains:
 - **Content**:
   - **Online card loading**: switches between automatic and manual online loading;
   - **Dictionary HTML**: selects formatted or fast/raw dictionary rendering;
+  - **Dictionary buttons**: chooses which buttons open the full dictionary from the dictionary card: **KOReader popup only**, **Dictionary Explorer only**, or **Both** (the default). The Dictionary Explorer choices need that plugin (v2026.07 or newer KOReader) and are disabled without it;
   - **Wikipedia language**: selects the language used by the Wikipedia card;
   - **Translation**:
     - **Target language**: selects the target language used by the Translate card;
@@ -209,6 +214,9 @@ Translate and Wikipedia are loaded lazily. This means the plugin does not query 
 | Next | Moves to the next dictionary result |
 | Search | Opens KOReader full-text search for the selected text |
 | Details | Opens KOReader's original dictionary popup |
+| Go to word | Opens Dictionary Explorer at the word of the shown result, in that result's dictionary |
+
+Details and Go to word are the two buttons chosen by **Dictionary buttons** in the settings. Go to word is shown only when Dictionary Explorer is installed and can open the result's dictionary (StarDict with plain text, HTML or XDXF entries). When it can't, for example for a dictionary in another format, the Details button is shown instead even if the setting says Dictionary Explorer only, so there is always a way to the full entry.
 
 ### Translation buttons
 
@@ -235,6 +243,7 @@ The **Copy** and **Note** buttons can be shown or hidden from the plugin setting
 
 | Gesture | Action |
 |---|---|
+| Long-press a button, the card selector button, a clickable subtitle, or a side tab | Shows a short note saying what it does, next to the card, for a few seconds |
 | Swipe left | Move to the next card |
 | Swipe right | Move to the previous card |
 | Vertical scroll inside card content | Scrolls the current card content |
@@ -280,6 +289,7 @@ The plugin stores settings through KOReader's reader settings system.
 |---|---|
 | `lookuppreview_enabled` | Enables or disables Lookup Preview |
 | `lookuppreview_wikipedia_lang` | Stores the language used by the Wikipedia card |
+| `lookuppreview_dictionary_details_buttons` | Which buttons open the full dictionary: `koreader`, `explorer` or `both` (default) |
 | `lookuppreview_card_rounded` | Enables or disables rounded card corners |
 | `lookuppreview_card_shadows` | Enables or disables card shadows |
 | `lookuppreview_translation_show_source` | Shows or hides the original source text in the Translate card |

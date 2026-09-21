@@ -16,6 +16,7 @@ CenterContainer = require("ui/widget/container/centercontainer")
 Font = require("ui/font")
 IconWidget = require("ui/widget/iconwidget")
 TextWidget = require("ui/widget/textwidget")
+TextBoxWidget = require("ui/widget/textboxwidget")
 FrameContainer = require("ui/widget/container/framecontainer")
 Geom = require("ui/geometry")
 GestureRange = require("ui/gesturerange")
@@ -89,6 +90,7 @@ SUBTITLE_FACE = getUIFontFace({
 	"Noto Sans Italic",
 	"cfonti",
 }, SUBTITLE_FONT_SIZE, "cfont")
+HINT_FACE = Font:getFace("x_smallinfofont")
 HEADER_MENU_FACE = Font:getFace("cfont", HEADER_MENU_FONT_SIZE)
 HEADER_BUTTON_FACE = Font:getFace("cfont", HEADER_BUTTON_FONT_SIZE)
 DICTIONARY_BUTTON_FACE = Font:getFace("cfont", DICTIONARY_BUTTON_FONT_SIZE)
@@ -165,6 +167,7 @@ SETTING_ONLINE_CARD_LOAD_MODE = "lookuppreview_online_card_load_mode"
 SETTING_DICTIONARY_HTML_MODE = "lookuppreview_dictionary_html_mode"
 SETTING_WIKI_LANG = "lookuppreview_wikipedia_lang"
 SETTING_LEFT_ACTION = "lookuppreview_dictionary_left_action"
+SETTING_DICTIONARY_DETAILS_BUTTONS = "lookuppreview_dictionary_details_buttons"
 SETTING_TRANSLATION_SHOW_SOURCE = "lookuppreview_translation_show_source"
 SETTING_TRANSLATION_SHOW_COPY_BUTTON = "lookuppreview_translation_show_copy_button"
 SETTING_TRANSLATION_SHOW_NOTE_BUTTON = "lookuppreview_translation_show_note_button"
@@ -184,12 +187,25 @@ for _, action in ipairs(LEFT_ACTIONS) do
 	LEFT_ACTION_BY_ID[action.id] = action
 end
 
+-- Which buttons open the full dictionary from the dictionary card: KOReader's
+-- original popup, Dictionary Explorer's "go to word", or both.
+DETAILS_BUTTONS_BOTH = "both"
+DETAILS_BUTTONS_KOREADER = "koreader"
+DETAILS_BUTTONS_EXPLORER = "explorer"
+DEFAULT_DETAILS_BUTTONS = DETAILS_BUTTONS_BOTH
+
+-- How long the hint shown by holding a button stays on screen, and how far it
+-- is from the card it is about.
+BUTTON_HINT_TIMEOUT = 5
+BUTTON_HINT_GAP = scaleBySize(6)
+
 PLUGIN_ICON_EXTENSIONS = { ".svg", ".png" }
 ICON_SEARCH = "appbar.search"
 ICON_PREVIOUS = "chevron.left"
 ICON_NEXT = "chevron.right"
-ICON_DETAILS = "read_more"
+ICON_DETAILS = "open_popup"
 ICON_DETAILS_FALLBACK = "chevron.up"
+ICON_GO_TO_DICT = "go_to_dict"
 ICON_COPY = "copy"
 ICON_ADD_NOTE = "add_note"
 ICON_WIKIPEDIA = "wikipedia"
@@ -220,7 +236,12 @@ PLUGIN_ICON_DEFINITIONS = {
 	{
 		id = ICON_DETAILS,
 		label = _("Open native details"),
-		basenames = { "read_more" },
+		basenames = { "open_popup", "read_more" },
+	},
+	{
+		id = ICON_GO_TO_DICT,
+		label = _("Go to word in Dictionary Explorer"),
+		basenames = { "go_to_dict" },
 	},
 	{
 		id = ICON_COPY,

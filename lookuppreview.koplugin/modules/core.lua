@@ -37,6 +37,16 @@ return function(ctx)
 		return LEFT_ACTION_BY_ID[action] and action or DEFAULT_LEFT_ACTION
 	end
 
+	local DETAILS_BUTTONS_MODES = {
+		[DETAILS_BUTTONS_BOTH] = true,
+		[DETAILS_BUTTONS_KOREADER] = true,
+		[DETAILS_BUTTONS_EXPLORER] = true,
+	}
+
+	local function normalizeDetailsButtons(mode)
+		return DETAILS_BUTTONS_MODES[mode] and mode or DEFAULT_DETAILS_BUTTONS
+	end
+
 	local function applyCardStyleMode(plugin, rounded)
 		plugin:setRoundedCards(rounded)
 		return plugin:refreshVisibleCards()
@@ -226,6 +236,51 @@ return function(ctx)
 			},
 		}
 
+		local details_buttons_item = {
+			text_func = function()
+				local labels = {
+					[DETAILS_BUTTONS_BOTH] = _("Both"),
+					[DETAILS_BUTTONS_KOREADER] = _("KOReader popup"),
+					[DETAILS_BUTTONS_EXPLORER] = _("Dictionary Explorer"),
+				}
+				return string.format("%s: %s", _("Dictionary buttons"), labels[self:getDetailsButtonsMode()])
+			end,
+			help_text = _(
+				"Choose which buttons open the full dictionary from the dictionary card: KOReader's original popup, the Dictionary Explorer at the word, or both. Dictionary Explorer must be installed; without it, or for a dictionary it can't open, the KOReader popup button is shown."
+			),
+			sub_item_table_func = function()
+				local items = {}
+				local options = {
+					{ mode = DETAILS_BUTTONS_KOREADER, label = _("KOReader popup only") },
+					{ mode = DETAILS_BUTTONS_EXPLORER, label = _("Dictionary Explorer only"), needs_explorer = true },
+					{ mode = DETAILS_BUTTONS_BOTH, label = _("Both"), needs_explorer = true },
+				}
+				for _index, option in ipairs(options) do
+					items[#items + 1] = {
+						text = option.label,
+						radio = true,
+						enabled_func = function()
+							return not option.needs_explorer or self:getDictionaryExplorer() ~= nil
+						end,
+						checked_func = function()
+							return self:getDetailsButtonsMode() == option.mode
+						end,
+						callback = function()
+							self:setDetailsButtonsMode(option.mode)
+							self:refreshCurrentPage(PAGE_DICTIONARY)
+						end,
+					}
+				end
+				if not self:getDictionaryExplorer() then
+					items[#items + 1] = {
+						text = _("Dictionary Explorer is not installed or is too old."),
+						enabled = false,
+					}
+				end
+				return items
+			end,
+		}
+
 		local translation_item = {
 			text = _("Translation"),
 			help_text = _("Choose the target language, whether the original text is shown, and which card buttons appear."),
@@ -337,6 +392,7 @@ return function(ctx)
 					sub_item_table = {
 						online_loading_item,
 						dictionary_html_item,
+						details_buttons_item,
 						{
 							text_func = function()
 								return string.format("%s: %s", _("Wikipedia language"), self:getWikipediaLang())
@@ -494,6 +550,24 @@ return function(ctx)
 
 	function LookupPreview:setLeftButtonAction(action)
 		G_reader_settings:saveSetting(SETTING_LEFT_ACTION, normalizeLeftAction(action))
+	end
+
+	-- Dictionary Explorer, when installed and recent enough to be opened from
+	-- another plugin.
+	function LookupPreview:getDictionaryExplorer()
+		local explorer = self.ui and self.ui.dictionaryexplorer
+		if explorer and type(explorer.openWord) == "function" and type(explorer.canOpen) == "function" then
+			return explorer
+		end
+		return nil
+	end
+
+	function LookupPreview:getDetailsButtonsMode()
+		return normalizeDetailsButtons(G_reader_settings:readSetting(SETTING_DICTIONARY_DETAILS_BUTTONS))
+	end
+
+	function LookupPreview:setDetailsButtonsMode(mode)
+		G_reader_settings:saveSetting(SETTING_DICTIONARY_DETAILS_BUTTONS, normalizeDetailsButtons(mode))
 	end
 
 	function LookupPreview:getPluginIconFile(icon_id)

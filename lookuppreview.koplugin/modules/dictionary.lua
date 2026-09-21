@@ -168,6 +168,14 @@ return function(ctx)
 		end
 	end
 
+	-- The result the dictionary card is showing.
+	local function getCurrentResult(state)
+		local preview_count = getPreviewCount(state)
+		local preview_index = normalizeResultIndex(state.dictionary_index or 1, preview_count)
+		local preview_entry = getPreviewEntry(state, preview_index)
+		return preview_entry and preview_entry.result or (state.results and state.results[1]) or {}
+	end
+
 	function LookupPreview:buildDictionaryPayload(word, result, _result_index, result_count)
 		result = result or {}
 
@@ -185,6 +193,25 @@ return function(ctx)
 		}
 	end
 
+	-- Which of the buttons that open the full dictionary to show for a result:
+	-- KOReader's popup, Dictionary Explorer at the word, or both, following the
+	-- setting. Dictionary Explorer only counts when it is installed and can open
+	-- the result's dictionary; the KOReader popup is shown instead when it can't,
+	-- so there is always a way to the full entry.
+	function LookupPreview:getDetailsButtonKinds(result)
+		local mode = self:getDetailsButtonsMode()
+		local explorer = self:getDictionaryExplorer()
+		local can_explore = false
+		if explorer and result and not result.no_result and result.dict then
+			local ok, openable = pcall(explorer.canOpen, explorer, result.dict)
+			can_explore = ok and openable and true or false
+		end
+
+		local show_explorer = can_explore and mode ~= DETAILS_BUTTONS_KOREADER
+		local show_koreader = mode ~= DETAILS_BUTTONS_EXPLORER or not show_explorer
+		return show_koreader, show_explorer
+	end
+
 	function LookupPreview:buildDictionaryButtons(state, search_text)
 		if not state then
 			return nil
@@ -195,6 +222,7 @@ return function(ctx)
 		local button_specs = {
 			{
 				spec = self:getLeftButtonSpec(LEFT_ACTION_HIGHLIGHT),
+				hint = _("Highlight the selected text"),
 				callback = function()
 					self:closeCurrentPopup(true)
 					self.current_state = nil
@@ -204,22 +232,26 @@ return function(ctx)
 		}
 
 		if state.preview_count and state.preview_count > 1 then
+			local current_index = state.dictionary_index or 1
 			button_specs[#button_specs + 1] = {
 				spec = { icon = ICON_PREVIOUS },
+				hint = _("Previous dictionary result"),
 				callback = function()
 					return self:switchDictionaryResult((state.dictionary_index or 1) - 1)
 				end,
 			}
 			button_specs[#button_specs + 1] = {
 				spec = {
-					text = string.format("%d / %d", state.dictionary_index or 1, state.preview_count),
+					text = string.format("%d / %d", current_index, state.preview_count),
 					bold = false,
 				},
+				hint = string.format(_("Dictionary result %d of %d"), current_index, state.preview_count),
 				weight = 0.8,
 				separator_before = false,
 			}
 			button_specs[#button_specs + 1] = {
 				spec = { icon = ICON_NEXT },
+				hint = _("Next dictionary result"),
 				separator_before = false,
 				callback = function()
 					return self:switchDictionaryResult((state.dictionary_index or 1) + 1)
@@ -229,18 +261,33 @@ return function(ctx)
 
 		button_specs[#button_specs + 1] = {
 			spec = self:getLeftButtonSpec(LEFT_ACTION_SEARCH_BOOK),
+			hint = _("Search the selected text in the book"),
 			callback = function()
 				closePreviewBeforeExternalAction(self, state)
 				return self:showSearchDialog(search_text)
 			end,
 		}
 
-		button_specs[#button_specs + 1] = {
-			spec = { plugin_icon = ICON_DETAILS, icon = ICON_DETAILS_FALLBACK },
-			callback = function()
-				return self:openOriginalDictionaryFromState(state)
-			end,
-		}
+		local show_koreader, show_explorer = self:getDetailsButtonKinds(getCurrentResult(state))
+		if show_explorer then
+			button_specs[#button_specs + 1] = {
+				spec = { plugin_icon = ICON_GO_TO_DICT, text = _("Go to word") },
+				hint = _("Go to this word in the dictionary (Dictionary Explorer)"),
+				callback = function()
+					return self:openDictionaryExplorerFromState(state)
+				end,
+			}
+		end
+
+		if show_koreader then
+			button_specs[#button_specs + 1] = {
+				spec = { plugin_icon = ICON_DETAILS, icon = ICON_DETAILS_FALLBACK },
+				hint = _("Open KOReader's original dictionary popup"),
+				callback = function()
+					return self:openOriginalDictionaryFromState(state)
+				end,
+			}
+		end
 
 		return button_specs
 	end
@@ -370,5 +417,24 @@ return function(ctx)
 			state.link,
 			state.dict_close_callback
 		)
+	end
+
+	-- Opens Dictionary Explorer at the word of the result being shown, like the
+	-- "Go to dictionary" button of KOReader's own popup does.
+	function LookupPreview:openDictionaryExplorerFromState(state)
+		state = state or self.current_state
+		local explorer = self:getDictionaryExplorer()
+		if not (state and explorer) then
+			return true
+		end
+
+		local result = getCurrentResult(state)
+		local word = getFoundWord(self, state, result)
+		local dict_name = result.dict
+		local definition = result.definition
+
+		closePreviewBeforeExternalAction(self, state)
+		explorer:openWord(dict_name, word, definition)
+		return true
 	end
 end

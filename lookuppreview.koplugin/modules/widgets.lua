@@ -20,6 +20,143 @@ return function(ctx)
 		}
 	end
 
+	local function holdGesture(dimen)
+		return {
+			GestureRange:new({
+				ges = "hold",
+				range = dimen,
+			}),
+		}
+	end
+
+	-- The note shown by holding a button, saying what it does. It sits next to
+	-- the card (above it, or below when there is no room above) and stays for a
+	-- few seconds after the finger is lifted. It is a toast, so it never takes
+	-- the input meant for the card, but unlike a Notification it is not closed by
+	-- the release of the hold: only by a tap, a swipe, a key, or its timeout.
+	local ButtonHint = InputContainer:extend({
+		text = nil,
+		anchor = nil, -- what the hint is about: the button's area (only used for the height when there is no room next to the card)
+		bounds = nil, -- the card's area, which the hint is centred on
+		timeout = BUTTON_HINT_TIMEOUT,
+		toast = true,
+	})
+
+	function ButtonHint:init()
+		local margin = math.max(Size.margin.default, Screen:scaleBySize(8)) -- from the screen edge
+		local padding = Size.padding.default
+		local screen_width = Screen:getWidth()
+		local screen_height = Screen:getHeight()
+		local max_width = screen_width - 2 * (margin + padding)
+
+		local label = TextWidget:new({ text = self.text, face = HINT_FACE })
+		if label:getSize().w > max_width then
+			label:free()
+			label = TextBoxWidget:new({ text = self.text, face = HINT_FACE, width = max_width, alignment = "center" })
+		end
+
+		self.frame = FrameContainer:new({
+			background = Blitbuffer.COLOR_WHITE,
+			bordersize = Size.border.window,
+			radius = Size.radius.window,
+			margin = 0,
+			padding = padding,
+			label,
+		})
+		local size = self.frame:getSize()
+
+		local anchor = self.anchor or self.bounds or Geom:new({ x = 0, y = 0, w = screen_width, h = screen_height })
+		local bounds = self.bounds or anchor
+		local x = bounds.x + math.floor((bounds.w - size.w) / 2)
+		x = math.max(margin, math.min(x, screen_width - size.w - margin))
+		local y
+		if bounds.y - BUTTON_HINT_GAP - size.h >= margin then
+			y = bounds.y - BUTTON_HINT_GAP - size.h
+		elseif bounds.y + bounds.h + BUTTON_HINT_GAP + size.h <= screen_height - margin then
+			y = bounds.y + bounds.h + BUTTON_HINT_GAP
+		else
+			y = math.max(margin, anchor.y - BUTTON_HINT_GAP - size.h)
+		end
+
+		self.dimen = Geom:new({ x = x, y = y, w = size.w, h = size.h })
+	end
+
+	function ButtonHint:paintTo(bb, x, y)
+		self.frame:paintTo(bb, self.dimen.x, self.dimen.y)
+	end
+
+	function ButtonHint:onShow()
+		UIManager:setDirty(self, function()
+			return "ui", self.dimen
+		end)
+		self.timeout_func = function()
+			self.timeout_func = nil
+			UIManager:close(self)
+		end
+		UIManager:scheduleIn(self.timeout, self.timeout_func)
+		return true
+	end
+
+	function ButtonHint:onCloseWidget()
+		if self.timeout_func then
+			UIManager:unschedule(self.timeout_func)
+			self.timeout_func = nil
+		end
+		if ButtonHint.current == self then
+			ButtonHint.current = nil
+		end
+		UIManager:setDirty(nil, function()
+			return "ui", self.dimen
+		end)
+	end
+
+	-- The hold that shows the hint ends with hold_release, and moving the finger
+	-- while holding sends hold_pan: neither dismisses it. Any other input does.
+	local HOLD_GESTURES = { touch = true, hold = true, hold_pan = true, hold_release = true }
+
+	function ButtonHint:onGesture(ev)
+		if not (ev and HOLD_GESTURES[ev.ges]) then
+			UIManager:close(self)
+		end
+		return false
+	end
+
+	function ButtonHint:onKeyPress()
+		UIManager:close(self)
+		return false
+	end
+
+	function ButtonHint:onKeyRepeat()
+		return false
+	end
+
+	-- Shows what a button does, centred on the active card of `popup` and just
+	-- above it (or below). `anchor` is the button's area.
+	local function showButtonHint(hint, anchor, popup)
+		if hint and hint ~= "" then
+			if ButtonHint.current then
+				UIManager:close(ButtonHint.current)
+			end
+			local bounds = popup and popup.visible_dimen
+			if bounds and popup.card_width then
+				-- The row spans the screen, but the active card is the centred part of it.
+				bounds = Geom:new({
+					x = bounds.x + math.floor((bounds.w - popup.card_width) / 2),
+					y = bounds.y,
+					w = popup.card_width,
+					h = bounds.h,
+				})
+			end
+			ButtonHint.current = ButtonHint:new({
+				text = hint,
+				anchor = anchor,
+				bounds = bounds,
+			})
+			UIManager:show(ButtonHint.current)
+		end
+		return true
+	end
+
 	local function clamp(value, min_value, max_value)
 		return math.max(min_value, math.min(max_value, value))
 	end
@@ -34,6 +171,12 @@ return function(ctx)
 	end
 
 	local BUTTON_ROW_SAFETY_WIDTH = math.max(1, Screen:scaleBySize(2))
+	-- What tapping the clickable subtitle of each card does, unless the payload says otherwise.
+	local SUBTITLE_HINTS = {
+		[PAGE_DICTIONARY] = _("Choose which dictionary result to show"),
+		[PAGE_TRANSLATION] = _("Choose the language to translate into"),
+		[PAGE_WIKIPEDIA] = _("Choose the Wikipedia language"),
+	}
 	local BASE_TAB_HEIGHT = SIDE_TAB_HEIGHT or HEADER_MENU_HEIGHT or Screen:scaleBySize(28)
 	local TAB_TOUCH_HEIGHT = BASE_TAB_HEIGHT + math.max(2, Screen:scaleBySize(6))
 	local TAB_TOUCH_PADDING_H = (SIDE_TAB_PADDING_H or 0) + math.max(2, Screen:scaleBySize(4))
@@ -316,6 +459,7 @@ return function(ctx)
 		width = nil,
 		height = nil,
 		callback = nil,
+		hint = nil,
 		show_parent = nil,
 	})
 
@@ -336,10 +480,17 @@ return function(ctx)
 		self.dimen = Geom:new({ x = 0, y = 0, w = width, h = height })
 		self[1] = self.frame
 		self.ges_events = tapEvent("TapHeaderSubtitle", self.dimen)
+		if self.hint then
+			self.ges_events.HoldHeaderSubtitle = holdGesture(self.dimen)
+		end
 	end
 
 	function HeaderSubtitleButton:onTapHeaderSubtitle()
 		return runCallback(self.callback)
+	end
+
+	function HeaderSubtitleButton:onHoldHeaderSubtitle()
+		return showButtonHint(self.hint, self.dimen, self.show_parent)
 	end
 
 	HeaderPageButton = InputContainer:extend({
@@ -348,6 +499,7 @@ return function(ctx)
 		face = nil,
 		bold = nil,
 		callback = nil,
+		hint = nil,
 		show_parent = nil,
 	})
 
@@ -368,10 +520,17 @@ return function(ctx)
 		self.dimen = Geom:new({ x = 0, y = 0, w = width, h = HEADER_MENU_HEIGHT })
 		self[1] = self.frame
 		self.ges_events = tapEvent("TapHeaderPageMenu", self.dimen)
+		if self.hint then
+			self.ges_events.HoldHeaderPageMenu = holdGesture(self.dimen)
+		end
 	end
 
 	function HeaderPageButton:onTapHeaderPageMenu()
 		return runCallback(self.callback)
+	end
+
+	function HeaderPageButton:onHoldHeaderPageMenu()
+		return showButtonHint(self.hint, self.dimen, self.show_parent)
 	end
 
 	HeaderPageMenuButton = InputContainer:extend({
@@ -380,6 +539,7 @@ return function(ctx)
 		width = nil,
 		height = HEADER_MENU_HEIGHT,
 		callback = nil,
+		hint = nil,
 		show_parent = nil,
 	})
 
@@ -417,10 +577,17 @@ return function(ctx)
 		self.dimen = Geom:new({ x = 0, y = 0, w = width, h = height })
 		self[1] = self.frame
 		self.ges_events = tapEvent("TapHeaderPageMenu", self.dimen)
+		if self.hint then
+			self.ges_events.HoldHeaderPageMenu = holdGesture(self.dimen)
+		end
 	end
 
 	function HeaderPageMenuButton:onTapHeaderPageMenu()
 		return runCallback(self.callback)
+	end
+
+	function HeaderPageMenuButton:onHoldHeaderPageMenu()
+		return showButtonHint(self.hint, self.dimen, self.show_parent)
 	end
 
 	CardTabButton = InputContainer:extend({
@@ -595,6 +762,7 @@ return function(ctx)
 		icon_width = DICTIONARY_ICON_SIZE,
 		icon_height = DICTIONARY_ICON_SIZE,
 		callback = nil,
+		hint = nil,
 		show_parent = nil,
 	})
 
@@ -647,10 +815,17 @@ return function(ctx)
 		self.dimen = Geom:new({ x = 0, y = 0, w = width, h = height })
 		self[1] = self.frame
 		self.ges_events = tapEvent("TapDictionaryButton", self.dimen)
+		if self.hint then
+			self.ges_events.HoldDictionaryButton = holdGesture(self.dimen)
+		end
 	end
 
 	function DictionaryCardButton:onTapDictionaryButton()
 		return runCallback(self.callback)
+	end
+
+	function DictionaryCardButton:onHoldDictionaryButton()
+		return showButtonHint(self.hint, self.dimen, self.show_parent)
 	end
 
 	SimplePageMenu = InputContainer:extend({
@@ -1333,7 +1508,7 @@ return function(ctx)
 		return space_above > space_below
 	end
 
-	function LookupPreviewPopup:makeHeaderText(text, face, bold, callback, width)
+	function LookupPreviewPopup:makeHeaderText(text, face, bold, callback, width, hint)
 		local widget
 		if callback then
 			widget = HeaderSubtitleButton:new({
@@ -1343,6 +1518,7 @@ return function(ctx)
 				width = width,
 				show_parent = self,
 				callback = callback,
+				hint = hint,
 			})
 		else
 			widget = makeTextLabel(text or EMPTY_TEXT, face, width, bold)
@@ -1368,6 +1544,7 @@ return function(ctx)
 				icon_file = menu_icon_file,
 				width = menu_width,
 				show_parent = self,
+				hint = _("Choose which card to show"),
 				callback = function()
 					return self:showPageMenu()
 				end,
@@ -1394,7 +1571,8 @@ return function(ctx)
 				subtitle_face,
 				hide_redundant_title,
 				payload.subtitle_callback,
-				text_width
+				text_width,
+				payload.subtitle_hint or SUBTITLE_HINTS[payload.page_type]
 			)
 		end
 
@@ -1503,6 +1681,7 @@ return function(ctx)
 				icon_height = DICTIONARY_ICON_SIZE,
 				show_parent = self,
 				callback = item.callback,
+				hint = item.hint or spec.text,
 			})
 		end
 
@@ -1634,6 +1813,7 @@ return function(ctx)
 			self.ges_events = {
 				TapClose = { GestureRange:new({ ges = "tap", range = range }) },
 				SwipePage = { GestureRange:new({ ges = "swipe", range = range }) },
+				HoldTab = { GestureRange:new({ ges = "hold", range = range }) },
 			}
 		end
 
@@ -1815,6 +1995,27 @@ return function(ctx)
 			if page_index then
 				return self.plugin:switchToPage(page_index)
 			end
+		end
+
+		return false
+	end
+
+	-- Holding a side tab says what it shows. Elsewhere the hold is left alone.
+	function LookupPreviewPopup:onHoldTab(_arg, ges)
+		if not (ges and ges.pos and self.card_container and self.card_container.getSideTabPage) then
+			return false
+		end
+
+		local page_index = self.card_container:getSideTabPage(ges.pos, self.visible_dimen and self.visible_dimen.y or 0)
+		if page_index then
+			local bounds = self.card_container.side_tab_bounds[page_index]
+			local anchor = Geom:new({
+				x = bounds.x,
+				y = (self.visible_dimen and self.visible_dimen.y or 0) + bounds.y,
+				w = bounds.w,
+				h = bounds.h,
+			})
+			return showButtonHint(string.format(_("Show the %s card"), PAGE_TITLES[page_index]), anchor, self)
 		end
 
 		return false

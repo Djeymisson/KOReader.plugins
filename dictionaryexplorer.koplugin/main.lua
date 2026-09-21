@@ -281,20 +281,40 @@ function DictionaryExplorer:getDictionary(name)
 	return self.resolved[name] or nil
 end
 
-function DictionaryExplorer:open(popup)
-	local dictionary = self:getDictionary(popup.dictionary)
+--- Whether the dictionary called `name` (as KOReader shows it in a lookup
+-- result) can be opened in the viewer. Other plugins use this to decide
+-- whether to offer a button that calls openWord().
+function DictionaryExplorer:canOpen(name)
+	return self:getDictionary(name) ~= nil
+end
+
+--- Opens the dictionary called `name` at `word`, centred and highlighted, as
+-- the "Go to dictionary" button of the popup does. `hint` is the definition
+-- that was shown for it, used to pick between entries with the same headword.
+-- Returns false, after saying so, if the dictionary can't be opened.
+function DictionaryExplorer:openWord(name, word, hint)
+	local dictionary = self:getDictionary(name)
 	if not dictionary then
 		UIManager:show(InfoMessage:new({ text = _("This dictionary can't be opened as a book.") }))
-		return
+		return false
 	end
-	-- Read what we need before the popup goes away.
-	local word = popup.lookupword or popup.word
-	local hint = popup.definition
-	popup:onClose()
-
 	self:withIndex(dictionary, function()
 		self:showViewer(dictionary, (dictionary:locate(word, hint)))
 	end)
+	return true
+end
+
+function DictionaryExplorer:open(popup)
+	-- Read what we need before the popup goes away.
+	local name = popup.dictionary
+	local word = popup.lookupword or popup.word
+	local hint = popup.definition
+	if not self:canOpen(name) then
+		UIManager:show(InfoMessage:new({ text = _("This dictionary can't be opened as a book.") }))
+		return
+	end
+	popup:onClose()
+	self:openWord(name, word, hint)
 end
 
 -- Left and right page margins (in pixels) of the book being read, so the
