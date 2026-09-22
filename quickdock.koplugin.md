@@ -249,6 +249,11 @@ Extract `quickdock.koplugin` into KOReader's `plugins` directory and restart KOR
 - Kobo: `/mnt/onboard/.adds/koreader/plugins/quickdock.koplugin`
 - Android: `<KOReader data directory>/plugins/quickdock.koplugin`
 
+## Screenshots
+
+![quick_dock](assets/screenshots/quickdock.koplugin/quick_dock.png)
+![quick_dock_bookshelf](assets/screenshots/quickdock.koplugin/quick_dock_bookshelf.png)
+
 ## Version
 
 v0.23.0

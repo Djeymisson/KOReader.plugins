@@ -110,3 +110,12 @@ Open the top menu and go to **Tools > Dictionary Explorer**:
 ## Installation
 
 Copy the `dictionaryexplorer.koplugin` folder to KOReader's `plugins` directory and restart KOReader.
+
+## Screenshots
+
+![go_to_dict_button_popup](assets/screenshots/dictionaryexplorer.koplugin/go_to_dict_button_popup.png)
+![go_to_dict](assets/screenshots/dictionaryexplorer.koplugin/go_to_dict.gif)
+![dict_page](assets/screenshots/dictionaryexplorer.koplugin/dict_page.png)
+![dict_page_with_breadcrumb](assets/screenshots/dictionaryexplorer.koplugin/dict_page_with_breadcrumb.png)
+![dict_page_selection_toolbar](assets/screenshots/dictionaryexplorer.koplugin/dict_page_selection_toolbar.png)
+![config_menu](assets/screenshots/dictionaryexplorer.koplugin/config_menu.png)

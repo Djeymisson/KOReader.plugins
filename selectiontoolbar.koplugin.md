@@ -68,6 +68,12 @@ koreader/plugins/selectiontoolbar.koplugin
 
 Then restart KOReader.
 
+## Screenshots
+
+![selection_toolbar](assets/screenshots/selectiontoolbar.koplugin/selection_toolbar.png)
+![selection_toolbar_actions](assets/screenshots/selectiontoolbar.koplugin/selection_toolbar_actions.png)
+![config_menu](assets/screenshots/selectiontoolbar.koplugin/config_menu.png)
+
 ## Notes
 
 - `View HTML` only appears when the original action exists for the current document, following KOReader's own rule.

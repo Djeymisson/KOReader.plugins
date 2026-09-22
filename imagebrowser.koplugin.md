@@ -137,6 +137,11 @@ Then restart KOReader.
 
 Settings saved in KOReader may remain until manually removed from KOReader's settings storage, but they will not have any effect once the plugin is removed.
 
+## Screenshots
+
+![image_explorer](assets/screenshots/imagebrowser.koplugin/image_explorer.gif)
+![config_menu](assets/screenshots/imagebrowser.koplugin/config_menu.png)
+
 ## Credits
 
 Based on the [Glimpse plugin](https://github.com/Fank1/glimpse/tree/main) for KOReader.

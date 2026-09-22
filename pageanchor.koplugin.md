@@ -74,3 +74,8 @@ to work with the same history.
 - A single backward page turn is tolerated. Moving farther back offers the
   last confirmed reading reference; standard KOReader navigation tools also
   add their own history entries before jumping.
+
+## Screenshots
+
+![page_anchor](assets/screenshots/pageanchor.koplugin/page_anchor.gif)
+![config_menu](assets/screenshots/pageanchor.koplugin/config_menu.png)
