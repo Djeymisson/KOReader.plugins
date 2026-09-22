@@ -39,6 +39,34 @@ Quick Dock adds a floating action dock with lighting controls and an optional in
 - Optional per-action custom icons with automatic fallback to KOReader icons.
 - Two-letter action abbreviations when neither a custom nor a KOReader icon is available; hold the button to see its full name.
 
+## Installation
+
+Copy the plugin folder to KOReader's `plugins` directory:
+
+```text
+quickdock.koplugin/
+├── _meta.lua
+├── main.lua
+├── quickdock_l10n.lua
+├── icons/                  # bundled action, chevron and lighting icons — see Custom icons below
+└── modules/
+    ├── context.lua
+    ├── controls.lua
+    ├── icons.lua
+    ├── info_panel.lua
+    ├── inline_actions.lua
+    ├── menu.lua
+    └── widgets.lua
+```
+
+The final path depends on the device:
+
+- Kindle: `/mnt/us/koreader/plugins/quickdock.koplugin`
+- Kobo: `/mnt/onboard/.adds/koreader/plugins/quickdock.koplugin`
+- Android: `<KOReader data directory>/plugins/quickdock.koplugin`
+
+Then restart KOReader.
+
 ## Default buttons
 
 From the bottom upward:
@@ -241,19 +269,19 @@ Quick Dock follows KOReader's active interface language. Plugin-specific message
 - `modules/menu.lua`: settings menus, action visibility controls, icon-name help, and reset confirmation.
 - `quickdock_l10n.lua`: locale-aware translations for plugin-specific interface text, with KOReader gettext fallback.
 
-## Installation
+## Uninstalling
 
-Extract `quickdock.koplugin` into KOReader's `plugins` directory and restart KOReader.
+Remove the folder:
 
-- Kindle: `/mnt/us/koreader/plugins/quickdock.koplugin`
-- Kobo: `/mnt/onboard/.adds/koreader/plugins/quickdock.koplugin`
-- Android: `<KOReader data directory>/plugins/quickdock.koplugin`
+```text
+koreader/plugins/quickdock.koplugin/
+```
+
+Then restart KOReader.
+
+Settings saved in KOReader may remain until manually removed from KOReader's settings storage, but they will not have any effect once the plugin is removed.
 
 ## Screenshots
 
 ![quick_dock](assets/screenshots/quickdock.koplugin/quick_dock.png)
 ![quick_dock_bookshelf](assets/screenshots/quickdock.koplugin/quick_dock_bookshelf.png)
-
-## Version
-
-v0.23.0

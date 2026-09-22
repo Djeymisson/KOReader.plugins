@@ -15,13 +15,30 @@ The plugin adds four information areas to the reading screen:
 
 The goal is to keep useful information always visible while remaining lightweight and unobtrusive.
 
-## How it works
+## Installation
 
-The plugin is loaded as a KOReader reader module and draws text directly over the top and bottom regions of the page.
+Copy the plugin folder to KOReader's `plugins` directory:
 
-It avoids full-screen redraws whenever possible. Instead, it invalidates only the small areas where the indicators are displayed. This reduces flickering and avoids heavy full-page refreshes.
+```text
+readerheaderfooter.koplugin/
+├── _meta.lua
+├── main.lua
+└── readerheaderfooter_l10n.lua
+```
 
-It also includes protection for menus and dialogs: if a KOReader menu is open, indicator updates are deferred until the reader becomes the active window again.
+The final path should look like this:
+
+```text
+koreader/plugins/readerheaderfooter.koplugin/
+```
+
+On Kindle devices, it is usually located at:
+
+```text
+/mnt/us/koreader/plugins/readerheaderfooter.koplugin/
+```
+
+Then restart KOReader, open a book, and access the reader menu to configure the plugin.
 
 ## Displayed information
 
@@ -36,7 +53,7 @@ Wi-Fi • HH:MM • Battery
 Example:
 
 ```text
- • 14:32 •  87%
+ • 14:32 •  87%
 ```
 
 If the device does not have a battery, or if battery information is unavailable, the battery indicator is omitted.
@@ -73,40 +90,6 @@ Shows the percentage of the document that has been read:
 42%
 ```
 
-## Installation
-
-1. Create a folder named:
-
-```text
-reader_header_footer.koplugin
-```
-
-2. Copy the plugin files into it:
-
-```text
-reader_header_footer.koplugin/
-├── _meta.lua
-└── main.lua
-```
-
-3. Copy the folder to KOReader's plugins directory.
-
-On many devices, the path will look similar to:
-
-```text
-koreader/plugins/reader_header_footer.koplugin
-```
-
-On Kindle devices, it is usually located at:
-
-```text
-/mnt/us/koreader/plugins/reader_header_footer.koplugin
-```
-
-4. Restart KOReader.
-
-5. Open a book and access the reader menu to configure the plugin.
-
 ## Configuration
 
 The plugin adds an item to the reader's main menu:
@@ -129,21 +112,13 @@ The settings follow the same grouped layout as the other plugins in this reposit
     - `Custom side margins`, `Custom left margin`, `Custom right margin`: manual margins in points (minimum `0`, maximum `300`), used only while document margins are not followed.
 - `Version: vX.Y.Z`: shows the installed plugin version.
 
-## Saved settings
+## How it works
 
-Preferences are stored in KOReader's settings using the following keys:
+The plugin is loaded as a KOReader reader module and draws text directly over the top and bottom regions of the page.
 
-```text
-reader_header_footer_enabled
-reader_header_footer_font_size
-reader_header_footer_follow_document_margins
-reader_header_footer_custom_left_margin
-reader_header_footer_custom_right_margin
-reader_header_footer_custom_horizontal_margin
-reader_header_footer_left_footer_mode
-```
+It avoids full-screen redraws whenever possible. Instead, it invalidates only the small areas where the indicators are displayed. This reduces flickering and avoids heavy full-page refreshes.
 
-## Automatic updates
+It also includes protection for menus and dialogs: if a KOReader menu is open, indicator updates are deferred until the reader becomes the active window again.
 
 The plugin automatically updates the indicators on the following events:
 
@@ -156,16 +131,28 @@ The plugin automatically updates the indicators on the following events:
 
 The battery is checked periodically every 5 minutes.
 
-## Performance
+## Code organization
 
-The plugin was designed to be lightweight. Some important decisions:
+```text
+readerheaderfooter.koplugin/
+├── _meta.lua                     # metadata displayed by KOReader
+├── main.lua                      # main plugin implementation
+└── readerheaderfooter_l10n.lua   # locale-aware translations, with KOReader gettext fallback
+```
 
-- uses regional updates instead of full refreshes;
-- avoids redrawing while menus or dialogs are open;
-- updates the clock only when the minute changes;
-- checks the battery periodically, not continuously;
-- reuses the current page state, page count, and visible reader area;
-- trims overflowing header/footer text using glyph-aware measurement, so a multi-byte character (accents, the Wi-Fi symbol) is never split in half at the cut-off point.
+## Saved settings
+
+Preferences are stored in KOReader's settings using the following keys:
+
+| Setting key | Purpose |
+|---|---|
+| `reader_header_footer_enabled` | Enables or disables the indicators |
+| `reader_header_footer_font_size` | Indicator font size |
+| `reader_header_footer_follow_document_margins` | Aligns indicators with the document's real margins |
+| `reader_header_footer_custom_left_margin` | Manual left margin, used only while document margins are not followed |
+| `reader_header_footer_custom_right_margin` | Manual right margin, used only while document margins are not followed |
+| `reader_header_footer_custom_horizontal_margin` | Manual side margin shortcut, used only while document margins are not followed |
+| `reader_header_footer_left_footer_mode` | Selects whether the bottom-left counter tracks pages left in chapter or in book |
 
 ## Advanced customization
 
@@ -208,6 +195,21 @@ local INDICATOR_MARGINS = {
 }
 ```
 
+## Performance
+
+The plugin was designed to be lightweight. Some important decisions:
+
+- uses regional updates instead of full refreshes;
+- avoids redrawing while menus or dialogs are open;
+- updates the clock only when the minute changes;
+- checks the battery periodically, not continuously;
+- reuses the current page state, page count, and visible reader area;
+- trims overflowing header/footer text using glyph-aware measurement, so a multi-byte character (accents, the Wi-Fi symbol) is never split in half at the cut-off point.
+
+## Localization
+
+Reader Header/Footer follows KOReader's active interface language. Plugin-specific messages — the settings menu, the bottom-left "pages left" indicator (with correct singular/plural forms), and the version dialog — are translated into Brazilian and European Portuguese; in other interface languages, plugin-specific messages fall back to English. Document content such as the chapter title and author/title metadata always comes from the book itself and is never translated.
+
 ## Known limitations
 
 - The plugin depends on metadata and table-of-contents information provided by KOReader.
@@ -215,18 +217,17 @@ local INDICATOR_MARGINS = {
 - The chapter title may be empty if the document does not provide a reliable TOC structure.
 - In very unusual layouts, automatic margins may not exactly match the visual text area. In those cases, use manual margins.
 
-## Localization
+## Uninstalling
 
-Reader Header/Footer follows KOReader's active interface language. Plugin-specific messages — the settings menu, the bottom-left "pages left" indicator (with correct singular/plural forms), and the version dialog — are translated into Brazilian and European Portuguese; in other interface languages, plugin-specific messages fall back to English. Document content such as the chapter title and author/title metadata always comes from the book itself and is never translated.
-
-## Plugin structure
+Remove the folder:
 
 ```text
-reader_header_footer.koplugin/
-├── _meta.lua                     # metadata displayed by KOReader
-├── main.lua                      # main plugin implementation
-└── readerheaderfooter_l10n.lua   # locale-aware translations, with KOReader gettext fallback
+koreader/plugins/readerheaderfooter.koplugin/
 ```
+
+Then restart KOReader.
+
+Settings saved in KOReader may remain until manually removed from KOReader's settings storage, but they will not have any effect once the plugin is removed.
 
 ## Screenshots
 

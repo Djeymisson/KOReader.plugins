@@ -1,4 +1,4 @@
-# KOReader Lookup Preview ![Version](https://img.shields.io/badge/version-v1.0.22-blue)
+# Lookup Preview ![Version](https://img.shields.io/badge/version-v1.0.22-blue)
 
 **Lookup Preview** is a KOReader reader plugin that changes the lookup flow for selected text. Instead of opening each native lookup window immediately, it first shows a compact floating carousel with preview cards for **Dictionary**, **Translate**, and **Wikipedia**.
 
@@ -27,59 +27,6 @@ The plugin metadata registers it as `lookuppreview` with the display name **Look
 - Uses matching dithered shadows along the right and bottom edges of each card, following the card radius in rounded mode while preserving square shadows in square mode.
 - Holding any button, the header's card selector button, a clickable subtitle, or a side tab shows a short note saying what it does. The note appears centred on the card, just above it (or below when there is no room), and stays for five seconds after the finger is lifted; a tap or swipe dismisses it sooner.
 - Adds a version entry in the plugin settings menu.
-
-## Dictionary card
-
-- Shows the selected word or text and the current dictionary name.
-- Displays the dictionary definition inside a scrollable preview area.
-- Supports multiple dictionary results.
-- Shows the current dictionary result count in regular text between the Previous and Next footer arrows when more than one result is available, without dividers inside that navigation group. Highlight comes before the navigation group, followed by Search and the buttons that open the full dictionary (see below).
-- Makes the subtitle clickable to open the dictionary result list.
-- Lists dictionary results as:
-
-```text
-found word · dictionary name
-```
-
-- Provides compact action buttons:
-  - **Highlight**: creates a highlight from the current selection when available;
-  - **Previous / result count / Next**: switches between dictionary results when multiple results are available;
-  - **Search**: opens KOReader's full-text search for the selected text;
-  - **Details**: opens KOReader's original dictionary popup;
-  - **Go to word** (`go_to_dict.svg`): when the [Dictionary Explorer](./dictionaryexplorer.koplugin.md) plugin is installed, opens it at the word of the result being shown. Which of these two buttons appear is set in the plugin settings (both by default).
-- Keeps KOReader's original dictionary result order when opening the native dictionary view from the selected preview result.
-
-## Translation card
-
-- Shows the main translated result in a compact preview.
-- Uses KOReader's configured translator backend.
-- Shows the source and target language pair in the card subtitle.
-- Makes the subtitle clickable:
-  - tap `Source → Target ▾` to open the target language menu;
-  - selecting a new language saves the target language and refreshes the translation.
-- Adds a matching target language option to the plugin settings menu, keeping the settings menu consistent with the Wikipedia language option.
-- Supports optional source text display below the translation.
-- Provides compact action buttons:
-  - **Copy**: copies the main translation to the clipboard;
-  - **Note**: saves the main translation as a note when a highlight is available;
-  - **Details**: opens KOReader's original translator view.
-- Lets the user show or hide optional translation action buttons from the plugin settings.
-
-## Wikipedia card
-
-- Searches Wikipedia using the selected text.
-- Shows article introductions in a compact preview card.
-- Supports multiple article results.
-- Shows the current article result count in regular text between the Previous and Next footer arrows, without dividers inside that navigation group.
-- Makes the subtitle clickable to open the article result list.
-- Provides a visible language button even while loading or when no article is found, so the user can quickly retry with another language.
-- Keeps the Language button first on the left in the Wikipedia footer, including while waiting for manual loading and while showing loading feedback.
-- Provides compact action buttons:
-  - **Language**: opens the Wikipedia language menu;
-  - **Previous / result count / Next**: switches between article results when multiple results are available;
-  - **Full article**: opens the full Wikipedia article through KOReader's native Wikipedia flow;
-  - **Details**: opens KOReader's original Wikipedia widget.
-- Keeps the selected Wikipedia language saved in the plugin settings.
 
 ## Installation
 
@@ -141,7 +88,7 @@ koreader/plugins/lookuppreview.koplugin/
 
 Then restart KOReader.
 
-## Enabling the plugin
+## Configuration
 
 After restarting KOReader, open a book and go to the reader menu. The plugin adds a **Lookup preview** settings entry.
 
@@ -185,6 +132,59 @@ Wikipedia action   → opens carousel on Wikipedia card
 The original KOReader widgets remain available. Each card has a compact details/original-view action that closes the preview and opens the corresponding native KOReader interface for the same selected text.
 
 Translate and Wikipedia are loaded lazily. This means the plugin does not query the translation service or Wikipedia until the corresponding card is opened. This keeps dictionary lookup fast and avoids unnecessary network calls.
+
+## Dictionary card
+
+- Shows the selected word or text and the current dictionary name.
+- Displays the dictionary definition inside a scrollable preview area.
+- Supports multiple dictionary results.
+- Shows the current dictionary result count in regular text between the Previous and Next footer arrows when more than one result is available, without dividers inside that navigation group. Highlight comes before the navigation group, followed by Search and the buttons that open the full dictionary (see below).
+- Makes the subtitle clickable to open the dictionary result list.
+- Lists dictionary results as:
+
+```text
+found word · dictionary name
+```
+
+- Provides compact action buttons:
+  - **Highlight**: creates a highlight from the current selection when available;
+  - **Previous / result count / Next**: switches between dictionary results when multiple results are available;
+  - **Search**: opens KOReader's full-text search for the selected text;
+  - **Details**: opens KOReader's original dictionary popup;
+  - **Go to word** (`go_to_dict.svg`): when the [Dictionary Explorer](./dictionaryexplorer.koplugin.md) plugin is installed, opens it at the word of the result being shown. Which of these two buttons appear is set in the plugin settings (both by default).
+- Keeps KOReader's original dictionary result order when opening the native dictionary view from the selected preview result.
+
+## Translation card
+
+- Shows the main translated result in a compact preview.
+- Uses KOReader's configured translator backend.
+- Shows the source and target language pair in the card subtitle.
+- Makes the subtitle clickable:
+  - tap `Source → Target ▾` to open the target language menu;
+  - selecting a new language saves the target language and refreshes the translation.
+- Adds a matching target language option to the plugin settings menu, keeping the settings menu consistent with the Wikipedia language option.
+- Supports optional source text display below the translation.
+- Provides compact action buttons:
+  - **Copy**: copies the main translation to the clipboard;
+  - **Note**: saves the main translation as a note when a highlight is available;
+  - **Details**: opens KOReader's original translator view.
+- Lets the user show or hide optional translation action buttons from the plugin settings.
+
+## Wikipedia card
+
+- Searches Wikipedia using the selected text.
+- Shows article introductions in a compact preview card.
+- Supports multiple article results.
+- Shows the current article result count in regular text between the Previous and Next footer arrows, without dividers inside that navigation group.
+- Makes the subtitle clickable to open the article result list.
+- Provides a visible language button even while loading or when no article is found, so the user can quickly retry with another language.
+- Keeps the Language button first on the left in the Wikipedia footer, including while waiting for manual loading and while showing loading feedback.
+- Provides compact action buttons:
+  - **Language**: opens the Wikipedia language menu;
+  - **Previous / result count / Next**: switches between article results when multiple results are available;
+  - **Full article**: opens the full Wikipedia article through KOReader's native Wikipedia flow;
+  - **Details**: opens KOReader's original Wikipedia widget.
+- Keeps the selected Wikipedia language saved in the plugin settings.
 
 ## Controls
 
@@ -281,7 +281,7 @@ lookuppreview_wikipedia_lang
 
 The language can be changed from the plugin settings menu or directly from the Wikipedia card. When a new language is selected while the Wikipedia card is open, the plugin clears the previous Wikipedia result and reloads the card in the selected language.
 
-## Configuration
+## Saved settings
 
 The plugin stores settings through KOReader's reader settings system.
 
@@ -328,7 +328,7 @@ Lookup Preview keeps the carousel lightweight in several ways:
 
 These optimizations are especially useful on e-ink devices, where recreating the entire popup for each dictionary result can make navigation feel slower.
 
-## Notes and limitations
+## Known limitations
 
 - This plugin is intended for the reader view only.
 - It monkey-patches KOReader's dictionary and highlight lookup actions at runtime, so future KOReader changes to those internals may require adjustments.

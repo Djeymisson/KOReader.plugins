@@ -1,9 +1,25 @@
-# Page Anchor
+# Page Anchor ![Version](https://img.shields.io/badge/version-v1.7.3-blue)
 
 Page Anchor adds a compact floating control to KOReader's reading screen. It
 exposes KOReader's native previous/next-location history without making you
 open the navigation menu, so temporary review trips do not replace your
 reading position.
+
+## Features
+
+- Floating navigation buttons that appear automatically after a jump, showing
+  where you came from and letting you return with one tap.
+- Reuses KOReader's own location history (XPointer for reflowable books, page
+  view context for fixed layout), so it stays compatible with the built-in
+  **Go back to previous location** / **Go forward to next location**
+  commands.
+- Tracks an explicit reading reference in addition to KOReader's history, so
+  even a jump that doesn't add its own history entry (some third-party tools)
+  still offers a way back.
+- Destination shown as a page number or book percentage, or as arrows only.
+- Automatic side/arrow mirroring for right-to-left books.
+- One tap to accept the current location, clear the temporary navigation
+  history, and dismiss all floating indicators.
 
 ## Example
 
@@ -41,7 +57,32 @@ reading advances it; going back one page is tolerated, while moving farther
 back offers a return to the reference. This also covers third-party tools that
 jump without adding the origin to KOReader's history.
 
-## Settings
+## Installation
+
+Copy the plugin folder to KOReader's `plugins` directory:
+
+```text
+pageanchor.koplugin/
+├── _meta.lua
+├── main.lua
+├── icons/
+│   ├── anchor.svg
+│   ├── chevron-left.svg
+│   └── chevron-right.svg
+└── modules/
+    └── history.lua
+```
+
+The final path should look like this:
+
+```text
+koreader/plugins/pageanchor.koplugin/
+```
+
+Then restart KOReader and make sure **Page Anchor** is enabled under plugin
+management.
+
+## Configuration
 
 While reading, open **Page Anchor** in the navigation menu. You can:
 
@@ -59,13 +100,7 @@ that mapping.
 The existing KOReader gesture actions for previous and next location continue
 to work with the same history.
 
-## Installation
-
-1. Copy `pageanchor.koplugin/` into KOReader's `plugins/` directory.
-2. Restart KOReader.
-3. Make sure **Page Anchor** is enabled under plugin management.
-
-## Compatibility and limitations
+## Known limitations
 
 - Intended for recent KOReader versions.
 - Works with reflowable and fixed-layout documents.
@@ -74,6 +109,20 @@ to work with the same history.
 - A single backward page turn is tolerated. Moving farther back offers the
   last confirmed reading reference; standard KOReader navigation tools also
   add their own history entries before jumping.
+
+## Uninstalling
+
+Remove the folder:
+
+```text
+koreader/plugins/pageanchor.koplugin/
+```
+
+Then restart KOReader.
+
+Settings saved in KOReader may remain until manually removed from KOReader's
+settings storage, but they will not have any effect once the plugin is
+removed.
 
 ## Screenshots
 

@@ -1,4 +1,4 @@
-# KOReader Translator Preview ![Version](https://img.shields.io/badge/version-v1.0.2-blue)
+# Translator Preview ![Version](https://img.shields.io/badge/version-v1.0.2-blue)
 
 **Translator Preview** is a KOReader reader plugin that changes the translation flow. Instead of immediately opening KOReader's full translator window, it first shows the translation in a compact, cleaner preview panel.
 
@@ -57,7 +57,7 @@ return {
 }
 ```
 
-## Enabling the plugin
+## Configuration
 
 After restarting KOReader, open a book and go to the reader menu. The plugin adds a **Translator preview** settings entry.
 
@@ -139,7 +139,7 @@ translator_to_language
 
 and then refreshes the translation preview.
 
-## Configuration
+## Saved settings
 
 The plugin stores settings through KOReader's reader settings system.
 
@@ -172,7 +172,7 @@ It also avoids repeated UI lookups where possible, caches clipboard availability
 
 Screen dimensions are still evaluated when the preview is created, so the layout can react correctly to orientation or screen-size changes.
 
-## Notes and limitations
+## Known limitations
 
 - This plugin is intended for the reader view only.
 - It monkey-patches KOReader's translator display method at runtime, so future KOReader changes to translator internals may require adjustments.

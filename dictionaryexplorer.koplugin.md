@@ -1,4 +1,4 @@
-# KOReader Dictionary Explorer ![Version](https://img.shields.io/badge/version-v0.1.0-blue)
+# Dictionary Explorer ![Version](https://img.shields.io/badge/version-v1.0.0-blue)
 
 **Dictionary Explorer** adds a **Go to dictionary** button to KOReader's dictionary popup. It opens the dictionary at the word you looked up, in a full-screen viewer where you can keep paging through the neighbouring entries like a book, similar to the Kindle's "go to dictionary".
 
@@ -8,6 +8,36 @@ The viewer is a plain widget, not a document. Nothing is loaded through the read
 
 - KOReader **v2026.07 or newer**. The button is added through the dictionary button API introduced in that release ([koreader#15184](https://github.com/koreader/koreader/pull/15184)), which older versions don't have. There, the plugin loads, logs a warning and adds nothing.
 - StarDict dictionaries with 32-bit offsets and a `sametypesequence` of `m` (plain text), `h` (HTML) or `x` (XDXF-lite text, as in the Dicionário Aberto), stored as `.dict` or dictzip `.dict.dz`. Other dictionaries simply don't get the button.
+
+## Installation
+
+Copy the plugin folder to KOReader's `plugins` directory:
+
+```text
+dictionaryexplorer.koplugin/
+├── _meta.lua
+├── main.lua
+├── dictionaryexplorer_l10n.lua
+├── icons/
+│   ├── add_word.svg
+│   └── remove_word.svg
+└── modules/
+    ├── breadcrumb.lua
+    ├── dock.lua
+    ├── fitmodel.lua
+    ├── inflate.lua
+    ├── stardict.lua
+    ├── text.lua
+    └── viewer.lua
+```
+
+The final path should look like this:
+
+```text
+koreader/plugins/dictionaryexplorer.koplugin/
+```
+
+Then restart KOReader.
 
 ## Usage
 
@@ -74,7 +104,7 @@ You don't need to look a word up in a book first: the dictionary can be opened s
 
 Other plugins can open the viewer at a word through the plugin object, `ui.dictionaryexplorer`: `canOpen(dictionary_name)` says whether a dictionary can be opened, and `openWord(dictionary_name, word, definition)` opens it at the word (`definition` is optional and only picks between entries with the same headword). Lookup Preview uses this for its **Go to word** button.
 
-## Settings
+## Configuration
 
 Open the top menu and go to **Tools > Dictionary Explorer**:
 
@@ -107,9 +137,17 @@ Open the top menu and go to **Tools > Dictionary Explorer**:
 - Type `x` is read as the simple XDXF that StarDict dictionaries use (`<k>` headword, `<b>`, `<i>` ...): the headword is shown in bold and the indentation and blank lines are tidied. Structured XDXF (`<def>`, `<gr>` ... ) is not converted: its tags are dropped and its text is kept.
 - Synonym files (`.syn`) are not read: the viewer pages through headwords only.
 
-## Installation
+## Uninstalling
 
-Copy the `dictionaryexplorer.koplugin` folder to KOReader's `plugins` directory and restart KOReader.
+Remove the folder:
+
+```text
+koreader/plugins/dictionaryexplorer.koplugin/
+```
+
+Then restart KOReader.
+
+Settings saved in KOReader may remain until manually removed from KOReader's settings storage, but they will not have any effect once the plugin is removed.
 
 ## Screenshots
 

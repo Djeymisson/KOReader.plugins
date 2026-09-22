@@ -118,7 +118,7 @@ Image Browser is built to stay responsive on e-ink hardware:
 - Scanning a book for images is cached in a per-book sidecar, so reopening Image Browser does not re-parse the EPUB unless the book changed or a manual rescan is requested.
 - The drop shadow — the main cause of e-ink ghosting around the panel — can be turned off entirely from Appearance settings.
 
-## Notes and limitations
+## Known limitations
 
 - EPUB only: other formats (PDF, DjVu, CBZ, and so on) are not supported. Opening the viewer on an unsupported document shows an explanatory message instead.
 - Image captions are a beta feature; caption quality depends on how the book marks up `figcaption`, `title`, and `alt` text.
@@ -145,7 +145,3 @@ Settings saved in KOReader may remain until manually removed from KOReader's set
 ## Credits
 
 Based on the [Glimpse plugin](https://github.com/Fank1/glimpse/tree/main) for KOReader.
-
-## Version
-
-v0.2.7
