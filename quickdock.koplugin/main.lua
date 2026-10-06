@@ -19,7 +19,7 @@ local function scaleMetric(value, factor, minimum)
     return math_max(minimum or 1, math_floor(value * factor + 0.5))
 end
 
-local PLUGIN_VERSION = "v0.23.0"
+local PLUGIN_VERSION = "v0.24.0"
 local SETTING_ACTIONS = "quickdock_actions"
 local SETTING_ACTION_CONTEXTS = "quickdock_action_contexts"
 local SETTING_AUTO_VISIBILITY = "quickdock_auto_visibility"
@@ -38,6 +38,17 @@ local SETTING_INFO_PANEL_TEXT_ALIGNMENT = "quickdock_info_panel_text_alignment"
 local SETTING_DOCK_SIZE = "quickdock_dock_size"
 local SETTING_MAX_ACTION_DOCK_HEIGHT = "quickdock_max_action_dock_height"
 local SETTING_CLOSE_TOGETHER = "quickdock_close_together"
+local SETTING_DOCK_SHAPE = "quickdock_dock_shape"
+local SETTING_ARC_BAND = "quickdock_arc_band"
+local SETTING_ARC_ANGLE = "quickdock_arc_angle"
+
+local DOCK_SHAPE_COLUMN = "column"
+local DOCK_SHAPE_ARC = "arc"
+
+-- Tilt of the arc: the angle between the bottom edge and the line joining
+-- its two ends. 45 degrees is a quarter circle.
+local ARC_ANGLES = { 25, 35, 45, 55, 65 }
+local DEFAULT_ARC_ANGLE = 45
 
 local SIDE_MODE_FIXED = "fixed"
 local SIDE_MODE_GESTURE = "gesture"
@@ -92,6 +103,10 @@ local BASE_FRONTLIGHT_SLIDER_GAP = Size.padding.default
 local BASE_FRONTLIGHT_SLIDER_PADDING = Screen:scaleBySize(8)
 local BASE_FRONTLIGHT_TRACK_WIDTH = math_max(2, Screen:scaleBySize(3))
 local BASE_FRONTLIGHT_KNOB_RADIUS = math_max(5, Screen:scaleBySize(8))
+-- About 4.5 cm on any screen: a comfortable thumb reach from the corner.
+local BASE_ARC_RADIUS = Screen:scaleBySize(280)
+local BASE_ARC_TRACK_WIDTH = math_max(3, Screen:scaleBySize(5))
+local BASE_ARC_KNOB_RADIUS = math_max(6, Screen:scaleBySize(11))
 
 local ACTION_HOME = "quickdock_context_home"
 local ACTION_SEARCH = "quickdock_context_search"
@@ -287,6 +302,10 @@ local MODULE_CONSTANTS = {
     ACTION_CONTEXT_AUTOMATIC = ACTION_CONTEXT_AUTOMATIC,
     ACTION_CONTEXT_READER = ACTION_CONTEXT_READER,
     ACTION_CONTEXT_BROWSER = ACTION_CONTEXT_BROWSER,
+    DOCK_SHAPE_COLUMN = DOCK_SHAPE_COLUMN,
+    DOCK_SHAPE_ARC = DOCK_SHAPE_ARC,
+    ARC_ANGLES = ARC_ANGLES,
+    DEFAULT_ARC_ANGLE = DEFAULT_ARC_ANGLE,
     SIDE_MODE_FIXED = SIDE_MODE_FIXED,
     SIDE_MODE_GESTURE = SIDE_MODE_GESTURE,
     DOCK_SIZE_SMALL = DOCK_SIZE_SMALL,
@@ -374,6 +393,7 @@ local function applyHighlightedButtonMetrics(button, width, metrics)
 end
 
 local DockWidgets = dofile(PLUGIN_DIR .. "modules/widgets.lua")
+local ArcDock = dofile(PLUGIN_DIR .. "modules/arc_dock.lua")
 local InfoPanel = dofile(PLUGIN_DIR .. "modules/info_panel.lua")
 local FloatingControlButtonDialog = DockWidgets.FloatingControlButtonDialog
 local QuickDock = WidgetContainer:extend({
@@ -658,6 +678,49 @@ function QuickDock:setMaxActionDockHeight(height)
     )
 end
 
+function QuickDock:getMaxActionDockHeightFactor()
+    return MAX_ACTION_DOCK_HEIGHT_FACTORS[self:getMaxActionDockHeight()]
+end
+
+function QuickDock:getDockShape()
+    return G_reader_settings:readSetting(SETTING_DOCK_SHAPE) == DOCK_SHAPE_ARC
+        and DOCK_SHAPE_ARC
+        or DOCK_SHAPE_COLUMN
+end
+
+function QuickDock:setDockShape(shape)
+    G_reader_settings:saveSetting(
+        SETTING_DOCK_SHAPE,
+        shape == DOCK_SHAPE_ARC and DOCK_SHAPE_ARC or DOCK_SHAPE_COLUMN
+    )
+end
+
+function QuickDock:isArcLayout()
+    return self:getDockShape() == DOCK_SHAPE_ARC
+end
+
+function QuickDock:showArcBand()
+    return G_reader_settings:readSetting(SETTING_ARC_BAND) ~= false
+end
+
+function QuickDock:setShowArcBand(enabled)
+    G_reader_settings:saveSetting(SETTING_ARC_BAND, enabled and true or false)
+end
+
+function QuickDock:getArcAngle()
+    local angle = tonumber(G_reader_settings:readSetting(SETTING_ARC_ANGLE))
+    for _index, allowed in ipairs(ARC_ANGLES) do
+        if angle == allowed then
+            return angle
+        end
+    end
+    return DEFAULT_ARC_ANGLE
+end
+
+function QuickDock:setArcAngle(angle)
+    G_reader_settings:saveSetting(SETTING_ARC_ANGLE, tonumber(angle) or DEFAULT_ARC_ANGLE)
+end
+
 function QuickDock:getDockMetrics()
     local dock_size = self:getDockSize()
     if DOCK_METRICS_CACHE[dock_size] then
@@ -687,6 +750,12 @@ function QuickDock:getDockMetrics()
         frontlight_slider_padding = scaleMetric(BASE_FRONTLIGHT_SLIDER_PADDING, factor),
         frontlight_track_width = scaleMetric(BASE_FRONTLIGHT_TRACK_WIDTH, factor, 2),
         frontlight_knob_radius = scaleMetric(BASE_FRONTLIGHT_KNOB_RADIUS, factor, 5),
+        -- Larger buttons need a longer ring, but only half as much longer, so
+        -- the ring stays within reach of the thumb.
+        arc_radius = scaleMetric(BASE_ARC_RADIUS, 1 + (factor - 1) / 2),
+        arc_utility_diameter = math_floor((button_height + 2 * button_side_padding) * 0.8 + 0.5),
+        arc_track_width = scaleMetric(BASE_ARC_TRACK_WIDTH, factor, 3),
+        arc_knob_radius = scaleMetric(BASE_ARC_KNOB_RADIUS, factor, 6),
         scale_factor = factor,
     }
     DOCK_METRICS_CACHE[dock_size] = metrics
@@ -876,25 +945,37 @@ function QuickDock:setInfoPanelTextAlignment(alignment)
 end
 
 function QuickDock:collectInfoPanelData(kind, metrics)
+    -- The arc dock shows a wide panel along the top edge, with a smaller
+    -- cover beside the text instead of above it.
+    local horizontal = self:isArcLayout()
+    local data
     if kind == "network" then
-        return InfoPanel.collectNetwork()
+        data = InfoPanel.collectNetwork()
     elseif kind == "stats" then
-        return InfoPanel.collectStats(
+        data = InfoPanel.collectStats(
             self,
             metrics,
             DOCK_MARGIN,
-            self:showInfoPanelCover()
+            self:showInfoPanelCover(),
+            horizontal
+        )
+    else
+        data = InfoPanel.collect(
+            self,
+            metrics,
+            DOCK_MARGIN,
+            self:showInfoPanelCover(),
+            horizontal
         )
     end
-    return InfoPanel.collect(
-        self,
-        metrics,
-        DOCK_MARGIN,
-        self:showInfoPanelCover()
-    )
+    data.horizontal = horizontal
+    return data
 end
 
 function QuickDock:createInfoPanelOverlay(data, metrics)
+    if data.horizontal then
+        return InfoPanel.createTopOverlay(self, metrics, DOCK_MARGIN, data)
+    end
     -- Always the side opposite the dock, so it can collide with a sibling
     -- overlay sitting there even when the dock itself is on the other side.
     local panel_side = self.current_dock_side == "left" and "right" or "left"
@@ -988,6 +1069,11 @@ dofile(PLUGIN_DIR .. "modules/controls.lua")(QuickDock, {
     make_fallback_label = makeFallbackLabel,
     widgets = DockWidgets,
 })
+dofile(PLUGIN_DIR .. "modules/arc_layout.lua")(QuickDock, {
+    ArcDock = ArcDock,
+    dock_margin = DOCK_MARGIN,
+    make_fallback_label = makeFallbackLabel,
+})
 function QuickDock:getConfiguredActions()
     local configured_actions = {}
     for _, item in ipairs(Dispatcher.getDisplayList(self.actions)) do
@@ -1048,9 +1134,9 @@ function QuickDock:getMaxPageRows(metrics)
     ))
 end
 
-function QuickDock:getPages(action_count, metrics)
+function QuickDock:getPages(action_count, metrics, max_rows)
     local fixed_rows = self:showContextButton() and 1 or 0
-    local max_rows = self:getMaxPageRows(metrics)
+    max_rows = max_rows or self:getMaxPageRows(metrics)
     local first_page_capacity = max_rows - fixed_rows
     if action_count <= first_page_capacity then
         return { { first = 1, last = action_count } }
@@ -1174,6 +1260,35 @@ function QuickDock:executeAction(action_id)
     end)
 end
 
+-- Reuses the panel data kept while paging or switching sides, unless the
+-- panel kind or the dock shape (which sizes the cover) changed meanwhile.
+function QuickDock:resolveInfoPanelData(info_panel_data, metrics)
+    local info_panel_kind = self:getInfoPanelKind()
+    self.current_info_panel_kind = info_panel_kind
+    if not info_panel_kind then
+        InfoPanel.clearCoverCache(self)
+        return nil
+    end
+    if
+        not info_panel_data
+        or info_panel_data.kind ~= info_panel_kind
+        or info_panel_data.horizontal ~= self:isArcLayout()
+    then
+        info_panel_data = self:collectInfoPanelData(info_panel_kind, metrics)
+    end
+    return info_panel_data
+end
+
+function QuickDock:presentDock(dialog, info_panel_data, metrics)
+    self.dialog = dialog
+    self.info_panel_data = info_panel_data
+    if info_panel_data then
+        self.info_panel_widget = self:createInfoPanelOverlay(info_panel_data, metrics)
+        UIManager:show(self.info_panel_widget, "[ui]")
+    end
+    UIManager:show(dialog, "[ui]")
+end
+
 function QuickDock:showDock(page, side, info_panel_data)
     -- Another UI instance (reader or file browser) may have changed these
     -- shared preferences since this instance was created.
@@ -1186,6 +1301,10 @@ function QuickDock:showDock(page, side, info_panel_data)
     if #actions == 0 and not self:showContextButton() then
         UIManager:show(InfoMessage:new({ text = _("No Quick Dock actions are configured.") }))
         return
+    end
+
+    if self:isArcLayout() then
+        return self:showArcDock(actions, metrics, page, side, info_panel_data)
     end
 
     local pages = self:getPages(#actions, metrics)
@@ -1241,16 +1360,7 @@ function QuickDock:showDock(page, side, info_panel_data)
             return self:makeWarmthSlider(dock_height, parent, metrics)
         end
     end
-    local info_panel_kind = self:getInfoPanelKind()
-    self.current_info_panel_kind = info_panel_kind
-    if info_panel_kind then
-        if not info_panel_data or info_panel_data.kind ~= info_panel_kind then
-            info_panel_data = self:collectInfoPanelData(info_panel_kind, metrics)
-        end
-    else
-        info_panel_data = nil
-        InfoPanel.clearCoverCache(self)
-    end
+    info_panel_data = self:resolveInfoPanelData(info_panel_data, metrics)
     dialog = FloatingControlButtonDialog:new({
         buttons = rows,
         width = metrics.button_width + 2 * Size.border.window + 2 * Size.padding.button,
@@ -1292,13 +1402,7 @@ function QuickDock:showDock(page, side, info_panel_data)
         end,
     })
 
-    self.dialog = dialog
-    self.info_panel_data = info_panel_data
-    if info_panel_data then
-        self.info_panel_widget = self:createInfoPanelOverlay(info_panel_data, metrics)
-        UIManager:show(self.info_panel_widget, "[ui]")
-    end
-    UIManager:show(dialog, "[ui]")
+    self:presentDock(dialog, info_panel_data, metrics)
 end
 
 dofile(PLUGIN_DIR .. "modules/menu.lua")(QuickDock, MODULE_CONSTANTS)

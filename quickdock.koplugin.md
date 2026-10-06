@@ -1,10 +1,11 @@
-# Quick Dock ![Version](https://img.shields.io/badge/version-v0.23.0-blue)
+# Quick Dock ![Version](https://img.shields.io/badge/version-v0.24.0-blue)
 
 Quick Dock adds a floating action dock with lighting controls and an optional information panel to KOReader. It is designed for touch devices and can be assigned to any gesture supported by KOReader.
 
 ## Features
 
 - Floating dock anchored near the lower-left or lower-right corner, without touching the screen edges.
+- Two dock shapes: a column beside the screen edge (the default) or an arc around the lower corner for one-handed use, with the information panel along the top of the screen. See [Arc dock](#arc-dock).
 - Fixed placement while open: dragging over the dock does not move it away from its selected side.
 - Wi-Fi and night mode run in place and keep the dock open; every other configured action closes it before dispatch.
 - Gesture-following position enabled by default, opening the dock on the same half of the screen where the assigned gesture started.
@@ -50,6 +51,8 @@ quickdock.koplugin/
 ├── quickdock_l10n.lua
 ├── icons/                  # bundled action, chevron and lighting icons — see Custom icons below
 └── modules/
+    ├── arc_dock.lua
+    ├── arc_layout.lua
     ├── context.lua
     ├── controls.lua
     ├── icons.lua
@@ -102,6 +105,9 @@ The settings follow the same grouped layout as the other plugins in this reposit
     - `Per-action visibility`: displays the automatic result and controls manual overrides for each action.
 - `Appearance`: controls scale, visible panels and columns, and icon customization.
   - `Dock layout`:
+    - `Dock shape: <current shape>`: selects `Column` (the default) or `Arc`. See [Arc dock](#arc-dock).
+    - `Arc angle: <current angle>`: tilts the arc between `25°` and `65°`; `45°` (a quarter circle) is the default. Available with the `Arc` shape. See [Arc dock](#arc-dock).
+    - `Show band behind arc buttons`: draws the arc's buttons on a white band (the default) or lets each one float on the page with its own outline. Available with the `Arc` shape.
     - `Dock scale: <current scale>`: selects `Small`, `Medium`, or `Large`. The selected scale applies to the buttons, icons, chevrons, lighting columns, information panel, and pagination calculation.
     - `Maximum dock height: <current percentage>`: limits the action, brightness, and warmth columns to approximately `100%`, `60%`, or `33%` of the screen height. Buttons are paginated when they reach the selected limit; the exact height can vary slightly to preserve complete button rows and usable navigation controls. The default is `100%`.
   - `Information panel`:
@@ -119,7 +125,7 @@ The settings follow the same grouped layout as the other plugins in this reposit
   - `Reset actions to defaults`: restores the initial actions and their order after confirmation without changing the other plugin settings.
   - `Reset behavior and actions`: additionally restores extra buttons, default actions, order, and visibility while preserving appearance.
 - `Gesture setup`: displays instructions for assigning the dock to a KOReader gesture.
-- `Version: v0.23.0`: shows the installed plugin version.
+- `Version: v0.24.0`: shows the installed plugin version.
 
 The side selector and visibility options keep their menu open after a change, making it easier to review related settings.
 
@@ -188,6 +194,19 @@ The same status block displays button help for three seconds when a dock button 
 
 Quick Dock does not add a second connectivity polling loop. It relies on KOReader's existing checks and schedules only one final timeout check for an attempted connection. Closing the dock also closes its Wi-Fi status block; the underlying network operation continues normally.
 
+## Arc dock
+
+Select **Tools > Quick Dock > Appearance > Dock layout > Dock shape > Arc** to place the dock on a quarter ring around the lower corner of the side where it opens, from a point on the side edge down to the bottom edge. Every point of the ring is about the same distance from the corner, roughly 4.5 cm on any screen, so the thumb of the hand holding the device reaches all of it.
+
+- **Angle**: **Dock layout > Arc angle** tilts the arc. The angle is measured between the bottom edge and the line joining the arc's two ends: `45°` is a quarter circle; `55°` and `65°` bring the bottom end closer to the side edge and make the arc taller, while `35°` and `25°` spread it along the bottom edge and make it lower. Other than 45°, the arc is a quarter ellipse with the same area as the circle, so it holds about the same number of buttons; the buttons are spaced evenly along its length.
+- **Ring**: a single row with the actions, in the same order as the column from bottom to top: the reader/browser button first, then the configured actions. The items of each page are spread along the whole arc, the first at the end next to the bottom edge and the last at the end next to the side edge, with even gaps between them, so neither end is left empty. When every action fits on one page with room to spare, the buttons, icons, and fallback labels grow (up to 1.5 times the selected dock scale) to fill the arc instead of leaving wide gaps; paginated docks keep the selected scale.
+- **Floating buttons**: the fixed controls float inside the ring, on a smaller arc that starts at the bottom end: the side switch first, then brightness, warmth, the information-panel switch, and the close button, each following its own visibility option.
+- **Pages**: when the actions do not fit, the last item of a page is the next-page arrow, at the end next to the side edge, and on later pages the first item is the previous-page arrow, at the end next to the bottom edge. Swiping or dragging along the ring also turns the page: toward the bottom edge for the next page, toward the side edge for the previous one. Pages change in place, without closing the dock or the information panel.
+- **Lighting**: tapping the brightness button shows the brightness slider in place of the actions, along the same ring: the light toggle at the end next to the bottom edge and the track up to the side edge, dimmest to brightest. The warmth button does the same for warmth, with the button that shows the current level at the bottom end. The selected floating button gets a thicker ring; tapping it again, or turning the page, brings the actions back. The sliders use the same KOReader frontlight and warmth calls as the column.
+- **Information panel**: shown along the top of the screen as a wide panel, with the cover as a thumbnail on the left and the content in up to three columns. Held-button help and Wi-Fi status appear in a strip right below it.
+
+By default the ring is drawn as one opaque band, so changing pages or moving a slider repaints only the dock. With **Show band behind arc buttons** disabled, each ring button floats on the page with its own outline, like the buttons inside the ring, and the slider gets an outlined lane of its own; the page between the buttons stays visible, so those changes also repaint the page under the dock (the e-ink refresh still covers only the dock's area). Tapping outside the band and the floating buttons, including the empty corner inside the ring, closes the dock. The ring's size follows the dock scale and the maximum dock height; it always keeps room for three action positions and for the floating buttons inside it.
+
 ## Lighting controls
 
 On devices with a frontlight, the slider is enabled by default and appears in its own column on the inner side of the action dock. Drag or tap toward the top to increase brightness and toward the bottom to decrease it. The circular thumb follows the active brightness level.
@@ -251,6 +270,9 @@ Quick Dock stores its preferences through KOReader's reader settings using these
 | `quickdock_info_panel_text_alignment` | Left, centered, or nearest-screen-edge alignment for all information-panel text |
 | `quickdock_dock_size` | Selected Small, Medium, or Large dock scale |
 | `quickdock_max_action_dock_height` | Maximum dock-column height as 100%, 60%, or 33% of the screen; defaults to 100% |
+| `quickdock_dock_shape` | Column or arc dock; defaults to column |
+| `quickdock_arc_angle` | Arc tilt in degrees: 25, 35, 45, 55, or 65; defaults to 45 |
+| `quickdock_arc_band` | Draws the arc's buttons on a white band; enabled by default |
 | `quickdock_close_together` | Closes all blocks in one non-flashing update over their smallest encompassing rectangle; disabled by default |
 
 ## Localization
@@ -262,7 +284,9 @@ Quick Dock follows KOReader's active interface language. Plugin-specific message
 - `main.lua`: plugin lifecycle, saved state, dock sizing, pagination, information-panel coordination, and action dispatch.
 - `modules/controls.lua`: action, context, pagination, side-switch, close, information-panel, frontlight, and warmth control factories.
 - `modules/widgets.lua`: low-level slider and button widget classes, fixed positioning, and multi-column layout.
-- `modules/info_panel.lua`: safe collection and opposite-edge rendering of reading, book statistics, and network details, covers, statistics, clock, battery, and transient status panels.
+- `modules/arc_dock.lua`: the arc dock widget: the arc as a sampled quarter ellipse, floating-button geometry, painting, hit testing, page swipes, and the arc lighting sliders.
+- `modules/arc_layout.lua`: builds the arc dock's pages and floating buttons from the same actions and callbacks as the column.
+- `modules/info_panel.lua`: safe collection and rendering of reading, book statistics, and network details, covers, statistics, clock, battery, and transient status panels, either on the edge opposite the dock or along the top of the screen.
 - `modules/inline_actions.lua`: in-place night-mode and Wi-Fi execution, including Wi-Fi progress redirection and timeout handling.
 - `modules/context.lua`: reader, file-browser, and optional Bookshelf integration.
 - `modules/icons.lua`: custom/system icon resolution, stateful icons, and safe shared IconWidget patching.

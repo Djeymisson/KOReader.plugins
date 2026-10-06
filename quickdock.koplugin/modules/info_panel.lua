@@ -49,13 +49,18 @@ local StatusPanelOverlay = WidgetContainer:extend({
     modal = false,
     toast = true,
     -- Same meaning as InfoPanelOverlay's own field above; only used when
-    -- there's no lower_widget to stack above instead.
+    -- there's no anchor_widget to stack above instead.
     extra_bottom_margin = 0,
 })
 
 function InfoPanelOverlay:init()
     local panel_size = self.panel:getSize()
     local margin = math_max(0, tonumber(self.screen_margin) or Size.padding.large)
+    if self.placement == "top" then
+        self.dimen = Geom:new({ x = margin, y = margin, w = panel_size.w, h = panel_size.h })
+        self[1] = self.panel
+        return
+    end
     local left = margin
     if self.panel_side == "right" then
         left = Screen:getWidth() - margin - panel_size.w
@@ -88,16 +93,27 @@ end
 function StatusPanelOverlay:init()
     local panel_size = self.panel:getSize()
     local margin = math_max(0, tonumber(self.screen_margin) or Size.padding.large)
+    if self.placement == "top" then
+        -- Below the top information panel, or at the top edge without one.
+        local top = margin
+        local upper_dimen = self.anchor_widget and self.anchor_widget.dimen
+        if upper_dimen then
+            top = upper_dimen.y + upper_dimen.h + (self.panel_gap or Size.padding.default)
+        end
+        self.dimen = Geom:new({ x = margin, y = top, w = panel_size.w, h = panel_size.h })
+        self[1] = self.panel
+        return
+    end
     local left = margin
     if self.panel_side == "right" then
         left = Screen:getWidth() - margin - panel_size.w
     end
 
-    -- With a lower_widget, this already stacks above whatever bottom offset
-    -- that widget resolved to (extra margin included), so extra_bottom_margin
-    -- only needs to apply to the fallback, lower_widget-less case below.
+    -- With an anchor_widget (the panel below), this already stacks above
+    -- whatever bottom offset that widget resolved to (extra margin included),
+    -- so extra_bottom_margin only needs to apply to the fallback case below.
     local bottom = Screen:getHeight() - margin - math_max(0, tonumber(self.extra_bottom_margin) or 0)
-    local lower_dimen = self.lower_widget and self.lower_widget.dimen
+    local lower_dimen = self.anchor_widget and self.anchor_widget.dimen
     if lower_dimen then
         bottom = lower_dimen.y - (self.panel_gap or Size.padding.default)
     end
@@ -172,18 +188,30 @@ local function clearCoverCache(plugin)
     end
 end
 
-local function getCover(plugin, ui, metrics, screen_margin)
+local function getCover(plugin, ui, metrics, screen_margin, horizontal)
     local document = ui and ui.document
     if not document then
         clearCoverCache(plugin)
         return nil
     end
 
-    local content_width = panelContentWidth(metrics, maximumPanelWidth(screen_margin))
-    local maximum_height = math_max(
-        Screen:scaleBySize(100),
-        math_min(math_floor(Screen:getHeight() * 0.26), math_floor(content_width * 1.45))
-    )
+    local content_width
+    local maximum_height
+    if horizontal then
+        -- A thumbnail beside the text columns of the top panel.
+        local factor = tonumber(metrics and metrics.scale_factor) or 1
+        maximum_height = math_floor(Screen:scaleBySize(96) * factor + 0.5)
+        content_width = math_min(
+            math_floor(maximum_height * 0.8),
+            math_floor(Screen:getWidth() * 0.18)
+        )
+    else
+        content_width = panelContentWidth(metrics, maximumPanelWidth(screen_margin))
+        maximum_height = math_max(
+            Screen:scaleBySize(100),
+            math_min(math_floor(Screen:getHeight() * 0.26), math_floor(content_width * 1.45))
+        )
+    end
     local filepath = tostring(document.file or document.filepath or document)
     local cache_key = filepath .. "|" .. tostring(content_width) .. "x" .. tostring(maximum_height)
     local cache = plugin.info_panel_cover_cache
@@ -411,7 +439,7 @@ local function getStatisticsData(ui, book_left, chapter_left)
     }
 end
 
-local function collect(plugin, metrics, screen_margin, include_cover)
+local function collect(plugin, metrics, screen_margin, include_cover, horizontal)
     local ui = plugin and plugin.ui or nil
     local data = {
         kind = "reading",
@@ -443,7 +471,7 @@ local function collect(plugin, metrics, screen_margin, include_cover)
     data.chapter = getChapterData(ui, page, total)
     data.statistics = getStatisticsData(ui, left, data.chapter and data.chapter.left or nil)
     if include_cover then
-        data.cover = getCover(plugin, ui, metrics, screen_margin)
+        data.cover = getCover(plugin, ui, metrics, screen_margin, horizontal)
     else
         clearCoverCache(plugin)
     end
@@ -538,7 +566,7 @@ local function getBookStatistics(ui, page, total)
     return stats
 end
 
-local function collectStats(plugin, metrics, screen_margin, include_cover)
+local function collectStats(plugin, metrics, screen_margin, include_cover, horizontal)
     local ui = plugin and plugin.ui or nil
     local data = {
         kind = "stats",
@@ -563,7 +591,7 @@ local function collectStats(plugin, metrics, screen_margin, include_cover)
     }
     data.book_stats = getBookStatistics(ui, page, total)
     if include_cover then
-        data.cover = getCover(plugin, ui, metrics, screen_margin)
+        data.cover = getCover(plugin, ui, metrics, screen_margin, horizontal)
     else
         clearCoverCache(plugin)
     end
@@ -645,11 +673,83 @@ local function addSeparator(items, width, gap)
     addGap(items, gap)
 end
 
-local function build(plugin, metrics, parent, maximum_outer_width, data, panel_side)
+-- Lays the panel groups out side by side for the top panel: the cover keeps
+-- its width and the text columns share the rest equally, separated by thin
+-- vertical rules as tall as the tallest column.
+local function buildColumns(groups, content_width, padding, gap, cover)
+    local by_column = {}
+    local order = {}
+    for _index, group in ipairs(groups) do
+        if not by_column[group.column] then
+            by_column[group.column] = {}
+            order[#order + 1] = group.column
+        end
+        table.insert(by_column[group.column], group)
+    end
+    table.sort(order)
+
+    local rule_width = math_max(1, Screen:scaleBySize(1))
+    local divider_width = 2 * padding + rule_width
+    local text_columns = #order
+    local available = content_width - (#order - 1) * divider_width
+    if by_column[0] then
+        text_columns = text_columns - 1
+        available = available - cover.width
+    end
+    local text_width = math_max(
+        Screen:scaleBySize(60),
+        math_floor(available / math_max(1, text_columns))
+    )
+
+    local columns = {}
+    local tallest = 0
+    for _index, column in ipairs(order) do
+        local width = column == 0 and cover.width or text_width
+        local items = { align = "left" }
+        for index, group in ipairs(by_column[column]) do
+            if index > 1 then
+                addSeparator(items, width, gap)
+            end
+            group.render(width, items)
+        end
+        local widget = VerticalGroup:new(items)
+        columns[#columns + 1] = widget
+        tallest = math_max(tallest, widget:getSize().h)
+    end
+
+    local row = { align = "top" }
+    for index, widget in ipairs(columns) do
+        if index > 1 then
+            row[#row + 1] = HorizontalSpan:new({ width = padding })
+            row[#row + 1] = LineWidget:new({
+                background = Blitbuffer.COLOR_GRAY,
+                dimen = Geom:new({ w = rule_width, h = tallest }),
+            })
+            row[#row + 1] = HorizontalSpan:new({ width = padding })
+        end
+        row[#row + 1] = widget
+    end
+    return HorizontalGroup:new(row)
+end
+
+-- The panel content is a list of groups, each one a few related lines. The
+-- side panel stacks every group in one column with a separator between them;
+-- the top panel (arc dock) places the groups side by side in up to three
+-- columns, each group saying in which column it goes. Column 0 holds the
+-- cover, which keeps its own width.
+local function build(plugin, metrics, parent, maximum_outer_width, data, panel_side, horizontal)
     local factor = tonumber(metrics and metrics.scale_factor) or 1
     local padding = math_max(Size.padding.small, math_floor(Screen:scaleBySize(8) * factor + 0.5))
     local gap = math_max(1, math_floor(Screen:scaleBySize(3) * factor + 0.5))
-    local content_width = panelContentWidth(metrics, maximum_outer_width)
+    local content_width
+    if horizontal then
+        content_width = math_max(
+            Screen:scaleBySize(90),
+            math_floor(maximum_outer_width) - 2 * (padding + Size.border.button)
+        )
+    else
+        content_width = panelContentWidth(metrics, maximum_outer_width)
+    end
     -- The statistics panel packs more lines than the others, so all of its
     -- fonts (including the shared header and footer) are scaled down together.
     local font_factor = data and data.kind == "stats" and factor * STATS_FONT_SCALE or factor
@@ -664,60 +764,71 @@ local function build(plugin, metrics, parent, maximum_outer_width, data, panel_s
     elseif alignment_setting ~= "center" then
         text_alignment = "left"
     end
-    local function makePanelText(text, face, bold, color)
-        return makeText(text, face, content_width, bold, color, text_alignment)
+    local function makePanelText(width, text, face, bold, color)
+        return makeText(text, face, width, bold, color, text_alignment)
     end
     data = data or collect(plugin)
-    local items = {}
+    local groups = {}
+    local function addGroup(column, render)
+        groups[#groups + 1] = { column = column, render = render }
+    end
 
     -- Cover, title, and author: the top of both the reading and statistics panels.
     local function addDocumentHeader()
         if data.cover and data.cover.bb then
-            items[#items + 1] = CenterContainer:new({
-                dimen = Geom:new({ w = content_width, h = data.cover.height }),
-                ImageWidget:new({
-                    image = data.cover.bb,
-                    image_disposable = false,
-                    width = data.cover.width,
-                    height = data.cover.height,
-                }),
-            })
-            addSeparator(items, content_width, gap)
+            addGroup(0, function(width, items)
+                items[#items + 1] = CenterContainer:new({
+                    dimen = Geom:new({ w = width, h = data.cover.height }),
+                    ImageWidget:new({
+                        image = data.cover.bb,
+                        image_disposable = false,
+                        width = data.cover.width,
+                        height = data.cover.height,
+                    }),
+                })
+            end)
         end
-        items[#items + 1] = makePanelText(data.document.title, title_face, true)
-        if data.document.author ~= "" then
-            addGap(items, gap)
-            items[#items + 1] = makePanelText(
-                data.document.author,
-                body_face,
-                false,
-                Blitbuffer.COLOR_DARK_GRAY
-            )
-        end
-        addSeparator(items, content_width, gap)
+        addGroup(1, function(width, items)
+            items[#items + 1] = makePanelText(width, data.document.title, title_face, true)
+            if data.document.author ~= "" then
+                addGap(items, gap)
+                items[#items + 1] = makePanelText(
+                    width,
+                    data.document.author,
+                    body_face,
+                    false,
+                    Blitbuffer.COLOR_DARK_GRAY
+                )
+            end
+        end)
     end
 
+    local footer_column = 2
     if data.kind == "network" then
-        items[#items + 1] = makePanelText(_("Network information"), title_face, true)
-        addGap(items, gap)
-        items[#items + 1] = makePanelText(data.network.status, body_face, true)
-        if data.network.ssid and not data.network.details then
+        addGroup(1, function(width, items)
+            items[#items + 1] = makePanelText(width, _("Network information"), title_face, true)
             addGap(items, gap)
-            items[#items + 1] = makePanelText(
-                T(_("SSID: %1"), data.network.ssid),
-                body_face
-            )
-        end
+            items[#items + 1] = makePanelText(width, data.network.status, body_face, true)
+            if data.network.ssid and not data.network.details then
+                addGap(items, gap)
+                items[#items + 1] = makePanelText(
+                    width,
+                    T(_("SSID: %1"), data.network.ssid),
+                    body_face
+                )
+            end
+        end)
         if data.network.details then
-            addSeparator(items, content_width, gap)
-            items[#items + 1] = makePanelText(data.network.details, body_face)
+            addGroup(2, function(width, items)
+                items[#items + 1] = makePanelText(width, data.network.details, body_face)
+            end)
+            footer_column = 3
         end
     elseif data.kind == "stats" then
         if data.document then
             addDocumentHeader()
             local stats = data.book_stats
             local half_gap = 2 * gap
-            local half_width = math_floor((content_width - half_gap) / 2)
             local hero_face = Font:getFace("infofont", math_floor(28 * font_factor + 0.5))
             local value_face = Font:getFace("infofont", math_floor(17 * font_factor + 0.5))
             local caption_face = Font:getFace("smallinfofont", math_floor(11 * font_factor + 0.5))
@@ -732,7 +843,8 @@ local function build(plugin, metrics, parent, maximum_outer_width, data, panel_s
                     makeText(caption, caption_face, width, false, gray, text_alignment),
                 })
             end
-            local function statRow(left_value, left_caption, right_value, right_caption)
+            local function statRow(width, left_value, left_caption, right_value, right_caption)
+                local half_width = math_floor((width - half_gap) / 2)
                 return HorizontalGroup:new({
                     statCell(left_value, left_caption, half_width),
                     HorizontalSpan:new({ width = half_gap }),
@@ -743,133 +855,168 @@ local function build(plugin, metrics, parent, maximum_outer_width, data, panel_s
                 return seconds and compactDuration(seconds) or nil
             end
 
-            local progress_height = math_max(4, math_floor(Screen:scaleBySize(8) * factor + 0.5))
-            items[#items + 1] = statCell(
-                data.document.percentage .. "%", _("Progress"), content_width, hero_face
-            )
-            addGap(items, gap)
-            items[#items + 1] = ProgressWidget:new({
-                width = content_width,
-                height = progress_height,
-                percentage = data.document.percentage / 100,
-                margin_h = Screen:scaleBySize(1),
-                margin_v = Screen:scaleBySize(1),
-                radius = math_floor(progress_height / 2),
-                bordersize = Size.border.thin,
-                bgcolor = Blitbuffer.COLOR_WHITE,
-                fillcolor = Blitbuffer.COLOR_BLACK,
-            })
-            addSeparator(items, content_width, gap)
+            addGroup(1, function(width, items)
+                local progress_height = math_max(4, math_floor(Screen:scaleBySize(8) * factor + 0.5))
+                items[#items + 1] = statCell(
+                    data.document.percentage .. "%", _("Progress"), width, hero_face
+                )
+                addGap(items, gap)
+                items[#items + 1] = ProgressWidget:new({
+                    width = width,
+                    height = progress_height,
+                    percentage = data.document.percentage / 100,
+                    margin_h = Screen:scaleBySize(1),
+                    margin_v = Screen:scaleBySize(1),
+                    radius = math_floor(progress_height / 2),
+                    bordersize = Size.border.thin,
+                    bgcolor = Blitbuffer.COLOR_WHITE,
+                    fillcolor = Blitbuffer.COLOR_BLACK,
+                })
+            end)
 
-            items[#items + 1] = statRow(
-                duration(stats.read_time), _("Time read"),
-                duration(stats.time_left), _("Time left")
-            )
-            addGap(items, 2 * gap)
-            items[#items + 1] = statRow(
-                duration(stats.daily_average), _("Daily average"),
-                stats.pages_per_minute and string.format("%.1f", stats.pages_per_minute) or nil,
-                _("Pages/min")
-            )
-            addSeparator(items, content_width, gap)
+            addGroup(2, function(width, items)
+                items[#items + 1] = statRow(
+                    width,
+                    duration(stats.read_time), _("Time read"),
+                    duration(stats.time_left), _("Time left")
+                )
+                addGap(items, 2 * gap)
+                items[#items + 1] = statRow(
+                    width,
+                    duration(stats.daily_average), _("Daily average"),
+                    stats.pages_per_minute and string.format("%.1f", stats.pages_per_minute) or nil,
+                    _("Pages/min")
+                )
+            end)
 
-            -- Not N_: ngettext does not read this plugin's own catalog.
-            local started_value, started_caption
-            if stats.first_open then
-                if stats.days_ago == 0 then
-                    started_value = _("Today")
-                elseif stats.days_ago == 1 then
-                    started_value = _("1 day ago")
-                else
-                    started_value = T(_("%1 days ago"), stats.days_ago)
+            addGroup(3, function(width, items)
+                -- Not N_: ngettext does not read this plugin's own catalog.
+                local started_value, started_caption
+                if stats.first_open then
+                    if stats.days_ago == 0 then
+                        started_value = _("Today")
+                    elseif stats.days_ago == 1 then
+                        started_value = _("1 day ago")
+                    else
+                        started_value = T(_("%1 days ago"), stats.days_ago)
+                    end
+                    started_caption = T(_("Started on %1"), datetime.secondsToDate(stats.first_open, true))
                 end
-                started_caption = T(_("Started on %1"), datetime.secondsToDate(stats.first_open, true))
-            end
-            items[#items + 1] = statCell(started_value, started_caption or _("Started"), content_width)
-            addGap(items, 2 * gap)
-            items[#items + 1] = statCell(
-                stats.finish_date and datetime.secondsToDate(stats.finish_date, true) or nil,
-                _("Estimated end"),
-                content_width
-            )
-            if not stats.enabled then
+                items[#items + 1] = statCell(started_value, started_caption or _("Started"), width)
+                addGap(items, 2 * gap)
+                items[#items + 1] = statCell(
+                    stats.finish_date and datetime.secondsToDate(stats.finish_date, true) or nil,
+                    _("Estimated end"),
+                    width
+                )
+                if not stats.enabled then
+                    addGap(items, gap)
+                    items[#items + 1] = makePanelText(
+                        width,
+                        _("Enable KOReader's Statistics plugin to collect reading data."),
+                        body_face,
+                        false,
+                        Blitbuffer.COLOR_DARK_GRAY
+                    )
+                end
+            end)
+            footer_column = 3
+        else
+            addGroup(1, function(width, items)
+                items[#items + 1] = makePanelText(width, _("Book statistics"), title_face, true)
                 addGap(items, gap)
                 items[#items + 1] = makePanelText(
-                    _("Enable KOReader's Statistics plugin to collect reading data."),
+                    width,
+                    _("No document is currently open."),
                     body_face,
                     false,
                     Blitbuffer.COLOR_DARK_GRAY
                 )
+            end)
+        end
+    elseif data.document then
+        addDocumentHeader()
+
+        addGroup(2, function(width, items)
+            local page = data.document.page_label or data.document.page
+            local total = data.document.total_label or data.document.total
+            local book_lines = {
+                T(_("Book: %1 / %2  ·  %3%"), page, total, data.document.percentage),
+            }
+            if data.statistics and data.statistics.book_time_left then
+                book_lines[2] = T(_("Remaining: %1"), data.statistics.book_time_left)
             end
-        else
-            items[#items + 1] = makePanelText(_("Book statistics"), title_face, true)
+            items[#items + 1] = makePanelText(width, table.concat(book_lines, "\n"), body_face)
+        end)
+
+        if data.chapter then
+            addGroup(2, function(width, items)
+                local chapter_title = data.chapter.title ~= ""
+                    and data.chapter.title or _("Chapter")
+                items[#items + 1] = makePanelText(width, chapter_title, body_face, true)
+                addGap(items, gap)
+                local chapter_lines = {
+                    T(_("Page: %1 / %2  ·  %3%"), data.chapter.page,
+                        data.chapter.total, data.chapter.percentage),
+                }
+                if data.statistics and data.statistics.chapter_time_left then
+                    chapter_lines[2] = T(_("Remaining: %1"), data.statistics.chapter_time_left)
+                end
+                items[#items + 1] = makePanelText(width, table.concat(chapter_lines, "\n"), body_face)
+            end)
+        end
+        footer_column = 3
+    else
+        addGroup(1, function(width, items)
+            items[#items + 1] = makePanelText(width, _("Reading today"), title_face, true)
             addGap(items, gap)
             items[#items + 1] = makePanelText(
+                width,
                 _("No document is currently open."),
                 body_face,
                 false,
                 Blitbuffer.COLOR_DARK_GRAY
             )
-        end
-    elseif data.document then
-        addDocumentHeader()
-
-        local page = data.document.page_label or data.document.page
-        local total = data.document.total_label or data.document.total
-        local book_lines = {
-            T(_("Book: %1 / %2  ·  %3%"), page, total, data.document.percentage),
-        }
-        if data.statistics and data.statistics.book_time_left then
-            book_lines[2] = T(_("Remaining: %1"), data.statistics.book_time_left)
-        end
-        items[#items + 1] = makePanelText(table.concat(book_lines, "\n"), body_face)
-
-        if data.chapter then
-            addSeparator(items, content_width, gap)
-            local chapter_title = data.chapter.title ~= ""
-                and data.chapter.title or _("Chapter")
-            items[#items + 1] = makePanelText(chapter_title, body_face, true)
-            addGap(items, gap)
-            local chapter_lines = {
-                T(_("Page: %1 / %2  ·  %3%"), data.chapter.page,
-                    data.chapter.total, data.chapter.percentage),
-            }
-            if data.statistics and data.statistics.chapter_time_left then
-                chapter_lines[2] = T(_("Remaining: %1"), data.statistics.chapter_time_left)
-            end
-            items[#items + 1] = makePanelText(table.concat(chapter_lines, "\n"), body_face)
-        end
-    else
-        items[#items + 1] = makePanelText(_("Reading today"), title_face, true)
-        addGap(items, gap)
-        items[#items + 1] = makePanelText(
-            _("No document is currently open."),
-            body_face,
-            false,
-            Blitbuffer.COLOR_DARK_GRAY
-        )
+        end)
     end
 
     if data.statistics and data.statistics.today_pages ~= nil then
-        addSeparator(items, content_width, gap)
-        local pages = pagesLabel(data.statistics.today_pages)
-        local today = T(_("Today: %1"), pages)
-        if data.statistics.today_duration then
-            today = T(_("Today: %1  ·  %2"), pages, data.statistics.today_duration)
-        end
-        items[#items + 1] = makePanelText(today, body_face)
+        addGroup(footer_column, function(width, items)
+            local pages = pagesLabel(data.statistics.today_pages)
+            local today = T(_("Today: %1"), pages)
+            if data.statistics.today_duration then
+                today = T(_("Today: %1  ·  %2"), pages, data.statistics.today_duration)
+            end
+            items[#items + 1] = makePanelText(width, today, body_face)
+        end)
     end
 
-    addSeparator(items, content_width, gap)
-    local status = { data.clock }
-    if data.battery then
-        status[#status + 1] = data.battery
+    addGroup(footer_column, function(width, items)
+        local status = { data.clock }
+        if data.battery then
+            status[#status + 1] = data.battery
+        end
+        items[#items + 1] = makePanelText(
+            width,
+            table.concat(status, "  ·  "),
+            body_face,
+            true
+        )
+    end)
+
+    local content
+    if horizontal then
+        content = buildColumns(groups, content_width, padding, gap, data.cover)
+    else
+        local items = {}
+        for index, group in ipairs(groups) do
+            if index > 1 then
+                addSeparator(items, content_width, gap)
+            end
+            group.render(content_width, items)
+        end
+        content = VerticalGroup:new(items)
     end
-    items[#items + 1] = makePanelText(
-        table.concat(status, "  ·  "),
-        body_face,
-        true
-    )
 
     return FrameContainer:new({
         show_parent = parent,
@@ -879,8 +1026,9 @@ local function build(plugin, metrics, parent, maximum_outer_width, data, panel_s
         radius = Size.radius.button,
         margin = 0,
         padding = padding,
+        width = horizontal and math_floor(maximum_outer_width) or nil,
         allow_mirroring = false,
-        VerticalGroup:new(items),
+        content,
     })
 end
 
@@ -894,6 +1042,20 @@ local function createOverlay(plugin, metrics, panel_side, screen_margin, data, e
         screen_margin = screen_margin,
         dithered = data and data.cover ~= nil,
         extra_bottom_margin = extra_bottom_margin,
+    })
+    panel.show_parent = overlay
+    return overlay
+end
+
+local function createTopOverlay(plugin, metrics, screen_margin, data)
+    screen_margin = math_max(0, tonumber(screen_margin) or Size.padding.large)
+    local width = Screen:getWidth() - 2 * screen_margin
+    local panel = build(plugin, metrics, nil, width, data, "left", true)
+    local overlay = InfoPanelOverlay:new({
+        panel = panel,
+        placement = "top",
+        screen_margin = screen_margin,
+        dithered = data and data.cover ~= nil,
     })
     panel.show_parent = overlay
     return overlay
@@ -919,8 +1081,42 @@ local function createStatusOverlay(metrics, panel_side, screen_margin, text, low
         panel_side = panel_side == "left" and "left" or "right",
         screen_margin = screen_margin,
         panel_gap = Size.padding.default,
-        lower_widget = lower_widget,
+        anchor_widget = lower_widget,
         extra_bottom_margin = extra_bottom_margin,
+    })
+    panel.show_parent = overlay
+    return overlay
+end
+
+-- The arc dock's status line: as wide as the top panel, right below it.
+local function createTopStatusOverlay(metrics, screen_margin, text, upper_widget)
+    screen_margin = math_max(0, tonumber(screen_margin) or Size.padding.large)
+    local factor = tonumber(metrics and metrics.scale_factor) or 1
+    local padding = math_max(Size.padding.small, math_floor(Screen:scaleBySize(8) * factor + 0.5))
+    local width = Screen:getWidth() - 2 * screen_margin
+    local body_face = Font:getFace("smallinfofont", math_floor(13 * factor + 0.5))
+    local panel = FrameContainer:new({
+        background = Blitbuffer.COLOR_WHITE,
+        bordersize = Size.border.button,
+        color = Blitbuffer.COLOR_BLACK,
+        radius = Size.radius.button,
+        margin = 0,
+        padding = padding,
+        width = width,
+        allow_mirroring = false,
+        makeText(
+            tostring(text or ""),
+            body_face,
+            width - 2 * (padding + Size.border.button),
+            true
+        ),
+    })
+    local overlay = StatusPanelOverlay:new({
+        panel = panel,
+        placement = "top",
+        screen_margin = screen_margin,
+        panel_gap = Size.padding.default,
+        anchor_widget = upper_widget,
     })
     panel.show_parent = overlay
     return overlay
@@ -934,4 +1130,6 @@ return {
     collectNetwork = collectNetwork,
     createOverlay = createOverlay,
     createStatusOverlay = createStatusOverlay,
+    createTopOverlay = createTopOverlay,
+    createTopStatusOverlay = createTopStatusOverlay,
 }

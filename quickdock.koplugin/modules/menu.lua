@@ -46,6 +46,10 @@ return function(QuickDock, constants)
     local ACTION_CONTEXT_READER = constants.ACTION_CONTEXT_READER
     local ACTION_CONTEXT_BROWSER = constants.ACTION_CONTEXT_BROWSER
     local ACTION_HOME = constants.ACTION_HOME
+    local DOCK_SHAPE_COLUMN = constants.DOCK_SHAPE_COLUMN
+    local DOCK_SHAPE_ARC = constants.DOCK_SHAPE_ARC
+    local ARC_ANGLES = constants.ARC_ANGLES
+    local DEFAULT_ARC_ANGLE = constants.DEFAULT_ARC_ANGLE
     local SIDE_MODE_FIXED = constants.SIDE_MODE_FIXED
     local SIDE_MODE_GESTURE = constants.SIDE_MODE_GESTURE
     local DOCK_SIZE_SMALL = constants.DOCK_SIZE_SMALL
@@ -410,6 +414,27 @@ function QuickDock:getActionSettingsMenu()
 end
 
 function QuickDock:getDockLayoutMenu()
+    local shape_item = {
+        text_func = function()
+            local shape = self:getDockShape() == DOCK_SHAPE_ARC and _("Arc") or _("Column")
+            return T(_("Dock shape: %1"), shape)
+        end,
+        help_text = _("Choose a column beside the screen edge or a quarter ring around the lower corner for one-handed use."),
+        sub_item_table = {
+            makeRadioOption(
+                _("Column"),
+                _("Stacks the buttons in a column, with the lighting sliders beside it and the information panel on the opposite edge."),
+                function() return self:getDockShape() == DOCK_SHAPE_COLUMN end,
+                function() self:setDockShape(DOCK_SHAPE_COLUMN) end
+            ),
+            makeRadioOption(
+                _("Arc"),
+                _("Places the actions in a single row on a quarter ring around the lower corner, within reach of the thumb, with the other buttons floating inside it. Tapping the brightness or warmth button shows its slider in place of the actions; pages turn by swiping along the ring or with its arrows. The information panel moves to the top of the screen."),
+                function() return self:getDockShape() == DOCK_SHAPE_ARC end,
+                function() self:setDockShape(DOCK_SHAPE_ARC) end
+            ),
+        },
+    }
     local size_labels = {
         [DOCK_SIZE_SMALL] = _("Small"),
         [DOCK_SIZE_MEDIUM] = _("Medium"),
@@ -461,7 +486,38 @@ function QuickDock:getDockLayoutMenu()
             ),
         },
     }
-    return { scale_item, height_item }
+    local band_item = makeToggleOption(
+        _("Show band behind arc buttons"),
+        _("Draws the arc's buttons on a white band. Without it, each button floats on the page with its own outline."),
+        function() return self:showArcBand() end,
+        function(enabled) self:setShowArcBand(enabled) end,
+        function() return self:getDockShape() == DOCK_SHAPE_ARC end
+    )
+    local angle_options = {}
+    for _index, angle in ipairs(ARC_ANGLES) do
+        local label = T(_("%1°"), angle)
+        if angle == DEFAULT_ARC_ANGLE then
+            label = T(_("%1° (quarter circle)"), angle)
+        elseif angle == ARC_ANGLES[1] then
+            label = T(_("%1° (widest and lowest)"), angle)
+        elseif angle == ARC_ANGLES[#ARC_ANGLES] then
+            label = T(_("%1° (tallest and narrowest)"), angle)
+        end
+        angle_options[#angle_options + 1] = makeRadioOption(
+            label, nil,
+            function() return self:getArcAngle() == angle end,
+            function() self:setArcAngle(angle) end
+        )
+    end
+    local angle_item = {
+        text_func = function()
+            return T(_("Arc angle: %1°"), self:getArcAngle())
+        end,
+        help_text = _("Tilts the arc: the angle between the bottom edge and the line joining its two ends. Higher angles bring the bottom end closer to the side and make the arc taller; lower angles spread it along the bottom and make it lower. The arc keeps about the same size."),
+        enabled_func = function() return self:getDockShape() == DOCK_SHAPE_ARC end,
+        sub_item_table = angle_options,
+    }
+    return { shape_item, angle_item, band_item, scale_item, height_item }
 end
 
 function QuickDock:getInformationPanelMenu()
@@ -549,7 +605,7 @@ function QuickDock:getAppearanceMenu()
     return {
         {
             text = _("Dock layout"),
-            help_text = _("Adjust the scale and maximum height of the dock."),
+            help_text = _("Choose the dock shape and adjust its scale and maximum height."),
             sub_item_table_func = function() return self:getDockLayoutMenu() end,
         },
         {

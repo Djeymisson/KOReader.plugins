@@ -34,7 +34,7 @@ function QuickDock:showStatusPanel(text, timeout)
     if
         status_panel_widget
         and self.status_panel_text == text
-        and status_panel_widget.lower_widget == self.info_panel_widget
+        and status_panel_widget.anchor_widget == self.info_panel_widget
     then
         -- Native Wi-Fi backends may announce the same connection phase many
         -- times while forcing a repaint after each scan/authentication step.
@@ -48,15 +48,24 @@ function QuickDock:showStatusPanel(text, timeout)
         return status_panel_widget
     end
     self:closeStatusPanel()
-    local side = self.current_dock_side == "left" and "right" or "left"
-    status_panel_widget = InfoPanel.createStatusOverlay(
-        self:getDockMetrics(),
-        side,
-        dock_margin,
-        text,
-        self.info_panel_widget,
-        self:getSiblingOverlayClearance(side)
-    )
+    if self:isArcLayout() then
+        status_panel_widget = InfoPanel.createTopStatusOverlay(
+            self:getDockMetrics(),
+            dock_margin,
+            text,
+            self.info_panel_widget
+        )
+    else
+        local side = self.current_dock_side == "left" and "right" or "left"
+        status_panel_widget = InfoPanel.createStatusOverlay(
+            self:getDockMetrics(),
+            side,
+            dock_margin,
+            text,
+            self.info_panel_widget,
+            self:getSiblingOverlayClearance(side)
+        )
+    end
     self.status_panel_widget = status_panel_widget
     self.status_panel_text = text
     UIManager:show(status_panel_widget, "ui")

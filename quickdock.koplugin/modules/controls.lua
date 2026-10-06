@@ -25,8 +25,23 @@ function QuickDock:getFrontlightSliderHeight(dock_height)
     return math_max(1, tonumber(dock_height) or 1)
 end
 
-function QuickDock:makeFrontlightToggleButton(width, dialog, slider, metrics)
+function QuickDock:toggleFrontlight(slider)
     local powerd = slider.powerd
+    local toggled = pcall(function()
+        powerd:toggleFrontlight()
+        powerd:updateResumeFrontlightState()
+    end)
+    if toggled then
+        slider:syncFromPower(true)
+    end
+end
+
+function QuickDock:showFrontlightToggleHelp(slider)
+    local message = slider.enabled and _("Turn frontlight off") or _("Turn frontlight on")
+    self:showButtonHelp(message)
+end
+
+function QuickDock:makeFrontlightToggleButton(width, dialog, slider, metrics)
     local function getStateIcon()
         return self:getIcon(slider.enabled and "light_on" or "light_off")
     end
@@ -39,17 +54,10 @@ function QuickDock:makeFrontlightToggleButton(width, dialog, slider, metrics)
         slider = slider,
         icon_provider = getStateIcon,
         callback = function()
-            local toggled = pcall(function()
-                powerd:toggleFrontlight()
-                powerd:updateResumeFrontlightState()
-            end)
-            if toggled then
-                slider:syncFromPower(true)
-            end
+            self:toggleFrontlight(slider)
         end,
         hold_callback = function()
-            local message = slider.enabled and _("Turn frontlight off") or _("Turn frontlight on")
-            self:showButtonHelp(message)
+            self:showFrontlightToggleHelp(slider)
         end,
     }, width, metrics)
     if icon then
@@ -66,13 +74,12 @@ function QuickDock:makeFrontlightSlider(dock_height, dialog, metrics)
         1,
         column_height - metrics.side_button_outer_height - metrics.side_button_gap
     )
-    local slider = LightSlider:new({
+    local slider = self:newFrontlightModel({
         width = metrics.button_width,
         height = slider_height,
         slider_padding = metrics.frontlight_slider_padding,
         track_width = metrics.frontlight_track_width,
         knob_radius = metrics.frontlight_knob_radius,
-        powerd = Device:getPowerDevice(),
         show_parent = dialog,
     })
     local toggle_button = self:makeFrontlightToggleButton(
@@ -93,10 +100,14 @@ function QuickDock:makeFrontlightSlider(dock_height, dialog, metrics)
     return column
 end
 
+function QuickDock:showWarmthLevel(slider)
+    slider:syncFromPower()
+    self:showButtonHelp(T(_("Warmth: %1"), slider.value))
+end
+
 function QuickDock:makeWarmthInfoButton(width, dialog, slider, metrics)
     local function showWarmthLevel()
-        slider:syncFromPower()
-        self:showButtonHelp(T(_("Warmth: %1"), slider.value))
+        self:showWarmthLevel(slider)
     end
     local icon = self:getIcon("warmth")
     local config = applyHighlightedButtonMetrics({
@@ -114,28 +125,39 @@ function QuickDock:makeWarmthInfoButton(width, dialog, slider, metrics)
     return Button:new(config)
 end
 
-function QuickDock:makeWarmthSlider(dock_height, dialog, metrics)
+-- Brightness and warmth models shared by the column sliders and the arc
+-- dock, which only replaces how a position maps to a level and repaints.
+function QuickDock:newFrontlightModel(config)
+    config.powerd = Device:getPowerDevice()
+    return LightSlider:new(config)
+end
+
+function QuickDock:newWarmthModel(config)
     local powerd = Device:getPowerDevice()
+    config.powerd = powerd
+    config.minimum = tonumber(powerd.fl_warmth_min) or 0
+    config.maximum = tonumber(powerd.fl_warmth_max) or 100
+    config.value_reader = function(active_powerd)
+        return active_powerd:toNativeWarmth(active_powerd:frontlightWarmth())
+    end
+    config.value_writer = function(active_powerd, native_warmth)
+        active_powerd:setWarmth(active_powerd:fromNativeWarmth(native_warmth))
+    end
+    return LightSlider:new(config)
+end
+
+function QuickDock:makeWarmthSlider(dock_height, dialog, metrics)
     local column_height = self:getFrontlightSliderHeight(dock_height)
     local slider_height = math_max(
         1,
         column_height - metrics.side_button_outer_height - metrics.side_button_gap
     )
-    local slider = LightSlider:new({
+    local slider = self:newWarmthModel({
         width = metrics.button_width,
         height = slider_height,
         slider_padding = metrics.frontlight_slider_padding,
         track_width = metrics.frontlight_track_width,
         knob_radius = metrics.frontlight_knob_radius,
-        powerd = powerd,
-        minimum = tonumber(powerd.fl_warmth_min) or 0,
-        maximum = tonumber(powerd.fl_warmth_max) or 100,
-        value_reader = function(active_powerd)
-            return active_powerd:toNativeWarmth(active_powerd:frontlightWarmth())
-        end,
-        value_writer = function(active_powerd, native_warmth)
-            active_powerd:setWarmth(active_powerd:fromNativeWarmth(native_warmth))
-        end,
         show_parent = dialog,
     })
     local info_button = self:makeWarmthInfoButton(
@@ -251,6 +273,22 @@ function QuickDock:makePageButton(direction, target_page, metrics)
     return applyButtonMetrics(button, metrics)
 end
 
+function QuickDock:moveDockToSide(target_side)
+    local page = self.current_page
+    local info_panel_data = self.info_panel_data
+    self:setSide(target_side)
+    UIManager:scheduleIn(0.05, function()
+        self:showDock(page, target_side, info_panel_data)
+    end)
+end
+
+function QuickDock:showMoveDockHelp(target_side)
+    local message = target_side == "left"
+        and _("Move dock to the left")
+        or _("Move dock to the right")
+    self:showButtonHelp(message)
+end
+
 function QuickDock:makeSideButton(width, dialog, metrics)
     local current_side = self.current_dock_side or self:getSide()
     local target_side = current_side == "left" and "right" or "left"
@@ -260,18 +298,10 @@ function QuickDock:makeSideButton(width, dialog, metrics)
         enabled = true,
         show_parent = dialog,
         callback = function()
-            local page = self.current_page
-            local info_panel_data = self.info_panel_data
-            self:setSide(target_side)
-            UIManager:scheduleIn(0.05, function()
-                self:showDock(page, target_side, info_panel_data)
-            end)
+            self:moveDockToSide(target_side)
         end,
         hold_callback = function()
-            local message = target_side == "left"
-                and _("Move dock to the left")
-                or _("Move dock to the right")
-            self:showButtonHelp(message)
+            self:showMoveDockHelp(target_side)
         end,
     }, width, metrics)
     if icon then
@@ -316,6 +346,20 @@ function QuickDock:getInfoPanelToggleDisplay()
     return self:getIcon("reading_info"), makeFallbackLabel(_("Reading information"), "reading_info")
 end
 
+function QuickDock:showInfoPanelSwitchHelp()
+    local names = {
+        reading = _("reading information"),
+        stats = _("book statistics"),
+        network = _("network information"),
+    }
+    local next_kind = self:getNextInfoPanelKind()
+    self:showButtonHelp(T(
+        _("Showing %1. Tap to show %2."),
+        names[self.current_info_panel_kind] or names.reading,
+        names[next_kind] or names.reading
+    ))
+end
+
 function QuickDock:makeInfoPanelToggleButton(width, dialog, metrics)
     local icon, fallback = self:getInfoPanelToggleDisplay()
     local button = applyHighlightedButtonMetrics({
@@ -329,17 +373,7 @@ function QuickDock:makeInfoPanelToggleButton(width, dialog, metrics)
             self:switchInfoPanel(self:getNextInfoPanelKind())
         end,
         hold_callback = function()
-            local names = {
-                reading = _("reading information"),
-                stats = _("book statistics"),
-                network = _("network information"),
-            }
-            local next_kind = self:getNextInfoPanelKind()
-            self:showButtonHelp(T(
-                _("Showing %1. Tap to show %2."),
-                names[self.current_info_panel_kind] or names.reading,
-                names[next_kind] or names.reading
-            ))
+            self:showInfoPanelSwitchHelp()
         end,
     }, width, metrics)
     if icon then
