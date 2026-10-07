@@ -492,6 +492,16 @@ function QuickDock:loadActions()
         actions.settings = {}
     end
 
+    -- Execution modes are not offered by Quick Dock. Drop any left over from
+    -- older versions so the arrange dialog does not show QuickMenu separators.
+    local settings = actions.settings
+    settings.show_as_quickmenu = nil
+    settings.execute_one_by_one = nil
+    settings.quickmenu_separators = nil
+    settings.keep_open_on_apply = nil
+    settings.anchor_quickmenu = nil
+    settings.quickmenu_position = nil
+
     -- The context-aware action is a fixed dock button, not a configurable
     -- action. Discard a stray saved entry to avoid showing it twice.
     actions[ACTION_HOME] = nil

@@ -107,6 +107,20 @@ end
 function QuickDock:getActionsMenu()
     local menu = {}
     Dispatcher:addSubMenu(self, menu, self, "actions")
+    -- Quick Dock runs each action from its own button, so Dispatcher's
+    -- execution modes and QuickMenu options after “Arrange actions” do not
+    -- apply. Keep “Nothing”, the action sections and the arrange entry, all
+    -- on the first page with a separator before “Arrange actions”.
+    local arrange_index = (menu.max_per_page or 0) + 1
+    local arrange_item = menu[arrange_index]
+    if arrange_item and arrange_item.text_func and arrange_item.callback then
+        for index = #menu, arrange_index + 1, -1 do
+            table.remove(menu, index)
+        end
+        arrange_item.separator = nil
+        menu[arrange_index - 1].separator = true
+        menu.max_per_page = nil
+    end
     return menu
 end
 
