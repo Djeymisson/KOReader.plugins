@@ -1,4 +1,4 @@
-# Quick Dock ![Version](https://img.shields.io/badge/version-v0.25.1-blue)
+# Quick Dock ![Version](https://img.shields.io/badge/version-v0.25.2-blue)
 
 Quick Dock adds a floating action dock with lighting controls and an optional information panel to KOReader. It is designed for touch devices and can be assigned to any gesture supported by KOReader.
 
@@ -129,7 +129,7 @@ The settings follow the same grouped layout as the other plugins in this reposit
   - `Reset actions to defaults`: restores the initial actions and their order after confirmation without changing the other plugin settings.
   - `Reset behavior and actions`: additionally restores extra buttons, default actions, order, and visibility while preserving appearance.
 - `Gesture setup`: displays instructions for assigning the dock to a KOReader gesture.
-- `Version: v0.25.1`: shows the installed plugin version.
+- `Version: v0.25.2`: shows the installed plugin version.
 
 The side selector and visibility options keep their menu open after a change, making it easier to review related settings.
 
@@ -170,7 +170,7 @@ The open book's cover is also enabled by default and appears centered at the top
 
 While reading, the panel shows the document title and primary author, current/total page and book percentage, chapter title and progress, estimated time remaining for the book and chapter, today's pages and reading time, the clock, and battery state. It does not show remaining page counts. Stable page labels are used for the displayed book page numbers when enabled, while percentages and estimates continue to follow actual page turns.
 
-In the file browser or Bookshelf, no document-specific fields are invented: the reading panel shows the available daily reading summary, clock, and battery state. Reading-time fields appear only when KOReader's Statistics plugin is enabled and has data. The statistics API is queried once when the dock opens, and the same snapshot is reused across pagination and side changes; there is no timer, background polling, or global ReaderUI/FileManager patch, and the reading and network panels never touch the database directly (the statistics panel's single read-only query is described below).
+In the file browser or Bookshelf, no document-specific fields are invented: the reading panel shows the available daily reading summary, clock, and battery state. Reading-time fields appear only when KOReader's Statistics plugin is enabled and has data. Statistics are read once when the dock opens, and the same snapshot is reused across pagination and side changes; there is no timer, background polling, or global ReaderUI/FileManager patch. The daily summary comes from one read-only query on the Statistics database that counts today's pages exactly as KOReader's own Statistics plugin does, rescaled to each book's current page count, but forces the database's date index so that only today's records are read; for KOReader's own query, SQLite chooses another index and scans the whole reading history, which grows slower as the history grows. Should that query fail (for example, with a different database layout), the panel falls back to KOReader's query. The network panel never touches the database (the statistics panel's own read-only query is described below).
 
 The network panel displays the current Wi-Fi state and reads the available interface, MAC, SSID, IPv4/IPv6, and gateway details the same way KOReader's own network information does, but without its gateway ping: that test is synchronous, blocks the interface until it answers or times out, and keeps the radio busy, so the panel only reads the interface state already known to the system and sends nothing over the network. This data is collected when the network panel is opened or selected and refreshed from KOReader's connection events when the dock's Wi-Fi button changes state; there is no background polling. With two or more panels enabled, one square button immediately above the action dock cycles through them (Reading, Statistics, Recent documents, Network, skipping disabled ones) without rebuilding or closing the dock. It uses the same dimensions, border, rounded corners, and press feedback as the frontlight toggle. Its icon indicates the panel currently visible: `reading_info.svg` (with the system open-book icon as fallback) for Reading, `stats.svg` for Statistics, `recent_info.svg` (with `history.svg` as fallback) for Recent documents, or `network_info.svg` for Network. Holding the button describes the current panel and the tap action.
 

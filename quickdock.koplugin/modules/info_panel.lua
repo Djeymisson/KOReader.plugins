@@ -534,6 +534,82 @@ local function getAveragePageTime(statistics)
     return average
 end
 
+-- Runs read-only queries on KOReader's Statistics database, closing it
+-- afterwards. Returns query's results, or nothing when it failed.
+local function withStatisticsDatabase(query)
+    local conn
+    local results = { pcall(function()
+        conn = require("lua-ljsqlite3/init").open(
+            require("datastorage"):getSettingsDir() .. "/statistics.sqlite3",
+            "ro"
+        )
+        return query(conn)
+    end) }
+    if conn then
+        pcall(conn.close, conn)
+    end
+    if not results[1] then
+        return nil
+    end
+    return unpack(results, 2, table.maxn(results))
+end
+
+-- Pages and seconds read today across all books, as KOReader's
+-- ReaderStatistics:getTodayBookStats() counts them: through its page_stat
+-- view, which rescales each record to the book's current page count. For
+-- that query SQLite picks the (id_book, page, start_time) index, which spares
+-- it sorting for the GROUP BY, and scans the whole reading history on every
+-- call. The same rescaling is applied here with the start_time index forced,
+-- so only today's records are read and that scan is avoided. Should the
+-- schema differ (no such index, renamed columns), KOReader's own query is
+-- used instead.
+local TODAY_STATS_SQL = [[
+    SELECT count(*),
+           sum(sum_duration)
+    FROM   (
+                SELECT sum(duration) AS sum_duration
+                FROM   (
+                            SELECT id_book,
+                                   first_page + idx - 1 AS page,
+                                   duration / (last_page - first_page + 1) AS duration
+                            FROM   (
+                                        SELECT id_book,
+                                               duration,
+                                               ((page - 1) * pages) / total_pages + 1 AS first_page,
+                                               max(((page - 1) * pages) / total_pages + 1,
+                                                   (page * pages) / total_pages) AS last_page,
+                                               idx
+                                        FROM   (
+                                                    SELECT *
+                                                    FROM   page_stat_data
+                                                    INDEXED BY page_stat_data_start_time
+                                                    WHERE  start_time >= %d
+                                               ) AS today
+                                        JOIN   book ON book.id = today.id_book
+                                        JOIN   (SELECT number AS idx FROM numbers) AS N
+                                               ON idx <= (last_page - first_page + 1)
+                                   )
+                       )
+                GROUP  BY id_book, page
+           );
+]]
+
+local function getTodayStats(statistics)
+    local now = os.date("*t")
+    local start_today = os.time() - (now.hour * 3600 + now.min * 60 + now.sec)
+    local pages, seconds = withStatisticsDatabase(function(conn)
+        return conn:rowexec(string.format(TODAY_STATS_SQL, start_today))
+    end)
+    if pages ~= nil then
+        return tonumber(seconds) or 0, tonumber(pages) or 0
+    end
+    local ok, native_seconds, native_pages = pcall(statistics.getTodayBookStats, statistics)
+    if ok then
+        return tonumber(native_seconds) or 0, tonumber(native_pages) or 0
+    end
+    return nil
+end
+
 local function getStatisticsData(ui, book_left, chapter_left)
     local statistics = ui and ui.statistics
     if
@@ -544,18 +620,8 @@ local function getStatisticsData(ui, book_left, chapter_left)
         return nil
     end
 
-    local today_seconds
-    local today_pages
-    -- Obtain both return values in one protected call. This is the panel's
-    -- only statistics query, and it runs only when the dock is opened.
-    local ok, seconds, pages = pcall(statistics.getTodayBookStats, statistics)
-    if ok then
-        today_seconds = tonumber(seconds) or 0
-        today_pages = tonumber(pages) or 0
-    else
-        today_seconds = nil
-        today_pages = nil
-    end
+    -- The panel's only statistics query, made only when the dock is opened.
+    local today_seconds, today_pages = getTodayStats(statistics)
 
     local average = getAveragePageTime(statistics)
 
@@ -627,12 +693,7 @@ local function queryReadingSpan(statistics)
     if not id_book then
         return nil
     end
-    local conn
-    local ok, first_open, days = pcall(function()
-        conn = require("lua-ljsqlite3/init").open(
-            require("datastorage"):getSettingsDir() .. "/statistics.sqlite3",
-            "ro"
-        )
+    local first_open, days = withStatisticsDatabase(function(conn)
         return conn:rowexec(string.format([[
             SELECT min(start_time),
                    count(DISTINCT strftime('%%Y-%%m-%%d', start_time, 'unixepoch', 'localtime'))
@@ -640,11 +701,8 @@ local function queryReadingSpan(statistics)
             WHERE  id_book = %d;
         ]], id_book))
     end)
-    if conn then
-        pcall(conn.close, conn)
-    end
-    first_open = ok and tonumber(first_open) or nil
-    days = ok and tonumber(days) or nil
+    first_open = tonumber(first_open)
+    days = tonumber(days)
     if not first_open or first_open <= 0 or not days or days < 1 then
         return nil
     end
