@@ -1,4 +1,4 @@
-# Quick Dock ![Version](https://img.shields.io/badge/version-v0.25.3-blue)
+# Quick Dock ![Version](https://img.shields.io/badge/version-v0.25.6-blue)
 
 Quick Dock adds a floating action dock with lighting controls and an optional information panel to KOReader. It is designed for touch devices and can be assigned to any gesture supported by KOReader.
 
@@ -51,14 +51,24 @@ quickdock.koplugin/
 ├── quickdock_l10n.lua
 ├── icons/                  # bundled action, chevron and lighting icons — see Custom icons below
 └── modules/
+    ├── actions.lua
     ├── arc_dock.lua
     ├── arc_layout.lua
+    ├── column_layout.lua
+    ├── constants.lua
     ├── context.lua
     ├── controls.lua
+    ├── dock_layout.lua
     ├── icons.lua
+    ├── info_covers.lua
+    ├── info_data.lua
     ├── info_panel.lua
+    ├── info_render.lua
+    ├── info_util.lua
     ├── inline_actions.lua
     ├── menu.lua
+    ├── preferences.lua
+    ├── status_panel.lua
     └── widgets.lua
 ```
 
@@ -129,7 +139,7 @@ The settings follow the same grouped layout as the other plugins in this reposit
   - `Reset actions to defaults`: restores the initial actions and their order after confirmation without changing the other plugin settings.
   - `Reset behavior and actions`: additionally restores extra buttons, default actions, order, and visibility while preserving appearance.
 - `Gesture setup`: displays instructions for assigning the dock to a KOReader gesture.
-- `Version: v0.25.3`: shows the installed plugin version.
+- `Version: v0.25.6`: shows the installed plugin version.
 
 The side selector and visibility options keep their menu open after a change, making it easier to review related settings.
 
@@ -298,16 +308,26 @@ Quick Dock follows KOReader's active interface language. Plugin-specific message
 
 ## Code organization
 
-- `main.lua`: plugin lifecycle, saved state, dock sizing, pagination, information-panel coordination, and action dispatch.
+- `main.lua`: plugin lifecycle, module loading, and the coordination of the dock, information panel, and status block (showing, paging, closing).
+- `modules/constants.lua`: settings keys, option values, information panel modes, the action catalog used for automatic visibility and icons, and base dock dimensions.
+- `modules/preferences.lua`: the saved preferences as plain functions, shared by every plugin instance, with validation and defaults.
+- `modules/dock_layout.lua`: pure dock geometry: dimensions for each scale, the rows the column fits, and pagination.
+- `modules/actions.lua`: the configured actions, their per-context visibility, and their dispatch.
 - `modules/controls.lua`: action, context, pagination, side-switch, close, information-panel, frontlight, and warmth control factories.
 - `modules/widgets.lua`: low-level slider and button widget classes, fixed positioning, and multi-column layout.
+- `modules/column_layout.lua`: builds the column dock and turns its pages in place.
 - `modules/arc_dock.lua`: the arc dock widget: the arc as a sampled quarter ellipse, floating-button geometry, painting, hit testing, page swipes, and the arc lighting sliders.
 - `modules/arc_layout.lua`: builds the arc dock's pages and floating buttons from the same actions and callbacks as the column.
-- `modules/info_panel.lua`: safe collection and rendering of reading, book statistics, recent documents, and network details, covers, statistics, clock, battery, and transient status panels, either on the edge opposite the dock or along the top of the screen.
+- `modules/info_panel.lua`: places the information panel and status block on screen, either on the edge opposite the dock or along the top of the screen; the only information-panel module `main.lua` uses.
+- `modules/info_data.lua`: safe collection of each panel mode's data: reading progress, book statistics, recent documents, network details, clock, and battery.
+- `modules/info_covers.lua`: the open document's cover and the recent documents' thumbnails, from the Cover browser plugin or the document, with their caches.
+- `modules/info_render.lua`: the panel widgets, with one renderer per mode, the arc dock's column layout, and the recent documents grid.
+- `modules/info_util.lua`: helpers shared by the information panel modules.
+- `modules/status_panel.lua`: the transient status block used for button help and Wi-Fi progress.
 - `modules/inline_actions.lua`: in-place night-mode and Wi-Fi execution, including Wi-Fi progress redirection and timeout handling.
 - `modules/context.lua`: reader, file-browser, and optional Bookshelf integration.
 - `modules/icons.lua`: custom/system icon resolution, stateful icons, and safe shared IconWidget patching.
-- `modules/menu.lua`: settings menus, action visibility controls, icon-name help, and reset confirmation.
+- `modules/menu.lua`: settings menus, action visibility controls, icon-name help, and resets.
 - `quickdock_l10n.lua`: locale-aware translations for plugin-specific interface text, with KOReader gettext fallback.
 
 ## Uninstalling
