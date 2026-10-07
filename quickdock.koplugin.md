@@ -1,4 +1,4 @@
-# Quick Dock ![Version](https://img.shields.io/badge/version-v0.25.0-blue)
+# Quick Dock ![Version](https://img.shields.io/badge/version-v0.25.1-blue)
 
 Quick Dock adds a floating action dock with lighting controls and an optional information panel to KOReader. It is designed for touch devices and can be assigned to any gesture supported by KOReader.
 
@@ -14,7 +14,7 @@ Quick Dock adds a floating action dock with lighting controls and an optional in
 - Unlimited configurable actions through KOReader's native Dispatcher action picker.
 - Configurable button order.
 - Optional automatic context visibility for native KOReader actions, with per-action manual overrides.
-- Automatic pagination before the enabled buttons would overflow the configured maximum dock height (100%, 60%, or 33% of the screen): the up arrow opens the next page and the down arrow returns to the previous page, without a scrollbar. The lighting columns follow the resulting action-dock height.
+- Automatic pagination before the enabled buttons would overflow the configured maximum dock height (100%, 60%, or 33% of the screen): the up arrow opens the next page and the down arrow returns to the previous page, without a scrollbar. Only the dock is replaced: the information panel and any status message stay as they are, and the page change is a single non-flashing screen update. The lighting columns follow the resulting action-dock height.
 - An optional separate button above the dock moves it immediately between the left and right sides.
 - An optional separate close button can be placed at the top of the dock's external controls. It uses `close.svg`, is disabled by default, and has the same height as the side-switch and frontlight toggle buttons.
 - Configurable closing method: one block at a time by default, or all blocks at once using the smallest encompassing rectangle and a non-flashing UI update.
@@ -129,7 +129,7 @@ The settings follow the same grouped layout as the other plugins in this reposit
   - `Reset actions to defaults`: restores the initial actions and their order after confirmation without changing the other plugin settings.
   - `Reset behavior and actions`: additionally restores extra buttons, default actions, order, and visibility while preserving appearance.
 - `Gesture setup`: displays instructions for assigning the dock to a KOReader gesture.
-- `Version: v0.25.0`: shows the installed plugin version.
+- `Version: v0.25.1`: shows the installed plugin version.
 
 The side selector and visibility options keep their menu open after a change, making it easier to review related settings.
 

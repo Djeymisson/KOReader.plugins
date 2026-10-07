@@ -19,7 +19,7 @@ local function scaleMetric(value, factor, minimum)
     return math_max(minimum or 1, math_floor(value * factor + 0.5))
 end
 
-local PLUGIN_VERSION = "v0.25.0"
+local PLUGIN_VERSION = "v0.25.1"
 local SETTING_ACTIONS = "quickdock_actions"
 local SETTING_ACTION_CONTEXTS = "quickdock_action_contexts"
 local SETTING_AUTO_VISIBILITY = "quickdock_auto_visibility"
@@ -1437,12 +1437,16 @@ function QuickDock:resolveInfoPanelData(info_panel_data, metrics)
     return info_panel_data
 end
 
-function QuickDock:presentDock(dialog, info_panel_data, metrics)
-    self.dialog = dialog
-    self.info_panel_data = info_panel_data
+function QuickDock:attachDockCallbacks(dialog)
     dialog.outside_tap_callback = function(pos)
         return self.dialog == dialog and self:handleInfoPanelTap(pos)
     end
+end
+
+function QuickDock:presentDock(dialog, info_panel_data, metrics)
+    self.dialog = dialog
+    self.info_panel_data = info_panel_data
+    self:attachDockCallbacks(dialog)
     if info_panel_data then
         self.info_panel_widget = self:createInfoPanelOverlay(info_panel_data, metrics)
         UIManager:show(self.info_panel_widget, "[ui]")
@@ -1450,24 +1454,9 @@ function QuickDock:presentDock(dialog, info_panel_data, metrics)
     UIManager:show(dialog, "[ui]")
 end
 
-function QuickDock:showDock(page, side, info_panel_data)
-    -- Another UI instance (reader or file browser) may have changed these
-    -- shared preferences since this instance was created.
-    self.action_contexts = self:loadActionContexts()
-    self.auto_visibility = self:loadAutomaticVisibility()
-    side = side == "left" and "left" or side == "right" and "right" or self:getSide()
-    self.current_dock_side = side
-    local metrics = self:getDockMetrics()
-    local actions = self:getDisplayActions()
-    if #actions == 0 and not self:showContextButton() then
-        UIManager:show(InfoMessage:new({ text = _("No Quick Dock actions are configured.") }))
-        return
-    end
-
-    if self:isArcLayout() then
-        return self:showArcDock(actions, metrics, page, side, info_panel_data)
-    end
-
+-- The column dock for one page of actions. Sets current_page; the caller
+-- shows it, either as a new dock or in place of the current one.
+function QuickDock:buildColumnDialog(actions, metrics, page, side)
     local pages = self:getPages(#actions, metrics)
     local page_count = #pages
     self.current_page = math_max(1, math.min(page or 1, page_count))
@@ -1487,8 +1476,6 @@ function QuickDock:showDock(page, side, info_panel_data)
     if self.current_page > 1 then
         rows[#rows + 1] = { self:makePageButton("previous", self.current_page - 1, metrics) }
     end
-
-    self:closeDock(true)
 
     local dialog
     local side_button_factory
@@ -1521,7 +1508,6 @@ function QuickDock:showDock(page, side, info_panel_data)
             return self:makeWarmthSlider(dock_height, parent, metrics)
         end
     end
-    info_panel_data = self:resolveInfoPanelData(info_panel_data, metrics)
     dialog = FloatingControlButtonDialog:new({
         buttons = rows,
         width = metrics.button_width + 2 * Size.border.window + 2 * Size.padding.button,
@@ -1562,8 +1548,69 @@ function QuickDock:showDock(page, side, info_panel_data)
             return false
         end,
     })
+    return dialog
+end
 
+function QuickDock:showDock(page, side, info_panel_data)
+    -- Another UI instance (reader or file browser) may have changed these
+    -- shared preferences since this instance was created.
+    self.action_contexts = self:loadActionContexts()
+    self.auto_visibility = self:loadAutomaticVisibility()
+    side = side == "left" and "left" or side == "right" and "right" or self:getSide()
+    self.current_dock_side = side
+    local metrics = self:getDockMetrics()
+    local actions = self:getDisplayActions()
+    if #actions == 0 and not self:showContextButton() then
+        UIManager:show(InfoMessage:new({ text = _("No Quick Dock actions are configured.") }))
+        return
+    end
+
+    if self:isArcLayout() then
+        return self:showArcDock(actions, metrics, page, side, info_panel_data)
+    end
+
+    self:closeDock(true)
+    -- Resolved before the dialog is built: the panel switch button shows
+    -- the panel kind chosen here.
+    info_panel_data = self:resolveInfoPanelData(info_panel_data, metrics)
+    local dialog = self:buildColumnDialog(actions, metrics, page, side)
     self:presentDock(dialog, info_panel_data, metrics)
+end
+
+-- Turns the column dock's page in place, as the arc dock does: only the dock
+-- is replaced, while the information and status panels stay untouched. The
+-- old dock closes without its own (flashing) refresh, and its area is
+-- refreshed together with the new dock's, which overlaps it at the bottom,
+-- so the page change is one non-flashing update.
+function QuickDock:showColumnDockPage(page)
+    local previous = self.dialog
+    local side = self.current_dock_side
+    if not previous or not side or self:isArcLayout() then
+        return self:showDock(page, side, self.info_panel_data)
+    end
+    local metrics = self:getDockMetrics()
+    local actions = self:getDisplayActions()
+    if #actions == 0 and not self:showContextButton() then
+        return self:showDock(page, side, self.info_panel_data)
+    end
+
+    local dialog = self:buildColumnDialog(actions, metrics, page, side)
+    local previous_dimen = previous.movable and previous.movable.dimen
+    local previous_region = previous_dimen and Geom:new({
+        x = previous_dimen.x,
+        y = previous_dimen.y,
+        w = previous_dimen.w,
+        h = previous_dimen.h,
+    })
+    self.dialog = dialog
+    self:attachDockCallbacks(dialog)
+    previous._quickdock_suppress_close_refresh = true
+    UIManager:close(previous)
+    UIManager:show(dialog, "[ui]")
+    if previous_region then
+        -- A shorter last page leaves part of the old dock to clear.
+        UIManager:setDirty(nil, "ui", previous_region)
+    end
 end
 
 dofile(PLUGIN_DIR .. "modules/menu.lua")(QuickDock, MODULE_CONSTANTS)

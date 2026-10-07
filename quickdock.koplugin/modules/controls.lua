@@ -256,7 +256,7 @@ function QuickDock:makePageButton(direction, target_page, metrics)
         id = is_next and "quickdock_next" or "quickdock_previous",
         enabled = true,
         callback = function()
-            self:showDock(target_page, self.current_dock_side, self.info_panel_data)
+            self:showColumnDockPage(target_page)
         end,
         hold_callback = function()
             self:showButtonHelp(
