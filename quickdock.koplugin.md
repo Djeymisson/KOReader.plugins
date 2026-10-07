@@ -98,27 +98,30 @@ The settings follow the same grouped layout as the other plugins in this reposit
   - `Configured actions`: opens KOReader's native action selector and shows the current number of configured actions.
   - `Extra buttons`:
     - `Show reader/browser button`: shows the first dock button; it opens the file browser while reading, opens the last document from the file browser, and returns from Bookshelf to the reader.
-    - `Show side-switch button`: shows a separate chevron above the dock that changes its side without opening the settings.
-    - `Show close button`: shows a separate close control above the dock. Fixed external controls remain stacked above the action column.
+    - `Show side-switch button`: shows a button that moves the dock to the other side without opening the settings: above the column dock, or inside the arc next to its start.
+    - `Show close button`: shows a button that closes the dock: above the column dock, stacked with the other fixed controls, or inside the arc.
   - `Action visibility`:
     - `Automatic visibility`: automatically separates native reader and file-browser actions.
     - `Per-action visibility`: displays the automatic result and controls manual overrides for each action.
 - `Appearance`: controls scale, visible panels and columns, and icon customization.
   - `Dock layout`:
     - `Dock shape: <current shape>`: selects `Column` (the default) or `Arc`. See [Arc dock](#arc-dock).
-    - `Arc angle: <current angle>`: tilts the arc between `25°` and `65°`; `45°` (a quarter circle) is the default. Available with the `Arc` shape. See [Arc dock](#arc-dock).
-    - `Show band behind arc buttons`: draws the arc's buttons on a white band (the default) or lets each one float on the page with its own outline. Available with the `Arc` shape.
-    - `Dock scale: <current scale>`: selects `Small`, `Medium`, or `Large`. The selected scale applies to the buttons, icons, chevrons, lighting columns, information panel, and pagination calculation.
-    - `Maximum dock height: <current percentage>`: limits the action, brightness, and warmth columns to approximately `100%`, `60%`, or `33%` of the screen height. Buttons are paginated when they reach the selected limit; the exact height can vary slightly to preserve complete button rows and usable navigation controls. The default is `100%`.
+    - `Dock scale: <current scale>`: selects `Small`, `Medium`, or `Large`. The selected scale applies to the buttons, icons, chevrons, lighting columns, information panel, and pagination calculation. In the arc, `Fill the arc when there are few actions` may enlarge the buttons beyond this size.
+    - `Maximum dock height: <current percentage>`: limits the dock (the action, brightness, and warmth columns, or the arc) to approximately `100%`, `60%`, or `33%` of the screen height. Buttons are paginated when they reach the selected limit; the exact height can vary slightly to preserve complete button rows and usable navigation controls. The default is `100%`.
+    - `Arc options` (available with the `Arc` shape; see [Arc dock](#arc-dock)):
+      - `Arc angle: <current angle>`: tilts the arc between `25°` and `65°`; `45°` (a quarter circle) is the default.
+      - `Show band behind buttons`: draws the arc's buttons on a white band (the default) or lets each one float on the page with its own outline.
+      - `Fill the arc when there are few actions`: spreads each page's buttons along the whole arc and, when every action fits on one page, enlarges them up to 1.5 times. Button size then varies with the number of actions. Disabled by default.
+      - `Empty space: <position>`: with filling disabled, leaves the unused part of the arc `At the end, near the side edge` (the default) or `At the start, near the bottom edge`.
   - `Information panel`:
     - `Show reading information`: shows or hides the Mini Receipt-inspired reading content. Enabled by default.
     - `Show book statistics`: shows or hides the open book's statistics panel (see [Information panels](#information-panels)). Disabled by default.
     - `Show network information`: shows or hides Wi-Fi state and KOReader's interface, MAC, SSID, IP, gateway, and connectivity details. Disabled by default.
-    - `Show book cover at the top`: shows or hides the open document's cover above the reading information and the book statistics.
+    - `Show book cover`: shows or hides the open document's cover in the reading information and the book statistics: above the text in the side panel, or to its left in the arc dock's top panel.
     - `Panel text alignment`: aligns every line of either panel, including the clock and battery, to the `Left`, `Center`, or `Nearest screen edge`. The last option aligns left when the panel is on the left and right when it is on the right. `Nearest screen edge` is the default.
   - `Lighting controls`:
-    - `Show frontlight control`: shows or hides the brightness slider and light toggle on devices with a frontlight.
-    - `Show warmth control`: shows or hides the optional warmth slider on devices with natural-light support.
+    - `Show frontlight control`: shows or hides the brightness slider and light toggle on devices with a frontlight: a column beside the column dock, or a button inside the arc.
+    - `Show warmth control`: shows or hides the optional warmth slider on devices with natural-light support: a second column beside the column dock, or a second button inside the arc.
   - `Custom icon filenames`: lists the custom SVG and PNG names accepted for every action.
 - `Reset`:
   - `Reset behavior to defaults`: restores gesture-following placement, right-side fallback, and one-block-at-a-time closing while preserving actions, extra buttons, and appearance.
@@ -172,7 +175,7 @@ The network panel displays the current Wi-Fi state and uses KOReader's native ne
 
 ### Book statistics panel
 
-Optional and disabled by default (`Appearance > Information panel > Show book statistics`). It shows the open book's cover (governed by the same `Show book cover at the top` option as the reading panel), title and primary author, then:
+Optional and disabled by default (`Appearance > Information panel > Show book statistics`). It shows the open book's cover (governed by the same `Show book cover` option as the reading panel), title and primary author, then:
 
 - time read and estimated time left;
 - progress in percent;
@@ -198,14 +201,15 @@ Quick Dock does not add a second connectivity polling loop. It relies on KOReade
 
 Select **Tools > Quick Dock > Appearance > Dock layout > Dock shape > Arc** to place the dock on a quarter ring around the lower corner of the side where it opens, from a point on the side edge down to the bottom edge. Every point of the ring is about the same distance from the corner, roughly 4.5 cm on any screen, so the thumb of the hand holding the device reaches all of it.
 
-- **Angle**: **Dock layout > Arc angle** tilts the arc. The angle is measured between the bottom edge and the line joining the arc's two ends: `45°` is a quarter circle; `55°` and `65°` bring the bottom end closer to the side edge and make the arc taller, while `35°` and `25°` spread it along the bottom edge and make it lower. Other than 45°, the arc is a quarter ellipse with the same area as the circle, so it holds about the same number of buttons; the buttons are spaced evenly along its length.
-- **Ring**: a single row with the actions, in the same order as the column from bottom to top: the reader/browser button first, then the configured actions. The items of each page are spread along the whole arc, the first at the end next to the bottom edge and the last at the end next to the side edge, with even gaps between them, so neither end is left empty. When every action fits on one page with room to spare, the buttons, icons, and fallback labels grow (up to 1.5 times the selected dock scale) to fill the arc instead of leaving wide gaps; paginated docks keep the selected scale.
+- **Angle**: **Dock layout > Arc options > Arc angle** tilts the arc. The angle is measured between the bottom edge and the line joining the arc's two ends: `45°` is a quarter circle; `55°` and `65°` bring the bottom end closer to the side edge and make the arc taller, while `35°` and `25°` spread it along the bottom edge and make it lower. Other than 45°, the arc is a quarter ellipse with the same area as the circle, so it holds about the same number of buttons; the buttons are spaced evenly along its length.
+- **Ring**: a single row with the actions, in the same order as the column from bottom to top: the reader/browser button first, then the configured actions. By default the buttons keep the selected dock scale and the spacing of a full page; when a page has fewer buttons than the arc holds, **Arc options > Empty space** leaves the unused part either at the end next to the side edge (the default) or at the start next to the bottom edge.
+- **Filling**: with **Arc options > Fill the arc when there are few actions** enabled, each page's buttons are spread along the whole arc instead, the first at the end next to the bottom edge and the last at the end next to the side edge. When every action fits on one page, the buttons, icons, and fallback labels also grow, up to 1.5 times the selected dock scale, to close the gaps, so their size varies with the number of actions and the dock scale only sets the smallest size. Paginated docks keep the selected scale.
 - **Floating buttons**: the fixed controls float inside the ring, on a smaller arc that starts at the bottom end: the side switch first, then brightness, warmth, the information-panel switch, and the close button, each following its own visibility option.
-- **Pages**: when the actions do not fit, the last item of a page is the next-page arrow, at the end next to the side edge, and on later pages the first item is the previous-page arrow, at the end next to the bottom edge. Swiping or dragging along the ring also turns the page: toward the bottom edge for the next page, toward the side edge for the previous one. Pages change in place, without closing the dock or the information panel.
+- **Pages**: when the actions do not fit, the last item of a full page is the next-page arrow, at the end next to the side edge, and on later pages the first item is the previous-page arrow. Swiping or dragging along the ring also turns the page: toward the bottom edge for the next page, toward the side edge for the previous one. Pages change in place, without closing the dock or the information panel.
 - **Lighting**: tapping the brightness button shows the brightness slider in place of the actions, along the same ring: the light toggle at the end next to the bottom edge and the track up to the side edge, dimmest to brightest. The warmth button does the same for warmth, with the button that shows the current level at the bottom end. The selected floating button gets a thicker ring; tapping it again, or turning the page, brings the actions back. The sliders use the same KOReader frontlight and warmth calls as the column.
 - **Information panel**: shown along the top of the screen as a wide panel, with the cover as a thumbnail on the left and the content in up to three columns. Held-button help and Wi-Fi status appear in a strip right below it.
 
-By default the ring is drawn as one opaque band, so changing pages or moving a slider repaints only the dock. With **Show band behind arc buttons** disabled, each ring button floats on the page with its own outline, like the buttons inside the ring, and the slider gets an outlined lane of its own; the page between the buttons stays visible, so those changes also repaint the page under the dock (the e-ink refresh still covers only the dock's area). Tapping outside the band and the floating buttons, including the empty corner inside the ring, closes the dock. The ring's size follows the dock scale and the maximum dock height; it always keeps room for three action positions and for the floating buttons inside it.
+By default the ring is drawn as one opaque band, so changing pages or moving a slider repaints only the dock. With **Arc options > Show band behind buttons** disabled, each ring button floats on the page with its own outline, like the buttons inside the ring, and the slider gets an outlined lane of its own; the page between the buttons stays visible, so those changes also repaint the page under the dock (the e-ink refresh still covers only the dock's area). Tapping outside the band and the floating buttons, including the empty corner inside the ring, closes the dock. The ring's size follows the dock scale and the maximum dock height; it always keeps room for three action positions and for the floating buttons inside it.
 
 ## Lighting controls
 
@@ -273,6 +277,8 @@ Quick Dock stores its preferences through KOReader's reader settings using these
 | `quickdock_dock_shape` | Column or arc dock; defaults to column |
 | `quickdock_arc_angle` | Arc tilt in degrees: 25, 35, 45, 55, or 65; defaults to 45 |
 | `quickdock_arc_band` | Draws the arc's buttons on a white band; enabled by default |
+| `quickdock_arc_fill` | Spreads and enlarges the arc's buttons to fill the arc; disabled by default |
+| `quickdock_arc_empty_space` | Where the arc's unused part stays when not filling: `end` (default) or `start` |
 | `quickdock_close_together` | Closes all blocks in one non-flashing update over their smallest encompassing rectangle; disabled by default |
 
 ## Localization

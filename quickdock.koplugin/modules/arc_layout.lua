@@ -22,6 +22,7 @@ function QuickDock:getArcGeometry(side, metrics, item_count)
     return ArcDock.computeGeometry(side, metrics, {
         -- Items on a single page: the reader/browser button and the actions.
         item_count = item_count,
+        fill = self:fillArc(),
         margin = dock_margin,
         bottom_clearance = self:getSiblingOverlayClearance(side),
         max_height_factor = self:getMaxActionDockHeightFactor(),
@@ -230,6 +231,8 @@ function QuickDock:showArcDock(actions, metrics, page, side, info_panel_data)
         page = page or 1,
         floating_items = floating_items,
         show_band = self:showArcBand(),
+        fill = self:fillArc(),
+        empty_space = self:getArcEmptySpace(),
         sliders = sliders,
         page_changed_callback = function(new_page)
             self.current_page = new_page

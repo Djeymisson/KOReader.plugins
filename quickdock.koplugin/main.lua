@@ -41,6 +41,8 @@ local SETTING_CLOSE_TOGETHER = "quickdock_close_together"
 local SETTING_DOCK_SHAPE = "quickdock_dock_shape"
 local SETTING_ARC_BAND = "quickdock_arc_band"
 local SETTING_ARC_ANGLE = "quickdock_arc_angle"
+local SETTING_ARC_FILL = "quickdock_arc_fill"
+local SETTING_ARC_EMPTY_SPACE = "quickdock_arc_empty_space"
 
 local DOCK_SHAPE_COLUMN = "column"
 local DOCK_SHAPE_ARC = "arc"
@@ -49,6 +51,9 @@ local DOCK_SHAPE_ARC = "arc"
 -- its two ends. 45 degrees is a quarter circle.
 local ARC_ANGLES = { 25, 35, 45, 55, 65 }
 local DEFAULT_ARC_ANGLE = 45
+-- Where the unused part of the arc stays when it is not filled.
+local ARC_EMPTY_SPACE_END = "end"
+local ARC_EMPTY_SPACE_START = "start"
 
 local SIDE_MODE_FIXED = "fixed"
 local SIDE_MODE_GESTURE = "gesture"
@@ -306,6 +311,8 @@ local MODULE_CONSTANTS = {
     DOCK_SHAPE_ARC = DOCK_SHAPE_ARC,
     ARC_ANGLES = ARC_ANGLES,
     DEFAULT_ARC_ANGLE = DEFAULT_ARC_ANGLE,
+    ARC_EMPTY_SPACE_END = ARC_EMPTY_SPACE_END,
+    ARC_EMPTY_SPACE_START = ARC_EMPTY_SPACE_START,
     SIDE_MODE_FIXED = SIDE_MODE_FIXED,
     SIDE_MODE_GESTURE = SIDE_MODE_GESTURE,
     DOCK_SIZE_SMALL = DOCK_SIZE_SMALL,
@@ -715,6 +722,27 @@ end
 
 function QuickDock:setShowArcBand(enabled)
     G_reader_settings:saveSetting(SETTING_ARC_BAND, enabled and true or false)
+end
+
+function QuickDock:fillArc()
+    return G_reader_settings:readSetting(SETTING_ARC_FILL) == true
+end
+
+function QuickDock:setFillArc(enabled)
+    G_reader_settings:saveSetting(SETTING_ARC_FILL, enabled and true or false)
+end
+
+function QuickDock:getArcEmptySpace()
+    return G_reader_settings:readSetting(SETTING_ARC_EMPTY_SPACE) == ARC_EMPTY_SPACE_START
+        and ARC_EMPTY_SPACE_START
+        or ARC_EMPTY_SPACE_END
+end
+
+function QuickDock:setArcEmptySpace(position)
+    G_reader_settings:saveSetting(
+        SETTING_ARC_EMPTY_SPACE,
+        position == ARC_EMPTY_SPACE_START and ARC_EMPTY_SPACE_START or ARC_EMPTY_SPACE_END
+    )
 end
 
 function QuickDock:getArcAngle()

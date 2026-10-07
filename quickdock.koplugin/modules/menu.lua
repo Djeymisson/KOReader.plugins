@@ -50,6 +50,8 @@ return function(QuickDock, constants)
     local DOCK_SHAPE_ARC = constants.DOCK_SHAPE_ARC
     local ARC_ANGLES = constants.ARC_ANGLES
     local DEFAULT_ARC_ANGLE = constants.DEFAULT_ARC_ANGLE
+    local ARC_EMPTY_SPACE_END = constants.ARC_EMPTY_SPACE_END
+    local ARC_EMPTY_SPACE_START = constants.ARC_EMPTY_SPACE_START
     local SIDE_MODE_FIXED = constants.SIDE_MODE_FIXED
     local SIDE_MODE_GESTURE = constants.SIDE_MODE_GESTURE
     local DOCK_SIZE_SMALL = constants.DOCK_SIZE_SMALL
@@ -236,7 +238,7 @@ function QuickDock:getIconFilenamesMenu()
         ),
         makeIconInfoItem(
             _("Warmth control") .. ": warmth.svg",
-            _("Icon shown below the frontlight warmth slider."),
+            _("Icon of the warmth control: below its slider in the column dock, or on its button inside the arc."),
             _("Warmth control") .. "\n\nSVG: warmth.svg\nPNG: warmth.png"
         ),
         makeIconInfoItem(
@@ -374,13 +376,13 @@ function QuickDock:getExtraButtonsMenu()
         ),
         makeToggleOption(
             _("Show side-switch button"),
-            _("Shows a separate chevron button above the dock for changing sides without opening the settings."),
+            _("Shows a button that moves the dock to the other side without opening the settings: above the column dock, or inside the arc next to its start."),
             function() return self:showSideButton() end,
             function(enabled) self:setShowSideButton(enabled) end
         ),
         makeToggleOption(
             _("Show close button"),
-            _("Shows a separate close button above the dock using close.svg."),
+            _("Shows a button that closes the dock, using close.svg: above the column dock, or inside the arc."),
             function() return self:showCloseButton() end,
             function(enabled) self:setShowCloseButton(enabled) end
         ),
@@ -458,7 +460,7 @@ function QuickDock:getDockLayoutMenu()
         text_func = function()
             return T(_("Dock scale: %1"), size_labels[self:getDockSize()])
         end,
-        help_text = _("Change the size of buttons, icons, pagination controls, and lighting columns."),
+        help_text = _("Sets the size of the buttons, icons, and lighting controls. With the arc's Fill the arc option enabled, its buttons may grow beyond this size."),
         sub_item_table = {
             makeRadioOption(
                 _("Small"), _("Uses the base dock dimensions."),
@@ -481,7 +483,7 @@ function QuickDock:getDockLayoutMenu()
         text_func = function()
             return T(_("Maximum dock height: %1%"), self:getMaxActionDockHeight())
         end,
-        help_text = _("Limits the action and lighting columns to the selected percentage of the screen and paginates buttons when necessary."),
+        help_text = _("Limits the dock's height (the column with its lighting sliders, or the arc) to the selected percentage of the screen, and paginates the actions when they do not fit."),
         sub_item_table = {
             makeRadioOption(
                 "100%", nil,
@@ -500,13 +502,16 @@ function QuickDock:getDockLayoutMenu()
             ),
         },
     }
-    local band_item = makeToggleOption(
-        _("Show band behind arc buttons"),
-        _("Draws the arc's buttons on a white band. Without it, each button floats on the page with its own outline."),
-        function() return self:showArcBand() end,
-        function(enabled) self:setShowArcBand(enabled) end,
-        function() return self:getDockShape() == DOCK_SHAPE_ARC end
-    )
+    local arc_item = {
+        text = _("Arc options"),
+        help_text = _("The arc's angle, its background band, and how its buttons use its length. Available with the Arc shape."),
+        enabled_func = function() return self:getDockShape() == DOCK_SHAPE_ARC end,
+        sub_item_table_func = function() return self:getArcOptionsMenu() end,
+    }
+    return { shape_item, scale_item, height_item, arc_item }
+end
+
+function QuickDock:getArcOptionsMenu()
     local angle_options = {}
     for _index, angle in ipairs(ARC_ANGLES) do
         local label = T(_("%1°"), angle)
@@ -528,10 +533,47 @@ function QuickDock:getDockLayoutMenu()
             return T(_("Arc angle: %1°"), self:getArcAngle())
         end,
         help_text = _("Tilts the arc: the angle between the bottom edge and the line joining its two ends. Higher angles bring the bottom end closer to the side and make the arc taller; lower angles spread it along the bottom and make it lower. The arc keeps about the same size."),
-        enabled_func = function() return self:getDockShape() == DOCK_SHAPE_ARC end,
         sub_item_table = angle_options,
     }
-    return { shape_item, angle_item, band_item, scale_item, height_item }
+    local band_item = makeToggleOption(
+        _("Show band behind buttons"),
+        _("Draws the arc's buttons on a white band. Without it, each button floats on the page with its own outline."),
+        function() return self:showArcBand() end,
+        function(enabled) self:setShowArcBand(enabled) end
+    )
+    local fill_item = makeToggleOption(
+        _("Fill the arc when there are few actions"),
+        _("Spreads each page's buttons along the whole arc and, when every action fits on one page, enlarges them up to 1.5 times to close the gaps. Button size then varies with the number of actions, and Dock scale only sets the smallest size. When disabled, the buttons keep the Dock scale size and the spacing of a full page, and the unused part of the arc stays empty."),
+        function() return self:fillArc() end,
+        function(enabled) self:setFillArc(enabled) end
+    )
+    fill_item.separator = true
+    local empty_labels = {
+        [ARC_EMPTY_SPACE_END] = _("At the end, near the side edge"),
+        [ARC_EMPTY_SPACE_START] = _("At the start, near the bottom edge"),
+    }
+    local empty_item = {
+        text_func = function()
+            return T(_("Empty space: %1"), empty_labels[self:getArcEmptySpace()])
+        end,
+        help_text = _("Where the unused part of the arc stays when a page has fewer buttons than the arc holds. Available when Fill the arc is disabled."),
+        enabled_func = function() return not self:fillArc() end,
+        sub_item_table = {
+            makeRadioOption(
+                empty_labels[ARC_EMPTY_SPACE_END],
+                _("The buttons start at the bottom end of the arc."),
+                function() return self:getArcEmptySpace() == ARC_EMPTY_SPACE_END end,
+                function() self:setArcEmptySpace(ARC_EMPTY_SPACE_END) end
+            ),
+            makeRadioOption(
+                empty_labels[ARC_EMPTY_SPACE_START],
+                _("The buttons end at the side end of the arc."),
+                function() return self:getArcEmptySpace() == ARC_EMPTY_SPACE_START end,
+                function() self:setArcEmptySpace(ARC_EMPTY_SPACE_START) end
+            ),
+        },
+    }
+    return { angle_item, band_item, fill_item, empty_item }
 end
 
 function QuickDock:getInformationPanelMenu()
@@ -543,7 +585,7 @@ function QuickDock:getInformationPanelMenu()
     return {
         makeToggleOption(
             _("Show reading information"),
-            _("Shows book, chapter, daily reading, clock, and battery information on the screen edge opposite the dock."),
+            _("Shows book, chapter, daily reading, clock, and battery information in the information panel."),
             function() return self:showReadingInfoPanel() end,
             function(enabled) self:setShowReadingInfoPanel(enabled) end
         ),
@@ -560,8 +602,8 @@ function QuickDock:getInformationPanelMenu()
             function(enabled) self:setShowNetworkInfoPanel(enabled) end
         ),
         makeToggleOption(
-            _("Show book cover at the top"),
-            _("Shows the open book's cover above the reading information and book statistics. The thumbnail is loaded once and reused while the document remains open."),
+            _("Show book cover"),
+            _("Shows the open book's cover in the reading information and book statistics: above the text beside the column dock, or to its left in the arc dock's top panel. The thumbnail is loaded once and reused while the document remains open."),
             function() return self:showInfoPanelCover() end,
             function(enabled) self:setShowInfoPanelCover(enabled) end,
             function() return self:showReadingInfoPanel() or self:showStatsInfoPanel() end
@@ -585,7 +627,7 @@ function QuickDock:getInformationPanelMenu()
                 ),
                 makeRadioOption(
                     _("Nearest screen edge"),
-                    _("Aligns left on the left edge and right on the right edge."),
+                    _("Aligns left on the left edge and right on the right edge. The arc dock's top panel aligns left."),
                     function()
                         return self:getInfoPanelTextAlignment() == INFO_PANEL_TEXT_SCREEN_EDGE
                     end,
@@ -600,14 +642,14 @@ function QuickDock:getLightingControlsMenu()
     return {
         makeToggleOption(
             _("Show frontlight control"),
-            _("Shows the brightness slider and its light toggle button beside the dock on devices with a frontlight."),
+            _("On devices with a frontlight, shows the brightness slider and light toggle: a column beside the column dock, or a button inside the arc that shows the slider along it."),
             function() return self:showFrontlightSlider() end,
             function(enabled) self:setShowFrontlightSlider(enabled) end,
             function() return Device:hasFrontlight() end
         ),
         makeToggleOption(
             _("Show warmth control"),
-            _("Shows a second slider for frontlight warmth on supported devices."),
+            _("On supported devices, shows the frontlight warmth slider: a second column beside the column dock, or a second button inside the arc."),
             function() return self:showWarmthSlider() end,
             function(enabled) self:setShowWarmthSlider(enabled) end,
             function() return Device:hasNaturalLight() end
@@ -619,17 +661,17 @@ function QuickDock:getAppearanceMenu()
     return {
         {
             text = _("Dock layout"),
-            help_text = _("Choose the dock shape and adjust its scale and maximum height."),
+            help_text = _("Choose the dock shape, its scale and maximum height, and the arc's options."),
             sub_item_table_func = function() return self:getDockLayoutMenu() end,
         },
         {
             text = _("Information panel"),
-            help_text = _("Choose the content and text alignment of the opposite-edge panel."),
+            help_text = _("Choose the content and text alignment of the information panel: on the edge opposite the column dock, or along the top of the screen with the arc dock."),
             sub_item_table_func = function() return self:getInformationPanelMenu() end,
         },
         {
             text = _("Lighting controls"),
-            help_text = _("Show or hide the frontlight brightness and warmth columns."),
+            help_text = _("Show or hide the frontlight brightness and warmth controls."),
             sub_item_table_func = function() return self:getLightingControlsMenu() end,
         },
         {
@@ -688,7 +730,7 @@ function QuickDock:addToMainMenu(menu_items)
             },
             {
                 text = _("Appearance"),
-                help_text = _("Controls dock layout, information panels, lighting columns, and custom icons."),
+                help_text = _("Controls dock layout, information panels, lighting controls, and custom icons."),
                 sub_item_table_func = function() return self:getAppearanceMenu() end,
             },
             {

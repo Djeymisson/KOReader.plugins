@@ -101,6 +101,11 @@ local ArcDock = InputContainer:extend({
     mode = "actions",
     -- Whether the ring buttons sit on an opaque band or float on the page.
     show_band = true,
+    -- Whether a page's buttons are spread along the whole arc (true) or keep
+    -- the spacing of a full page, leaving the rest of the arc empty at its
+    -- "end" (next to the side edge) or its "start" (next to the bottom edge).
+    fill = false,
+    empty_space = "end",
 })
 
 -- A curve parallel to the quarter ellipse with semi-axes rx (along the
@@ -272,7 +277,7 @@ end
 function ArcDock.computeGeometry(side, metrics, options)
     local geometry = buildGeometry(side, metrics, options, 1)
     local count = options.item_count or 0
-    if count < 2 or count >= geometry.capacity then
+    if not options.fill or count < 2 or count >= geometry.capacity then
         return geometry
     end
     local spacing = geometry.curve.length / (count - 1) - geometry.pad
@@ -419,22 +424,34 @@ function ArcDock:getMainSlots()
     return self.pages[self.page] or {}
 end
 
--- Fraction of the arc's length for the index-th of count items. The items
--- of a page are spread along the whole arc, so the first sits at the bottom
--- end and the last at the side end, with even gaps between them. The
--- slider's leading item alone stays at the bottom end.
-local function itemPosition(index, count)
-    if count < 2 then
+-- Fraction of the arc's length for the index-th of count items. Filling
+-- spreads a page along the whole arc, the first item at the bottom end and
+-- the last at the side end; otherwise items keep a full page's spacing and
+-- the unused slots stay empty at the chosen end. The slider's leading item
+-- always sits at the bottom end.
+function ArcDock:itemPosition(index, count)
+    if self.mode ~= "actions" then
         return 0
     end
-    return (index - 1) / (count - 1)
+    if self.fill then
+        if count < 2 then
+            return 0
+        end
+        return (index - 1) / (count - 1)
+    end
+    local geometry = self.geometry
+    local offset = 0
+    if self.empty_space == "start" then
+        offset = math_max(0, geometry.capacity - count)
+    end
+    return math_min(1, (offset + index - 1) * geometry.step)
 end
 
 function ArcDock:forEachVisibleItem(callback)
     local geometry = self.geometry
     local items = self:getMainSlots()
     for index = 1, #items do
-        local x, y = self:pointAt(itemPosition(index, #items))
+        local x, y = self:pointAt(self:itemPosition(index, #items))
         callback(items[index], x, y, math_floor(geometry.diameter / 2))
     end
     self:forEachFloatingItem(callback)
