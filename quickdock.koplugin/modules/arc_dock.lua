@@ -531,16 +531,26 @@ function ArcDock:findItem(pos)
 end
 
 -- Lighting track: from the slot after the leading item to the side end.
+-- The track starts right past the leading item rather than at the next
+-- slot: at the lowest level the knob sits half a gap from the button, just
+-- outside the reach findItem() gives the button's taps.
 function ArcDock:getTrackRange()
-    return self.geometry.step, 1
+    local geometry = self.geometry
+    local length = math_max(1, geometry.curve.length)
+    local item_reach = math_floor(geometry.diameter / 2) + math_floor(geometry.pad / 2)
+    local track_start = (item_reach + self.metrics.arc_knob_radius) / length
+    return math_min(geometry.step, track_start), 1
 end
 
 function ArcDock:isOnTrack(pos)
     local geometry = self.geometry
     local u, distance = self:locate(pos)
     local track_start, track_end = self:getTrackRange()
+    -- Toward the leading item, only as far as the knob reaches, so a drag
+    -- that starts on the button does not move the slider.
+    local knob_reach = self.metrics.arc_knob_radius / math_max(1, geometry.curve.length)
     return distance <= geometry.half_band
-        and u >= track_start - geometry.step / 2
+        and u >= track_start - knob_reach
         and u <= track_end + geometry.step / 2
 end
 
@@ -563,14 +573,22 @@ function ArcDock:refreshSlider(force)
         end
     end
     self.last_refresh_time = now
+    self.slider_fast_refreshed = true
     self:repaint("fast")
+end
+
+-- The band is shown when enabled and, with floating ring buttons, while a
+-- lighting slider is open: its track then runs on the band as well.
+function ArcDock:isBandVisible()
+    return self.show_band or self.sliders[self.mode] ~= nil
 end
 
 -- With the band, the dock covers everything it ever painted, so repainting
 -- it alone erases a previous page or slider position. Floating buttons
--- leave the page visible between them, so the page must be repainted too.
+-- leave the page visible between them, so the page must be repainted too,
+-- and so must it when the band appears or disappears with a slider.
 function ArcDock:repaint(refresh_type)
-    if self.show_band then
+    if self:isBandVisible() and self.painted_band then
         UIManager:setDirty(self, refresh_type, self.dimen)
     else
         UIManager:setDirty("all", refresh_type, self.dimen)
@@ -632,7 +650,7 @@ function ArcDock:paintItem(bb, item, x, y, radius)
     if self:isItemSelected(item) then
         fillDisc(bb, x, y, radius, Blitbuffer.COLOR_BLACK)
         fillDisc(bb, x, y, radius - 3 * border, Blitbuffer.COLOR_WHITE)
-    elseif item.detached or not self.show_band then
+    elseif item.detached or not self:isBandVisible() then
         -- A floating button of its own, with the band's outline.
         fillDisc(bb, x, y, radius, Blitbuffer.COLOR_BLACK)
         fillDisc(bb, x, y, radius - Size.border.window, Blitbuffer.COLOR_WHITE)
@@ -667,25 +685,18 @@ function ArcDock:paintSlider(bb, slider)
     local knob_u = track_start + fraction * (track_end - track_start)
     local track_color = slider.enabled and Blitbuffer.COLOR_GRAY or Blitbuffer.COLOR_LIGHT_GRAY
     local active_color = slider.enabled and Blitbuffer.COLOR_BLACK or Blitbuffer.COLOR_DARK_GRAY
-    if not self.show_band then
-        -- Without the band, an outlined lane keeps the track readable over text.
-        local lane = 2 * metrics.arc_knob_radius + 2 * geometry.pad
-        self:strokeCurve(bb, geometry.curve, track_start, track_end, lane, Blitbuffer.COLOR_BLACK)
-        self:strokeCurve(
-            bb, geometry.curve, track_start, track_end,
-            lane - 2 * Size.border.window, Blitbuffer.COLOR_WHITE
-        )
-    end
     self:strokeCurve(bb, geometry.curve, track_start, track_end, metrics.arc_track_width, track_color)
     self:strokeCurve(bb, geometry.curve, track_start, knob_u, metrics.arc_track_width, active_color)
     local knob_x, knob_y = self:pointAt(knob_u)
     fillDisc(bb, knob_x, knob_y, metrics.arc_knob_radius, active_color)
+    slider:markPainted()
 end
 
 function ArcDock:paintTo(bb, x, y)
     local geometry = self.geometry
     local border = Size.border.window
-    if self.show_band then
+    self.painted_band = self:isBandVisible()
+    if self.painted_band then
         -- The band is the arc stroked a button wide; stamping rounds its ends.
         self:strokeCurve(bb, geometry.curve, 0, 1, geometry.band_width, Blitbuffer.COLOR_BLACK)
         self:strokeCurve(
@@ -785,6 +796,7 @@ function ArcDock:onPanArcDock(_arg, ges)
         local slider = self.sliders[self.mode]
         if slider and self:isOnTrack(start) then
             self.pan_state = { kind = "slider" }
+            self.slider_fast_refreshed = nil
         elseif self.mode == "actions" and self:isInsideBand(start) then
             local u = self:locate(start)
             self.pan_state = { kind = "page", start_u = u }
@@ -812,7 +824,12 @@ function ArcDock:onPanReleaseArcDock(_arg, ges)
         if slider then
             slider:setLevelFromPosition(ges.pos, true)
         end
-        self:refresh()
+        -- The final regular refresh only clears what the fast ones left
+        -- behind; a drag that never changed the level has nothing to clear.
+        if self.slider_fast_refreshed then
+            self.slider_fast_refreshed = nil
+            self:refresh()
+        end
     elseif state.kind == "page" and ges.pos then
         local u = self:locate(ges.pos)
         self:changePageBy(state.start_u, u)

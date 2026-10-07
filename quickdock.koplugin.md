@@ -1,4 +1,4 @@
-# Quick Dock ![Version](https://img.shields.io/badge/version-v0.24.0-blue)
+# Quick Dock ![Version](https://img.shields.io/badge/version-v0.25.0-blue)
 
 Quick Dock adds a floating action dock with lighting controls and an optional information panel to KOReader. It is designed for touch devices and can be assigned to any gesture supported by KOReader.
 
@@ -129,7 +129,7 @@ The settings follow the same grouped layout as the other plugins in this reposit
   - `Reset actions to defaults`: restores the initial actions and their order after confirmation without changing the other plugin settings.
   - `Reset behavior and actions`: additionally restores extra buttons, default actions, order, and visibility while preserving appearance.
 - `Gesture setup`: displays instructions for assigning the dock to a KOReader gesture.
-- `Version: v0.24.0`: shows the installed plugin version.
+- `Version: v0.25.0`: shows the installed plugin version.
 
 The side selector and visibility options keep their menu open after a change, making it easier to review related settings.
 
@@ -218,7 +218,7 @@ Select **Tools > Quick Dock > Appearance > Dock layout > Dock shape > Arc** to p
 - **Lighting**: tapping the brightness button shows the brightness slider in place of the actions, along the same ring: the light toggle at the end next to the bottom edge and the track up to the side edge, dimmest to brightest. The warmth button does the same for warmth, with the button that shows the current level at the bottom end. The selected floating button gets a thicker ring; tapping it again, or turning the page, brings the actions back. The sliders use the same KOReader frontlight and warmth calls as the column.
 - **Information panel**: shown along the top of the screen as a wide panel, with the cover as a thumbnail on the left and the content in up to three columns. Held-button help and Wi-Fi status appear in a strip right below it.
 
-By default the ring is drawn as one opaque band, so changing pages or moving a slider repaints only the dock. With **Arc options > Show band behind buttons** disabled, each ring button floats on the page with its own outline, like the buttons inside the ring, and the slider gets an outlined lane of its own; the page between the buttons stays visible, so those changes also repaint the page under the dock (the e-ink refresh still covers only the dock's area). Tapping outside the band and the floating buttons, including the empty corner inside the ring, closes the dock. The ring's size follows the dock scale and the maximum dock height; it always keeps room for three action positions and for the floating buttons inside it.
+By default the ring is drawn as one opaque band, so changing pages or moving a slider repaints only the dock. With **Arc options > Show band behind buttons** disabled, each ring button floats on the page with its own outline, like the buttons inside the ring; the page between the buttons stays visible, so changing pages also repaints the page under the dock (the e-ink refresh still covers only the dock's area). The brightness and warmth sliders still run on the band: it appears while a slider is open and disappears when the actions come back, so moving a slider repaints only the dock. Tapping outside the band and the floating buttons, including the empty corner inside the ring, closes the dock. The ring's size follows the dock scale and the maximum dock height; it always keeps room for three action positions and for the floating buttons inside it.
 
 ## Lighting controls
 

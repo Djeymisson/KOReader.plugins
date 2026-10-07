@@ -118,6 +118,18 @@ function LightSlider:getLevelFromPosition(pos)
     return math_floor(self.minimum + percentage * (self.maximum - self.minimum) + 0.5)
 end
 
+-- Whether the screen still shows another level or on/off state. Compared
+-- with what was last painted rather than with the previous event, so a
+-- refresh skipped by the pan-rate limit is still caught up later.
+function LightSlider:differsFromPainted()
+    return self.value ~= self.painted_value or self.enabled ~= self.painted_enabled
+end
+
+function LightSlider:markPainted()
+    self.painted_value = self.value
+    self.painted_enabled = self.enabled
+end
+
 function LightSlider:refreshSlider(force)
     local now = time.now()
     if Screen.low_pan_rate and not force then
@@ -160,7 +172,11 @@ function LightSlider:setLevelFromPosition(pos, force_refresh)
             self:syncFromPower(true)
         end
     end
-    self:refreshSlider(force_refresh)
+    -- A drag within one level, or a tap on the current one, would repaint
+    -- an identical slider and cost an e-ink refresh for nothing.
+    if self:differsFromPainted() then
+        self:refreshSlider(force_refresh)
+    end
     return true
 end
 
@@ -219,6 +235,7 @@ function LightSlider:paintTo(bb, x, y)
         )
     end
     bb:paintCircle(center_x, knob_y, self.knob_radius, active_color)
+    self:markPainted()
 end
 
 local FrontlightToggleButton = Button:extend({})
