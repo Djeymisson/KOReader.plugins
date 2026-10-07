@@ -13,11 +13,55 @@ return function(QuickDock, options)
     local InfoPanel = options.InfoPanel
     local dock_margin = options.dock_margin
 
+function QuickDock:cancelStatusPanelTimeout()
+    local task = self.status_panel_close_task
+    if task then
+        self.status_panel_close_task = nil
+        UIManager:unschedule(task)
+    end
+end
+
+-- The latest message decides how long the status block stays: a repeated
+-- message restarts its timeout, and one without a timeout keeps it shown.
+function QuickDock:scheduleStatusPanelTimeout(status_panel_widget, timeout)
+    self:cancelStatusPanelTimeout()
+    if not timeout then
+        return
+    end
+    local task
+    task = function()
+        if self.status_panel_close_task == task then
+            self.status_panel_close_task = nil
+        end
+        self:closeStatusPanel(status_panel_widget)
+    end
+    self.status_panel_close_task = task
+    UIManager:scheduleIn(timeout, task)
+end
+
+function QuickDock:cancelWifiStatusTimeout()
+    local task = self.wifi_status_timeout_task
+    if task then
+        self.wifi_status_timeout_task = nil
+        UIManager:unschedule(task)
+    end
+end
+
+-- Pending checks belong to the dock that scheduled them: closing it, the
+-- device suspending or the plugin closing must not let them act later on.
+function QuickDock:cancelDockTimers(keep_wifi_timeout)
+    self:cancelStatusPanelTimeout()
+    if not keep_wifi_timeout then
+        self:cancelWifiStatusTimeout()
+    end
+end
+
 function QuickDock:closeStatusPanel(expected_widget)
     local status_panel_widget = self.status_panel_widget
     if expected_widget and status_panel_widget ~= expected_widget then
         return
     end
+    self:cancelStatusPanelTimeout()
     self.status_panel_widget = nil
     self.status_panel_text = nil
     if status_panel_widget then
@@ -40,11 +84,7 @@ function QuickDock:showStatusPanel(text, timeout)
         -- times while forcing a repaint after each scan/authentication step.
         -- Keep the existing overlay so those repaints have no widget teardown
         -- or underlying screen region to flush.
-        if timeout then
-            UIManager:scheduleIn(timeout, function()
-                self:closeStatusPanel(status_panel_widget)
-            end)
-        end
+        self:scheduleStatusPanelTimeout(status_panel_widget, timeout)
         return status_panel_widget
     end
     self:closeStatusPanel()
@@ -69,11 +109,7 @@ function QuickDock:showStatusPanel(text, timeout)
     self.status_panel_widget = status_panel_widget
     self.status_panel_text = text
     UIManager:show(status_panel_widget, "ui")
-    if timeout then
-        UIManager:scheduleIn(timeout, function()
-            self:closeStatusPanel(status_panel_widget)
-        end)
-    end
+    self:scheduleStatusPanelTimeout(status_panel_widget, timeout)
     return status_panel_widget
 end
 
@@ -82,11 +118,19 @@ function QuickDock:showButtonHelp(text)
 end
 
 function QuickDock:scheduleWifiStatusTimeout()
+    self:cancelWifiStatusTimeout()
+    if not self.dialog then
+        return
+    end
     local generation = self.wifi_status_generation
     -- NetworkMgr already performs its own 250 ms connectivity checks. One
     -- final check after its 45 s deadline is enough to replace the native
     -- error InfoMessage without adding another polling loop.
-    UIManager:scheduleIn(46, function()
+    local task
+    task = function()
+        if self.wifi_status_timeout_task == task then
+            self.wifi_status_timeout_task = nil
+        end
         if generation ~= self.wifi_status_generation or not self.dialog then
             return
         end
@@ -96,7 +140,9 @@ function QuickDock:scheduleWifiStatusTimeout()
             self:showStatusPanel(_("Error connecting to the network"), 3)
             self:refreshStatefulActionButton("toggle_wifi")
         end
-    end)
+    end
+    self.wifi_status_timeout_task = task
+    UIManager:scheduleIn(46, task)
 end
 
 function QuickDock:runWithWifiInfoRedirect(callback)
@@ -156,6 +202,7 @@ end
 function QuickDock:toggleWifiInline()
     if NetworkMgr:isWifiOn() then
         self.wifi_status_generation = self.wifi_status_generation + 1
+        self:cancelWifiStatusTimeout()
         self:showStatusPanel(_("Turning off Wi-Fi…"))
         UIManager:forceRePaint()
         NetworkMgr:disableWifi(nil, true)
@@ -177,6 +224,7 @@ function QuickDock:toggleWifiInline()
     end)
     if status == false then
         self.wifi_status_generation = self.wifi_status_generation + 1
+        self:cancelWifiStatusTimeout()
         self:refreshVisibleNetworkInfoPanel("error")
         self:showStatusPanel(_("Error connecting to the network"), 3)
         self:refreshStatefulActionButton("toggle_wifi")
@@ -204,6 +252,7 @@ end
 
 function QuickDock:onNetworkConnected()
     self.wifi_status_generation = self.wifi_status_generation + 1
+    self:cancelWifiStatusTimeout()
     self:refreshStatefulActionButton("toggle_wifi")
     self:refreshVisibleNetworkInfoPanel("connected")
     self:showStatusPanel(_("Connected to Wi-Fi"), 2)
@@ -211,6 +260,7 @@ end
 
 function QuickDock:onNetworkDisconnected()
     self.wifi_status_generation = self.wifi_status_generation + 1
+    self:cancelWifiStatusTimeout()
     self:refreshStatefulActionButton("toggle_wifi")
     self:refreshVisibleNetworkInfoPanel("disconnected")
     self:showStatusPanel(_("Wi-Fi off."), 2)
@@ -225,6 +275,7 @@ end
 
 function QuickDock:onNetworkDisconnecting()
     self.wifi_status_generation = self.wifi_status_generation + 1
+    self:cancelWifiStatusTimeout()
     self:showStatusPanel(_("Turning off Wi-Fi…"))
 end
 

@@ -544,6 +544,8 @@ end
 function QuickDock:onSuspend()
     if self.dialog or self.info_panel_widget or self.status_panel_widget then
         self:closeDock()
+    else
+        self:cancelDockTimers()
     end
 end
 
@@ -1328,8 +1330,11 @@ function QuickDock:closeInfoPanel()
     end
 end
 
-function QuickDock:closeDock()
+-- rebuilding: the dock is about to be shown again (paging, switching sides),
+-- so a pending Wi-Fi check still has a dock to report to.
+function QuickDock:closeDock(rebuilding)
     local dialog = self.dialog
+    self:cancelDockTimers(rebuilding)
     if not self:closeDockTogether() then
         self.dialog = nil
         self:closeStatusPanel()
@@ -1483,7 +1488,7 @@ function QuickDock:showDock(page, side, info_panel_data)
         rows[#rows + 1] = { self:makePageButton("previous", self.current_page - 1, metrics) }
     end
 
-    self:closeDock()
+    self:closeDock(true)
 
     local dialog
     local side_button_factory

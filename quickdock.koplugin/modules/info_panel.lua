@@ -21,6 +21,7 @@ local VerticalGroup = require("ui/widget/verticalgroup")
 local VerticalSpan = require("ui/widget/verticalspan")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local lfs = require("libs/libkoreader-lfs")
+local gettext = require("gettext")
 local _ = require("quickdock_l10n")
 local N_ = _.ngettext
 local T = require("ffi/util").template
@@ -726,6 +727,59 @@ local function collectStats(plugin, metrics, screen_margin, include_cover, horiz
     return data
 end
 
+-- The interfaces with their MAC, SSID and addresses, read the way KOReader's
+-- own network information reads them, without its gateway ping: that ping is
+-- synchronous, blocks the UI until it times out, and keeps the radio busy.
+-- Only getifaddrs(), an SSID ioctl and /proc/net/route are used here, so
+-- nothing is sent over the network. The labels are KOReader's own, so they
+-- keep its translations.
+local function getInterfaceDetails()
+    local loaded, NetInfo = pcall(require, "ffi/netinfo")
+    if not loaded or type(NetInfo) ~= "table" or type(NetInfo.new) ~= "function" then
+        return nil
+    end
+    local has_routes = type(Device.getDefaultRoute) == "function"
+    local netinfo
+    local ok, lines = pcall(function()
+        netinfo = NetInfo:new()
+        local results = {}
+        for _index, iface in ipairs(netinfo:retrieve()) do
+            if #results > 0 then
+                results[#results + 1] = ""
+            end
+            results[#results + 1] = T(gettext("Interface: %1"), iface.name)
+            results[#results + 1] = T(gettext("MAC: %1"), iface.mac)
+            if iface.wireless then
+                if iface.ssid then
+                    results[#results + 1] = T(gettext("SSID: \"%1\""), iface.ssid)
+                else
+                    results[#results + 1] = gettext("SSID: off/any")
+                end
+            end
+            if iface.ipv4 then
+                results[#results + 1] = T(gettext("IPv4: %1"), iface.ipv4)
+                local gateway = has_routes and safeCall(function()
+                    return Device:getDefaultRoute(iface.name)
+                end, nil)
+                if gateway then
+                    results[#results + 1] = T(gettext("Default gateway: %1"), gateway)
+                end
+            end
+            if iface.ipv6 then
+                results[#results + 1] = T(gettext("IPv6: %1"), iface.ipv6)
+            end
+        end
+        return results
+    end)
+    if netinfo then
+        pcall(netinfo.free, netinfo)
+    end
+    if not ok or type(lines) ~= "table" or #lines == 0 then
+        return nil
+    end
+    return table.concat(lines, "\n")
+end
+
 local function collectNetwork()
     local wifi_on = safeCall(function()
         return NetworkMgr:isWifiOn()
@@ -748,18 +802,7 @@ local function collectNetwork()
     local current_network = wifi_on and safeCall(function()
         return NetworkMgr:getCurrentNetwork()
     end, nil) or nil
-    local details
-    if wifi_on and type(Device.retrieveNetworkInfo) == "function" then
-        details = safeCall(function()
-            return Device:retrieveNetworkInfo()
-        end, nil)
-        if details ~= nil then
-            details = tostring(details):gsub("%s+$", "")
-            if details == "" then
-                details = nil
-            end
-        end
-    end
+    local details = wifi_on and getInterfaceDetails() or nil
 
     return {
         kind = "network",

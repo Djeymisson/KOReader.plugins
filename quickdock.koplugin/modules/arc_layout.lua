@@ -226,7 +226,7 @@ function QuickDock:showArcDock(actions, metrics, page, side, info_panel_data)
     end
     local floating_items, sliders = self:makeArcFloatingItems(side, metrics, get_dock)
 
-    self:closeDock()
+    self:closeDock(true)
     info_panel_data = self:resolveInfoPanelData(info_panel_data, metrics)
 
     dock = ArcDock:new({
