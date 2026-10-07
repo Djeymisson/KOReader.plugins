@@ -21,6 +21,8 @@ local VerticalGroup = require("ui/widget/verticalgroup")
 local VerticalSpan = require("ui/widget/verticalspan")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local lfs = require("libs/libkoreader-lfs")
+local logger = require("logger")
+local time = require("ui/time")
 local gettext = require("gettext")
 local _ = require("quickdock_l10n")
 local N_ = _.ngettext
@@ -234,6 +236,71 @@ local function clearCoverCache(plugin)
     end
 end
 
+local function getBookInfoManager()
+    -- Provided by KOReader's Cover browser plugin, whose folder is on the
+    -- module path when it is enabled. Its database already holds the
+    -- covers and metadata of every book it has shown, so nothing has to be
+    -- opened here.
+    local ok, manager = pcall(require, "bookinfomanager")
+    if ok and type(manager) == "table" and type(manager.getBookInfo) == "function" then
+        return manager
+    end
+    return nil
+end
+
+-- The current document's cover from the Cover browser plugin's database,
+-- when it holds a thumbnail at least as large as the panel would show the
+-- original: reading it is a query and a decompression, while extracting the
+-- cover decodes the full-size image (EPUB) or renders the first page (PDF,
+-- DjVu). Anything uncertain returns nil, and the cover is extracted as
+-- before: no thumbnail, one too small, a document changed since it was
+-- indexed, a custom cover (its replacement may not have reached the Cover
+-- browser yet), or a cover the user hid there. Nothing is ever indexed here.
+local function getIndexedCover(file, content_width, maximum_height)
+    local manager = type(file) == "string" and getBookInfoManager() or nil
+    if not manager then
+        return nil
+    end
+    local has_custom_cover = safeCall(function()
+        return require("docsettings"):findCustomCoverFile(file) ~= nil
+    end, true)
+    if has_custom_cover then
+        return nil
+    end
+    -- Without the cover first: deciding needs no decompression.
+    local bookinfo = safeCall(function()
+        return manager:getBookInfo(file, false)
+    end, nil)
+    if
+        type(bookinfo) ~= "table"
+        or bookinfo._no_provider
+        or not bookinfo.has_cover
+        or bookinfo.ignore_cover
+        or tonumber(bookinfo.filemtime) ~= lfs.attributes(file, "modification")
+    then
+        return nil
+    end
+    local original_width, original_height = tostring(bookinfo.cover_sizetag or ""):match("^(%d+)x(%d+)$")
+    original_width, original_height = tonumber(original_width), tonumber(original_height)
+    local thumbnail_width, thumbnail_height = tonumber(bookinfo.cover_w), tonumber(bookinfo.cover_h)
+    if not (original_width and original_height and thumbnail_width and thumbnail_height)
+        or original_width <= 0 or original_height <= 0
+    then
+        return nil
+    end
+    -- The size getCover() gives the original, which it never enlarges.
+    local scale = math_min(1, content_width / original_width, maximum_height / original_height)
+    local needed_width = math_max(1, math_floor(original_width * scale + 0.5))
+    local needed_height = math_max(1, math_floor(original_height * scale + 0.5))
+    if thumbnail_width < needed_width or thumbnail_height < needed_height then
+        return nil
+    end
+    bookinfo = safeCall(function()
+        return manager:getBookInfo(file, true)
+    end, nil)
+    return type(bookinfo) == "table" and bookinfo.cover_bb or nil
+end
+
 local function getCover(plugin, ui, metrics, screen_margin, horizontal)
     local document = ui and ui.document
     if not document then
@@ -266,14 +333,22 @@ local function getCover(plugin, ui, metrics, screen_margin, horizontal)
     end
 
     clearCoverCache(plugin)
-    local cover_bb = safeCall(function()
-        if ui.bookinfo and type(ui.bookinfo.getCoverImage) == "function" then
-            return ui.bookinfo:getCoverImage(document)
-        end
-        if type(document.getCoverPageImage) == "function" then
-            return document:getCoverPageImage()
-        end
-    end, nil)
+    local started = time.now()
+    local source = "Cover browser"
+    local cover_bb = getIndexedCover(document.file, content_width, maximum_height)
+    if not cover_bb then
+        source = "document"
+        cover_bb = safeCall(function()
+            if ui.bookinfo and type(ui.bookinfo.getCoverImage) == "function" then
+                return ui.bookinfo:getCoverImage(document)
+            end
+            if type(document.getCoverPageImage) == "function" then
+                return document:getCoverPageImage()
+            end
+        end, nil)
+    end
+    logger.dbg("QuickDock: cover from", source, "in",
+        time.to_ms(time.since(started)), "ms:", cover_bb ~= nil)
 
     if not cover_bb then
         -- Cache a negative result too, so reopening the dock does not retry an
@@ -324,18 +399,6 @@ local function clearRecentCoverCache(plugin)
         end
         plugin.recent_cover_cache = nil
     end
-end
-
-local function getBookInfoManager()
-    -- Provided by KOReader's Cover browser plugin, whose folder is on the
-    -- module path when it is enabled. Its database already holds the
-    -- covers and metadata of every book it has shown, so nothing has to be
-    -- opened here.
-    local ok, manager = pcall(require, "bookinfomanager")
-    if ok and type(manager) == "table" and type(manager.getBookInfo) == "function" then
-        return manager
-    end
-    return nil
 end
 
 local function fileTitle(file)

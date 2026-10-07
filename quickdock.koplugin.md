@@ -1,4 +1,4 @@
-# Quick Dock ![Version](https://img.shields.io/badge/version-v0.25.2-blue)
+# Quick Dock ![Version](https://img.shields.io/badge/version-v0.25.3-blue)
 
 Quick Dock adds a floating action dock with lighting controls and an optional information panel to KOReader. It is designed for touch devices and can be assigned to any gesture supported by KOReader.
 
@@ -129,7 +129,7 @@ The settings follow the same grouped layout as the other plugins in this reposit
   - `Reset actions to defaults`: restores the initial actions and their order after confirmation without changing the other plugin settings.
   - `Reset behavior and actions`: additionally restores extra buttons, default actions, order, and visibility while preserving appearance.
 - `Gesture setup`: displays instructions for assigning the dock to a KOReader gesture.
-- `Version: v0.25.2`: shows the installed plugin version.
+- `Version: v0.25.3`: shows the installed plugin version.
 
 The side selector and visibility options keep their menu open after a change, making it easier to review related settings.
 
@@ -166,7 +166,7 @@ The **Show close button**, **Show side-switch button**, and **Show reader/browse
 
 The information panel appears at the opposite edge of the screen: when the dock opens on the left, the panel opens on the right; when the dock opens on the right, the panel opens on the left. It is bottom-aligned using the same screen margin as the dock and uses the same border, white background, and rounded-corner style as its buttons. Reading information is enabled by default, while network information is optional.
 
-The open book's cover is also enabled by default and appears centered at the top of the reading panel when one is available. Quick Dock obtains it through KOReader's current-document cover API, scales it down once to the panel's maximum dimensions, and reuses that thumbnail while the same document and dock scale remain active. Missing covers are cached as unavailable too, avoiding repeated extraction attempts. There is no background loading or polling. Configure these options at **Tools > Quick Dock > Appearance > Information panel**.
+The open book's cover is also enabled by default and appears centered at the top of the reading panel when one is available. When the Cover browser plugin has already indexed the document, Quick Dock reads its stored thumbnail, which avoids decoding the full-size cover image or rendering a PDF or DjVu first page. The thumbnail is used only when it is at least as large as the panel would show the cover, the document has not changed since it was indexed, the book has no custom cover, and its cover is not hidden in the Cover browser; otherwise, and when the Cover browser is disabled or has not indexed the document, the cover comes from KOReader's current-document cover API as before. Nothing is indexed when the dock opens. Quick Dock scales the cover down once to the panel's maximum dimensions, and reuses that thumbnail while the same document and dock scale remain active. Missing covers are cached as unavailable too, avoiding repeated extraction attempts. There is no background loading or polling. Configure these options at **Tools > Quick Dock > Appearance > Information panel**.
 
 While reading, the panel shows the document title and primary author, current/total page and book percentage, chapter title and progress, estimated time remaining for the book and chapter, today's pages and reading time, the clock, and battery state. It does not show remaining page counts. Stable page labels are used for the displayed book page numbers when enabled, while percentages and estimates continue to follow actual page turns.
 
