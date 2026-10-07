@@ -20,7 +20,7 @@ Quick Dock adds a floating action dock with lighting controls and an optional in
 - Configurable closing method: one block at a time by default, or all blocks at once using the smallest encompassing rectangle and a non-flashing UI update.
 - Optional vertical frontlight slider in a separate column beside the action buttons, with a circular thumb, live brightness adjustment, and a dedicated frontlight toggle button.
 - Optional second lighting column for frontlight warmth on supported devices, using each device's native warmth range.
-- Optional information panel on the screen edge opposite the dock. It can show reading information, book statistics, network information, or any combination; when two or more are enabled, one highlighted button immediately above the action dock cycles through them without closing the dock.
+- Optional information panel on the screen edge opposite the dock. It can show reading information, book statistics, the covers of recent documents (tap one to open it), network information, or any combination; when two or more are enabled, one highlighted button immediately above the action dock cycles through them without closing the dock.
 - Holding a dock button shows its help text in the compact opposite-edge status block above the information panel instead of opening a modal message.
 - Night mode and Wi-Fi execute in place without destroying and rebuilding the dock.
 - Wi-Fi progress appears in a compact opposite-edge status panel instead of KOReader's informational popups during inline toggles.
@@ -112,13 +112,14 @@ The settings follow the same grouped layout as the other plugins in this reposit
       - `Arc angle: <current angle>`: tilts the arc between `25°` and `65°`; `45°` (a quarter circle) is the default.
       - `Show band behind buttons`: draws the arc's buttons on a white band (the default) or lets each one float on the page with its own outline.
       - `Fill the arc when there are few actions`: spreads each page's buttons along the whole arc and, when every action fits on one page, enlarges them up to 1.5 times. Button size then varies with the number of actions. Disabled by default.
-      - `Empty space: <position>`: with filling disabled, leaves the unused part of the arc `At the end, near the side edge` (the default) or `At the start, near the bottom edge`.
-  - `Information panel`:
-    - `Show reading information`: shows or hides the Mini Receipt-inspired reading content. Enabled by default.
-    - `Show book statistics`: shows or hides the open book's statistics panel (see [Information panels](#information-panels)). Disabled by default.
-    - `Show network information`: shows or hides Wi-Fi state and KOReader's interface, MAC, SSID, IP, gateway, and connectivity details. Disabled by default.
-    - `Show book cover`: shows or hides the open document's cover in the reading information and the book statistics: above the text in the side panel, or to its left in the arc dock's top panel.
-    - `Panel text alignment`: aligns every line of either panel, including the clock and battery, to the `Left`, `Center`, or `Nearest screen edge`. The last option aligns left when the panel is on the left and right when it is on the right. `Nearest screen edge` is the default.
+      - `Empty space: <position>`: with filling disabled, leaves the unused part of the arc `At the end, near the side edge` (the default) or `At the start, near the bottom edge`. The floating buttons follow: they start at the bottom end in the first case and at the side end in the second.
+  - `Information panel`: one entry per panel mode, checked when that mode is shown. Each opens a submenu with `Show this panel` and the mode's own options; the modes enabled here are the ones the panel-switch button cycles through, in this order.
+    - `Reading information`: the Mini Receipt-inspired reading content. Enabled by default. Option: `Show book cover`.
+    - `Book statistics`: the open book's statistics panel (see [Book statistics panel](#book-statistics-panel)). Disabled by default. Option: `Show book cover`.
+    - `Recent documents`: covers of recently opened documents (see [Recent documents panel](#recent-documents-panel)). Disabled by default. Option: `Documents to show: <count>`, the maximum number of documents: 3, 6 (the default), 9, 12, 18, or 24.
+    - `Network information`: Wi-Fi state and KOReader's interface, MAC, SSID, IP, gateway, and connectivity details. Disabled by default.
+    - `Show book cover` (in the reading and statistics submenus) is one shared setting: it shows or hides the open document's cover in both panels, above the text in the side panel, or to its left in the arc dock's top panel.
+    - `Panel text alignment`: aligns every line of every panel, including the clock and battery, to the `Left`, `Center`, or `Nearest screen edge`. The last option aligns left when the panel is on the left and right when it is on the right. `Nearest screen edge` is the default.
   - `Lighting controls`:
     - `Show frontlight control`: shows or hides the brightness slider and light toggle on devices with a frontlight: a column beside the column dock, or a button inside the arc.
     - `Show warmth control`: shows or hides the optional warmth slider on devices with natural-light support: a second column beside the column dock, or a second button inside the arc.
@@ -171,11 +172,11 @@ While reading, the panel shows the document title and primary author, current/to
 
 In the file browser or Bookshelf, no document-specific fields are invented: the reading panel shows the available daily reading summary, clock, and battery state. Reading-time fields appear only when KOReader's Statistics plugin is enabled and has data. The statistics API is queried once when the dock opens, and the same snapshot is reused across pagination and side changes; there is no timer, background polling, or global ReaderUI/FileManager patch, and the reading and network panels never touch the database directly (the statistics panel's single read-only query is described below).
 
-The network panel displays the current Wi-Fi state and uses KOReader's native network-information provider for available interface, MAC, SSID, IPv4/IPv6, gateway, and gateway-test details. This data is collected when the network panel is opened or selected and refreshed from KOReader's connection events when the dock's Wi-Fi button changes state; there is no background polling. With two or more panels enabled, one square button immediately above the action dock cycles through them (Reading, Statistics, Network, skipping disabled ones) without rebuilding or closing the dock. It uses the same dimensions, border, rounded corners, and press feedback as the frontlight toggle. Its icon indicates the panel currently visible: `reading_info.svg` (with the system open-book icon as fallback) for Reading, `stats.svg` for Statistics, or `network_info.svg` for Network. Holding the button describes the current panel and the tap action.
+The network panel displays the current Wi-Fi state and uses KOReader's native network-information provider for available interface, MAC, SSID, IPv4/IPv6, gateway, and gateway-test details. This data is collected when the network panel is opened or selected and refreshed from KOReader's connection events when the dock's Wi-Fi button changes state; there is no background polling. With two or more panels enabled, one square button immediately above the action dock cycles through them (Reading, Statistics, Recent documents, Network, skipping disabled ones) without rebuilding or closing the dock. It uses the same dimensions, border, rounded corners, and press feedback as the frontlight toggle. Its icon indicates the panel currently visible: `reading_info.svg` (with the system open-book icon as fallback) for Reading, `stats.svg` for Statistics, `recent_info.svg` (with `history.svg` as fallback) for Recent documents, or `network_info.svg` for Network. Holding the button describes the current panel and the tap action.
 
 ### Book statistics panel
 
-Optional and disabled by default (`Appearance > Information panel > Show book statistics`). It shows the open book's cover (governed by the same `Show book cover` option as the reading panel), title and primary author, then:
+Optional and disabled by default (`Appearance > Information panel > Book statistics > Show this panel`). It shows the open book's cover (governed by the same `Show book cover` option as the reading panel), title and primary author, then:
 
 - time read and estimated time left;
 - progress in percent;
@@ -186,6 +187,14 @@ Optional and disabled by default (`Appearance > Information panel > Show book st
 Everything comes from KOReader's Statistics plugin, using the same definitions as its own book statistics screen: the reading time and average page time are read from the values it already keeps in memory (including pages not yet flushed to its database), the daily average is the reading time divided by the number of distinct days with reading, and the end date is today plus the days the remaining time would take at that daily average. The start date and the number of reading days are the only values KOReader does not keep in memory, so they come from one read-only aggregate query over the current book, made only when this panel is collected. Nothing is written, cached, or polled.
 
 Any value KOReader cannot supply is shown as `N/A` instead of being invented: when the Statistics plugin is disabled (a note says so), when the book has no recorded reading yet (KOReader's placeholder average page time is ignored), or when no document is open.
+
+### Recent documents panel
+
+Optional and disabled by default (`Appearance > Information panel > Recent documents > Show this panel`). It shows the covers of the most recently opened documents from KOReader's history, newest first, up to the number chosen in `Documents to show`. Documents that no longer exist are skipped, and so is the document open in the reader, since opening it again would do nothing.
+
+Tapping a cover closes the dock and opens that document the same way KOReader's History does: inside the reader it switches documents, and in the file browser it opens the reader. Taps elsewhere on the panel keep the dock open. The covers fill a grid of up to three columns beside the column dock, or a single row along the top of the screen with the arc dock. When the documents do not fit, the panel shows the page number with arrows next to its title; the arrows turn the page in place, and every page keeps the same panel size.
+
+Covers and titles come from the database of KOReader's Cover browser plugin, so no document is opened to show them. A document Cover browser has not indexed yet (for example, one never shown in its mosaic or detailed list view), or one without a cover, appears as a framed tile with its title. Each thumbnail is scaled once and reused while its document stays in the list; thumbnails of documents that leave the list are freed.
 
 ## Inline actions and Wi-Fi status
 
@@ -204,7 +213,7 @@ Select **Tools > Quick Dock > Appearance > Dock layout > Dock shape > Arc** to p
 - **Angle**: **Dock layout > Arc options > Arc angle** tilts the arc. The angle is measured between the bottom edge and the line joining the arc's two ends: `45°` is a quarter circle; `55°` and `65°` bring the bottom end closer to the side edge and make the arc taller, while `35°` and `25°` spread it along the bottom edge and make it lower. Other than 45°, the arc is a quarter ellipse with the same area as the circle, so it holds about the same number of buttons; the buttons are spaced evenly along its length.
 - **Ring**: a single row with the actions, in the same order as the column from bottom to top: the reader/browser button first, then the configured actions. By default the buttons keep the selected dock scale and the spacing of a full page; when a page has fewer buttons than the arc holds, **Arc options > Empty space** leaves the unused part either at the end next to the side edge (the default) or at the start next to the bottom edge.
 - **Filling**: with **Arc options > Fill the arc when there are few actions** enabled, each page's buttons are spread along the whole arc instead, the first at the end next to the bottom edge and the last at the end next to the side edge. When every action fits on one page, the buttons, icons, and fallback labels also grow, up to 1.5 times the selected dock scale, to close the gaps, so their size varies with the number of actions and the dock scale only sets the smallest size. Paginated docks keep the selected scale.
-- **Floating buttons**: the fixed controls float inside the ring, on a smaller arc that starts at the bottom end: the side switch first, then brightness, warmth, the information-panel switch, and the close button, each following its own visibility option.
+- **Floating buttons**: the fixed controls float inside the ring, on a smaller arc that starts at the same end as the actions (the bottom end, or the side end when `Empty space` is `At the start` and filling is disabled), spaced as far from each other as from the ring: the side switch first, then brightness, warmth, the information-panel switch, and the close button, each following its own visibility option.
 - **Pages**: when the actions do not fit, the last item of a full page is the next-page arrow, at the end next to the side edge, and on later pages the first item is the previous-page arrow. Swiping or dragging along the ring also turns the page: toward the bottom edge for the next page, toward the side edge for the previous one. Pages change in place, without closing the dock or the information panel.
 - **Lighting**: tapping the brightness button shows the brightness slider in place of the actions, along the same ring: the light toggle at the end next to the bottom edge and the track up to the side edge, dimmest to brightest. The warmth button does the same for warmth, with the button that shows the current level at the bottom end. The selected floating button gets a thicker ring; tapping it again, or turning the page, brings the actions back. The sliders use the same KOReader frontlight and warmth calls as the column.
 - **Information panel**: shown along the top of the screen as a wide panel, with the cover as a thumbnail on the left and the content in up to three columns. Held-button help and Wi-Fi status appear in a strip right below it.
@@ -248,7 +257,7 @@ Resolution order for regular actions:
 
 The two stateful actions use their state-specific names before the regular resolution order: `day_mode.svg` / `night_mode.svg` and `wifi_on.svg` / `wifi_off.svg`. These files are checked only when the dock is drawn or the corresponding action changes state; there is no periodic polling.
 
-Examples for regular actions include `history.svg`, `increase_frontlight.svg`, and `quickdock_context_search.svg`. The plugin also includes matching chevrons for pagination and changing the dock side, `close.svg` for the optional close button, `exit_reader.svg` / `last_doc.svg` for the reader/browser button, `reading_info.svg` / `network_info.svg` for the information-panel switch, `light_on.svg` / `light_off.svg` for the frontlight toggle, and `warmth.svg` for the warmth column.
+Examples for regular actions include `history.svg`, `increase_frontlight.svg`, and `quickdock_context_search.svg`. The plugin also includes matching chevrons for pagination and changing the dock side, `close.svg` for the optional close button, `exit_reader.svg` / `last_doc.svg` for the reader/browser button, `reading_info.svg` / `stats.svg` / `network_info.svg` (and `history.svg` for recent documents) for the information-panel switch, `light_on.svg` / `light_off.svg` for the frontlight toggle, and `warmth.svg` for the warmth column.
 
 For the reader/browser button, use `exit_reader.svg` while reading and `last_doc.svg` in the file browser or when Bookshelf is covering a parked reader. In that Bookshelf state, the button resumes the reader instead of sending another Home command. The same names with a `.png` extension are also accepted.
 
@@ -269,6 +278,8 @@ Quick Dock stores its preferences through KOReader's reader settings using these
 | `quickdock_show_frontlight_slider` | Visibility of the frontlight slider column |
 | `quickdock_show_warmth_slider` | Visibility of the frontlight warmth column; enabled by default on supported devices |
 | `quickdock_show_info_panel` | Visibility of the reading-information panel; enabled by default |
+| `quickdock_show_recent_info_panel` | Visibility of the recent-documents panel; disabled by default |
+| `quickdock_recent_documents_count` | Maximum number of documents in the recent-documents panel: 3, 6, 9, 12, 18, or 24; defaults to 6 |
 | `quickdock_show_network_info_panel` | Visibility of the network-information panel; disabled by default |
 | `quickdock_show_info_panel_cover` | Visibility of the open book's cover at the top of the information panel; enabled by default |
 | `quickdock_info_panel_text_alignment` | Left, centered, or nearest-screen-edge alignment for all information-panel text |
@@ -292,7 +303,7 @@ Quick Dock follows KOReader's active interface language. Plugin-specific message
 - `modules/widgets.lua`: low-level slider and button widget classes, fixed positioning, and multi-column layout.
 - `modules/arc_dock.lua`: the arc dock widget: the arc as a sampled quarter ellipse, floating-button geometry, painting, hit testing, page swipes, and the arc lighting sliders.
 - `modules/arc_layout.lua`: builds the arc dock's pages and floating buttons from the same actions and callbacks as the column.
-- `modules/info_panel.lua`: safe collection and rendering of reading, book statistics, and network details, covers, statistics, clock, battery, and transient status panels, either on the edge opposite the dock or along the top of the screen.
+- `modules/info_panel.lua`: safe collection and rendering of reading, book statistics, recent documents, and network details, covers, statistics, clock, battery, and transient status panels, either on the edge opposite the dock or along the top of the screen.
 - `modules/inline_actions.lua`: in-place night-mode and Wi-Fi execution, including Wi-Fi progress redirection and timeout handling.
 - `modules/context.lua`: reader, file-browser, and optional Bookshelf integration.
 - `modules/icons.lua`: custom/system icon resolution, stateful icons, and safe shared IconWidget patching.

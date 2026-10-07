@@ -170,6 +170,37 @@ local function curveLocate(curve, dx, dy)
     return best_s / math_max(1, curve.length), math_sqrt(best_distance)
 end
 
+-- Fractions of the curve's length where count discs sit, from its start
+-- (or from its end with from_end), with consecutive centers at least
+-- spacing apart in a straight line. On a tight bend the distance along the
+-- curve overstates the one between the discs, so the samples are walked
+-- instead of stepping by length. Returns nil when they do not all fit.
+local function placeAlongCurve(curve, count, spacing, from_end)
+    local samples = curve.samples
+    local first, last_index, direction = 1, #samples, 1
+    if from_end then
+        first, last_index, direction = #samples, 1, -1
+    end
+    local positions = { from_end and 1 or 0 }
+    local last = samples[first]
+    local spacing_squared = spacing * spacing
+    for index = first + direction, last_index, direction do
+        if #positions >= count then
+            break
+        end
+        local sample = samples[index]
+        local dx, dy = sample.x - last.x, sample.y - last.y
+        if dx * dx + dy * dy >= spacing_squared then
+            positions[#positions + 1] = sample.s / math_max(1, curve.length)
+            last = sample
+        end
+    end
+    if #positions < count then
+        return nil
+    end
+    return positions
+end
+
 -- Geometry shared by the dock and by the pagination done before the dock is
 -- created: the corner the arc turns around, its curves and how many items
 -- fit on it. Positions along the arc are a fraction a of its length, from 0
@@ -203,7 +234,9 @@ local function buildGeometry(side, metrics, options, button_scale)
 
     -- Floating buttons: smaller discs, a gap away from the band's inner edge.
     local floating_radius = math_floor(metrics.arc_utility_diameter / 2) + pad
-    local floating_slot = 2 * floating_radius + pad
+    -- The same gap between two of them as between them and the band, so
+    -- they read as separate buttons rather than a touching pair.
+    local floating_slot = 2 * floating_radius + 2 * pad
     local floating_inset = half_band + 2 * pad + floating_radius
 
     local tilt = math.tan(math.rad(math_max(10, math_min(80, options.angle or 45))))
@@ -220,26 +253,31 @@ local function buildGeometry(side, metrics, options, button_scale)
     local fit = math_min(1, maximum_x / rx, maximum_y / ry)
     rx, ry = rx * fit, ry * fit
 
-    local curve, floating_curve, capacity
+    local curve, floating_curve, floating_positions, capacity
     for _attempt = 1, 40 do
         curve = buildCurve(rx, ry, 0)
         capacity = math_max(2, math_floor(curve.length / slot) + 1)
-        floating_curve = floating_count > 0 and buildCurve(rx, ry, -floating_inset) or nil
-        local floating_fits = not floating_curve
-            or floating_curve.length >= (floating_count - 1) * floating_slot
-        if capacity >= minimum_rows and floating_fits then
+        floating_curve = nil
+        floating_positions = {}
+        if floating_count > 0 then
+            floating_curve = buildCurve(rx, ry, -floating_inset)
+            floating_positions = placeAlongCurve(
+                floating_curve, floating_count, floating_slot, options.floating_from_end
+            )
+        end
+        if capacity >= minimum_rows and floating_positions then
             break
         end
         -- Too small for the minimum: grow past the limits, as the column does.
         rx, ry = rx * 1.05, ry * 1.05
     end
-
-    local floating_step = 0
-    if floating_count > 1 then
-        floating_step = math_min(
-            floating_slot / math_max(1, floating_curve.length),
-            1 / (floating_count - 1)
-        )
+    if not floating_positions then
+        -- Still crowded after growing: spread them over the whole curve.
+        floating_positions = {}
+        for index = 1, floating_count do
+            local a = floating_count > 1 and (index - 1) / (floating_count - 1) or 0
+            floating_positions[index] = options.floating_from_end and 1 - a or a
+        end
     end
 
     local center_x
@@ -265,7 +303,7 @@ local function buildGeometry(side, metrics, options, button_scale)
         capacity = capacity,
         step = 1 / math_max(1, capacity - 1),
         floating_radius = floating_radius,
-        floating_step = floating_step,
+        floating_positions = floating_positions,
         button_scale = button_scale,
     }
 end
@@ -284,7 +322,10 @@ function ArcDock.computeGeometry(side, metrics, options)
     local scale = math_min(MAX_BUTTON_GROWTH, spacing / metrics.button_width)
     while scale > 1.01 do
         local grown = buildGeometry(side, metrics, options, scale)
-        if grown.capacity >= count then
+        -- Larger buttons must not make the arc itself grow: a wider band
+        -- pushes the floating buttons onto a tighter inner curve, and making
+        -- room for them there would change the dock's size and reach.
+        if grown.capacity >= count and grown.rx <= geometry.rx + 0.5 then
             return grown
         end
         scale = scale * 0.95
@@ -460,7 +501,7 @@ end
 function ArcDock:forEachFloatingItem(callback)
     local geometry = self.geometry
     for index = 1, #self.floating_items do
-        local x, y = self:pointAt((index - 1) * geometry.floating_step, geometry.floating_curve)
+        local x, y = self:pointAt(geometry.floating_positions[index], geometry.floating_curve)
         callback(self.floating_items[index], x, y, geometry.floating_radius)
     end
 end
@@ -706,6 +747,9 @@ function ArcDock:onTapArcDock(_arg, ges)
     local slider = self.sliders[self.mode]
     if slider and self:isOnTrack(ges.pos) then
         return slider:setLevelFromPosition(ges.pos, true)
+    end
+    if self.outside_tap_callback and self.outside_tap_callback(ges.pos) then
+        return true
     end
     if not self:isInsideBand(ges.pos) then
         return self:onClose()

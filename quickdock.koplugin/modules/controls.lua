@@ -338,26 +338,16 @@ function QuickDock:makeCloseButton(width, dialog, metrics)
 end
 
 function QuickDock:getInfoPanelToggleDisplay()
-    if self.current_info_panel_kind == "network" then
-        return self:getIcon("network_info"), makeFallbackLabel(_("Network information"), "network_info")
-    elseif self.current_info_panel_kind == "stats" then
-        return self:getIcon("stats_info"), makeFallbackLabel(_("Book statistics"), "stats_info")
-    end
-    return self:getIcon("reading_info"), makeFallbackLabel(_("Reading information"), "reading_info")
+    local mode = self:getInfoPanelMode(self.current_info_panel_kind)
+        or self:getInfoPanelMode("reading")
+    return self:getIcon(mode.icon), makeFallbackLabel(mode.title, mode.icon)
 end
 
 function QuickDock:showInfoPanelSwitchHelp()
-    local names = {
-        reading = _("reading information"),
-        stats = _("book statistics"),
-        network = _("network information"),
-    }
-    local next_kind = self:getNextInfoPanelKind()
-    self:showButtonHelp(T(
-        _("Showing %1. Tap to show %2."),
-        names[self.current_info_panel_kind] or names.reading,
-        names[next_kind] or names.reading
-    ))
+    local current = self:getInfoPanelMode(self.current_info_panel_kind)
+        or self:getInfoPanelMode("reading")
+    local next_mode = self:getInfoPanelMode(self:getNextInfoPanelKind()) or current
+    self:showButtonHelp(T(_("Showing %1. Tap to show %2."), current.name, next_mode.name))
 end
 
 function QuickDock:makeInfoPanelToggleButton(width, dialog, metrics)

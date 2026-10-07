@@ -63,6 +63,8 @@ return function(QuickDock, constants)
     local INFO_PANEL_TEXT_LEFT = constants.INFO_PANEL_TEXT_LEFT
     local INFO_PANEL_TEXT_CENTER = constants.INFO_PANEL_TEXT_CENTER
     local INFO_PANEL_TEXT_SCREEN_EDGE = constants.INFO_PANEL_TEXT_SCREEN_EDGE
+    local RECENT_DOCUMENTS_COUNTS = constants.RECENT_DOCUMENTS_COUNTS
+    local INFO_PANEL_MODES = constants.INFO_PANEL_MODES
     local PLUGIN_VERSION = constants.PLUGIN_VERSION
 
 local function showResetConfirmation(plugin, touchmenu_instance, text, ok_text, reset_callback)
@@ -222,6 +224,20 @@ local function makeIconInfoItem(text, help_text, details)
     }
 end
 
+function QuickDock:getInfoPanelSwitchIconItem()
+    local files = {}
+    local lines = {}
+    for _index, mode in ipairs(INFO_PANEL_MODES) do
+        files[#files + 1] = mode.icon_files:match("^(%S+)")
+        lines[#lines + 1] = mode.title .. ": " .. mode.icon_files
+    end
+    return makeIconInfoItem(
+        _("Information panel switch") .. ": " .. table.concat(files, " / "),
+        _("Uses a dedicated icon for each information panel mode, showing which one is visible."),
+        _("Information panel switch") .. "\n\n" .. table.concat(lines, "\n")
+    )
+end
+
 function QuickDock:getIconFilenamesMenu()
     local menu = {
         makeIconInfoItem(
@@ -241,17 +257,7 @@ function QuickDock:getIconFilenamesMenu()
             _("Icon of the warmth control: below its slider in the column dock, or on its button inside the arc."),
             _("Warmth control") .. "\n\nSVG: warmth.svg\nPNG: warmth.png"
         ),
-        makeIconInfoItem(
-            _("Information panel switch") .. ": reading_info.svg / stats.svg / network_info.svg",
-            _("Uses a dedicated icon for the visible reading, book statistics, or network information panel."),
-            _("Information panel switch")
-                .. "\n\n" .. _("Reading information")
-                .. ": reading_info.svg / reading_info.png"
-                .. "\n" .. _("Book statistics")
-                .. ": stats.svg / stats.png"
-                .. "\n" .. _("Network information")
-                .. ": network_info.svg / network_info.png"
-        ),
+        self:getInfoPanelSwitchIconItem(),
     }
     menu[#menu].separator = true
 
@@ -561,13 +567,13 @@ function QuickDock:getArcOptionsMenu()
         sub_item_table = {
             makeRadioOption(
                 empty_labels[ARC_EMPTY_SPACE_END],
-                _("The buttons start at the bottom end of the arc."),
+                _("The buttons, including the floating ones inside the arc, start at its bottom end."),
                 function() return self:getArcEmptySpace() == ARC_EMPTY_SPACE_END end,
                 function() self:setArcEmptySpace(ARC_EMPTY_SPACE_END) end
             ),
             makeRadioOption(
                 empty_labels[ARC_EMPTY_SPACE_START],
-                _("The buttons end at the side end of the arc."),
+                _("The buttons end at the side end of the arc, and the floating ones inside it start there too."),
                 function() return self:getArcEmptySpace() == ARC_EMPTY_SPACE_START end,
                 function() self:setArcEmptySpace(ARC_EMPTY_SPACE_START) end
             ),
@@ -576,66 +582,119 @@ function QuickDock:getArcOptionsMenu()
     return { angle_item, band_item, fill_item, empty_item }
 end
 
+-- Options of each information panel mode, listed below its visibility
+-- toggle in the mode's submenu. Modes without an entry only have the toggle.
+local INFO_PANEL_MODE_OPTIONS = {}
+
+function INFO_PANEL_MODE_OPTIONS.reading(self)
+    return { self:getInfoPanelCoverItem("reading") }
+end
+
+function INFO_PANEL_MODE_OPTIONS.stats(self)
+    return { self:getInfoPanelCoverItem("stats") }
+end
+
+function INFO_PANEL_MODE_OPTIONS.recent(self)
+    local options = {}
+    for _index, count in ipairs(RECENT_DOCUMENTS_COUNTS) do
+        options[#options + 1] = makeRadioOption(
+            tostring(count), nil,
+            function() return self:getRecentDocumentsCount() == count end,
+            function() self:setRecentDocumentsCount(count) end
+        )
+    end
+    return {
+        {
+            text_func = function()
+                return T(_("Documents to show: %1"), self:getRecentDocumentsCount())
+            end,
+            help_text = _("The maximum number of recent documents in the recent documents panel. The document open in the reader is not listed. Documents that do not fit the panel are split into pages."),
+            enabled_func = function() return self:isInfoPanelKindEnabled("recent") end,
+            sub_item_table = options,
+        },
+    }
+end
+
+-- The cover setting is shared by the reading and statistics panels, so it
+-- appears in both submenus.
+function QuickDock:getInfoPanelCoverItem(kind)
+    return makeToggleOption(
+        _("Show book cover"),
+        _("Shows the open book's cover in the reading information and book statistics: above the text beside the column dock, or to its left in the arc dock's top panel. The thumbnail is loaded once and reused while the document remains open. This option applies to both panels."),
+        function() return self:showInfoPanelCover() end,
+        function(enabled) self:setShowInfoPanelCover(enabled) end,
+        function() return self:isInfoPanelKindEnabled(kind) end
+    )
+end
+
+-- One entry per mode: its check mark tells whether the mode is shown, and
+-- tapping it opens the visibility toggle and the mode's own options.
+function QuickDock:getInfoPanelModeItem(mode)
+    local kind = mode.kind
+    return {
+        text = mode.title,
+        help_text = mode.help,
+        checked_func = function() return self:isInfoPanelKindEnabled(kind) end,
+        sub_item_table_func = function()
+            local items = {
+                makeToggleOption(
+                    _("Show this panel"),
+                    mode.help,
+                    function() return self:isInfoPanelKindEnabled(kind) end,
+                    function(enabled) self:setInfoPanelKindEnabled(kind, enabled) end
+                ),
+            }
+            local options = INFO_PANEL_MODE_OPTIONS[kind]
+            if options then
+                items[1].separator = true
+                for _index, item in ipairs(options(self)) do
+                    items[#items + 1] = item
+                end
+            end
+            return items
+        end,
+    }
+end
+
 function QuickDock:getInformationPanelMenu()
     local alignment_labels = {
         [INFO_PANEL_TEXT_LEFT] = _("Left"),
         [INFO_PANEL_TEXT_CENTER] = _("Center"),
         [INFO_PANEL_TEXT_SCREEN_EDGE] = _("Nearest screen edge"),
     }
-    return {
-        makeToggleOption(
-            _("Show reading information"),
-            _("Shows book, chapter, daily reading, clock, and battery information in the information panel."),
-            function() return self:showReadingInfoPanel() end,
-            function(enabled) self:setShowReadingInfoPanel(enabled) end
-        ),
-        makeToggleOption(
-            _("Show book statistics"),
-            _("Shows the open book's reading time, remaining time, progress, daily average, reading speed, start date, and estimated end date, as recorded by KOReader's Statistics plugin."),
-            function() return self:showStatsInfoPanel() end,
-            function(enabled) self:setShowStatsInfoPanel(enabled) end
-        ),
-        makeToggleOption(
-            _("Show network information"),
-            _("Shows Wi-Fi state and the network details reported by KOReader in the information panel."),
-            function() return self:showNetworkInfoPanel() end,
-            function(enabled) self:setShowNetworkInfoPanel(enabled) end
-        ),
-        makeToggleOption(
-            _("Show book cover"),
-            _("Shows the open book's cover in the reading information and book statistics: above the text beside the column dock, or to its left in the arc dock's top panel. The thumbnail is loaded once and reused while the document remains open."),
-            function() return self:showInfoPanelCover() end,
-            function(enabled) self:setShowInfoPanelCover(enabled) end,
-            function() return self:showReadingInfoPanel() or self:showStatsInfoPanel() end
-        ),
-        {
-            text_func = function()
-                return T(_("Panel text alignment: %1"), alignment_labels[self:getInfoPanelTextAlignment()])
-            end,
-            help_text = _("Aligns every line in the selected information panel, including the clock and battery."),
-            enabled_func = function() return self:showInfoPanel() end,
-            sub_item_table = {
-                makeRadioOption(
-                    _("Left"), nil,
-                    function() return self:getInfoPanelTextAlignment() == INFO_PANEL_TEXT_LEFT end,
-                    function() self:setInfoPanelTextAlignment(INFO_PANEL_TEXT_LEFT) end
-                ),
-                makeRadioOption(
-                    _("Center"), nil,
-                    function() return self:getInfoPanelTextAlignment() == INFO_PANEL_TEXT_CENTER end,
-                    function() self:setInfoPanelTextAlignment(INFO_PANEL_TEXT_CENTER) end
-                ),
-                makeRadioOption(
-                    _("Nearest screen edge"),
-                    _("Aligns left on the left edge and right on the right edge. The arc dock's top panel aligns left."),
-                    function()
-                        return self:getInfoPanelTextAlignment() == INFO_PANEL_TEXT_SCREEN_EDGE
-                    end,
-                    function() self:setInfoPanelTextAlignment(INFO_PANEL_TEXT_SCREEN_EDGE) end
-                ),
-            },
+    local menu = {}
+    for _index, mode in ipairs(INFO_PANEL_MODES) do
+        menu[#menu + 1] = self:getInfoPanelModeItem(mode)
+    end
+    menu[#menu].separator = true
+    menu[#menu + 1] = {
+        text_func = function()
+            return T(_("Panel text alignment: %1"), alignment_labels[self:getInfoPanelTextAlignment()])
+        end,
+        help_text = _("Aligns every line in the selected information panel, including the clock and battery."),
+        enabled_func = function() return self:showInfoPanel() end,
+        sub_item_table = {
+            makeRadioOption(
+                _("Left"), nil,
+                function() return self:getInfoPanelTextAlignment() == INFO_PANEL_TEXT_LEFT end,
+                function() self:setInfoPanelTextAlignment(INFO_PANEL_TEXT_LEFT) end
+            ),
+            makeRadioOption(
+                _("Center"), nil,
+                function() return self:getInfoPanelTextAlignment() == INFO_PANEL_TEXT_CENTER end,
+                function() self:setInfoPanelTextAlignment(INFO_PANEL_TEXT_CENTER) end
+            ),
+            makeRadioOption(
+                _("Nearest screen edge"),
+                _("Aligns left on the left edge and right on the right edge. The arc dock's top panel aligns left."),
+                function()
+                    return self:getInfoPanelTextAlignment() == INFO_PANEL_TEXT_SCREEN_EDGE
+                end,
+                function() self:setInfoPanelTextAlignment(INFO_PANEL_TEXT_SCREEN_EDGE) end
+            ),
         },
     }
+    return menu
 end
 
 function QuickDock:getLightingControlsMenu()

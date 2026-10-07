@@ -33,6 +33,8 @@ local SETTING_SHOW_WARMTH_SLIDER = "quickdock_show_warmth_slider"
 local SETTING_SHOW_INFO_PANEL = "quickdock_show_info_panel"
 local SETTING_SHOW_NETWORK_INFO_PANEL = "quickdock_show_network_info_panel"
 local SETTING_SHOW_STATS_INFO_PANEL = "quickdock_show_stats_info_panel"
+local SETTING_SHOW_RECENT_INFO_PANEL = "quickdock_show_recent_info_panel"
+local SETTING_RECENT_DOCUMENTS_COUNT = "quickdock_recent_documents_count"
 local SETTING_SHOW_INFO_PANEL_COVER = "quickdock_show_info_panel_cover"
 local SETTING_INFO_PANEL_TEXT_ALIGNMENT = "quickdock_info_panel_text_alignment"
 local SETTING_DOCK_SIZE = "quickdock_dock_size"
@@ -58,7 +60,68 @@ local ARC_EMPTY_SPACE_START = "start"
 local SIDE_MODE_FIXED = "fixed"
 local SIDE_MODE_GESTURE = "gesture"
 
-local INFO_PANEL_KINDS = { "reading", "stats", "network" }
+-- The information panel's modes, in the order the switch button cycles
+-- through them and the settings menu lists them. Adding a mode takes an entry
+-- here, a collector in collectInfoPanelData(), its rendering in
+-- modules/info_panel.lua and, optionally, its own options in the settings
+-- menu (modules/menu.lua).
+--   setting / default: the saved visibility and its value when unset
+--   icon:  getIcon() id of the switch button while the mode is visible
+--   icon_files: the custom icon filenames listed in the settings menu
+--   title / name: heading-style and in-sentence names
+--   help:  what the mode shows, for the settings menu
+--   release: InfoPanel function freeing the mode's caches when disabled
+local INFO_PANEL_MODES = {
+    {
+        kind = "reading",
+        setting = SETTING_SHOW_INFO_PANEL,
+        default = true,
+        icon = "reading_info",
+        icon_files = "reading_info.svg / reading_info.png",
+        title = _("Reading information"),
+        name = _("reading information"),
+        help = _("Shows book, chapter, daily reading, clock, and battery information in the information panel."),
+        release = "clearCoverCache",
+    },
+    {
+        kind = "stats",
+        setting = SETTING_SHOW_STATS_INFO_PANEL,
+        default = false,
+        icon = "stats_info",
+        icon_files = "stats.svg / stats.png",
+        title = _("Book statistics"),
+        name = _("book statistics"),
+        help = _("Shows the open book's reading time, remaining time, progress, daily average, reading speed, start date, and estimated end date, as recorded by KOReader's Statistics plugin."),
+    },
+    {
+        kind = "recent",
+        setting = SETTING_SHOW_RECENT_INFO_PANEL,
+        default = false,
+        icon = "recent_info",
+        icon_files = "recent_info.svg / history.svg",
+        title = _("Recent documents"),
+        name = _("recent documents"),
+        help = _("Shows the covers of the most recently opened documents in the information panel. Tap a cover to open its document; when they do not fit, arrows above the covers turn the page. Covers come from the Cover browser plugin; documents it has not indexed yet show their title instead."),
+        release = "clearRecentCoverCache",
+    },
+    {
+        kind = "network",
+        setting = SETTING_SHOW_NETWORK_INFO_PANEL,
+        default = false,
+        icon = "network_info",
+        icon_files = "network_info.svg / network_info.png",
+        title = _("Network information"),
+        name = _("network information"),
+        help = _("Shows Wi-Fi state and the network details reported by KOReader in the information panel."),
+    },
+}
+local INFO_PANEL_MODES_BY_KIND = {}
+for _index, mode in ipairs(INFO_PANEL_MODES) do
+    INFO_PANEL_MODES_BY_KIND[mode.kind] = mode
+end
+-- How many recent documents the recent-documents panel may list.
+local RECENT_DOCUMENTS_COUNTS = { 3, 6, 9, 12, 18, 24 }
+local DEFAULT_RECENT_DOCUMENTS_COUNT = 6
 local INFO_PANEL_TEXT_LEFT = "left"
 local INFO_PANEL_TEXT_CENTER = "center"
 local INFO_PANEL_TEXT_SCREEN_EDGE = "screen_edge"
@@ -267,6 +330,7 @@ local ACTION_ICONS = {
     reading_info = "book.opened",
     network_info = "wifi",
     stats_info = "stats",
+    recent_info = "history",
     show_network_info = "wifi",
     show_frontlight_dialog = "frontlight",
     toggle_frontlight = "frontlight",
@@ -324,6 +388,8 @@ local MODULE_CONSTANTS = {
     INFO_PANEL_TEXT_LEFT = INFO_PANEL_TEXT_LEFT,
     INFO_PANEL_TEXT_CENTER = INFO_PANEL_TEXT_CENTER,
     INFO_PANEL_TEXT_SCREEN_EDGE = INFO_PANEL_TEXT_SCREEN_EDGE,
+    RECENT_DOCUMENTS_COUNTS = RECENT_DOCUMENTS_COUNTS,
+    INFO_PANEL_MODES = INFO_PANEL_MODES,
 }
 
 local function pluginDir()
@@ -430,6 +496,7 @@ function QuickDock:init()
     self.info_panel_data = nil
     self.current_info_panel_kind = nil
     self.info_panel_cover_cache = nil
+    self.recent_cover_cache = nil
     self.status_panel_widget = nil
     self.status_panel_text = nil
     self.network_info_refresh_state = nil
@@ -464,6 +531,7 @@ end
 function QuickDock:onClose()
     self:closeDock()
     InfoPanel.clearCoverCache(self)
+    InfoPanel.clearRecentCoverCache(self)
     self:saveActions()
     self:unpatchIconWidget()
 end
@@ -877,56 +945,56 @@ function QuickDock:setShowWarmthSlider(enabled)
     G_reader_settings:saveSetting(SETTING_SHOW_WARMTH_SLIDER, enabled and true or false)
 end
 
-function QuickDock:showReadingInfoPanel()
-    return G_reader_settings:readSetting(SETTING_SHOW_INFO_PANEL) ~= false
-end
-
-function QuickDock:setShowReadingInfoPanel(enabled)
-    G_reader_settings:saveSetting(SETTING_SHOW_INFO_PANEL, enabled and true or false)
-    if not enabled then
-        InfoPanel.clearCoverCache(self)
+function QuickDock:getRecentDocumentsCount()
+    local count = tonumber(G_reader_settings:readSetting(SETTING_RECENT_DOCUMENTS_COUNT))
+    for _index, allowed in ipairs(RECENT_DOCUMENTS_COUNTS) do
+        if count == allowed then
+            return count
+        end
     end
+    return DEFAULT_RECENT_DOCUMENTS_COUNT
 end
 
-function QuickDock:showNetworkInfoPanel()
-    return G_reader_settings:readSetting(SETTING_SHOW_NETWORK_INFO_PANEL) == true
-end
-
-function QuickDock:setShowNetworkInfoPanel(enabled)
+function QuickDock:setRecentDocumentsCount(count)
     G_reader_settings:saveSetting(
-        SETTING_SHOW_NETWORK_INFO_PANEL,
-        enabled and true or false
+        SETTING_RECENT_DOCUMENTS_COUNT,
+        tonumber(count) or DEFAULT_RECENT_DOCUMENTS_COUNT
     )
 end
 
-function QuickDock:showStatsInfoPanel()
-    return G_reader_settings:readSetting(SETTING_SHOW_STATS_INFO_PANEL) == true
-end
-
-function QuickDock:setShowStatsInfoPanel(enabled)
-    G_reader_settings:saveSetting(
-        SETTING_SHOW_STATS_INFO_PANEL,
-        enabled and true or false
-    )
+function QuickDock:getInfoPanelMode(kind)
+    return INFO_PANEL_MODES_BY_KIND[kind]
 end
 
 function QuickDock:isInfoPanelKindEnabled(kind)
-    if kind == "reading" then
-        return self:showReadingInfoPanel()
-    elseif kind == "stats" then
-        return self:showStatsInfoPanel()
-    elseif kind == "network" then
-        return self:showNetworkInfoPanel()
+    local mode = INFO_PANEL_MODES_BY_KIND[kind]
+    if not mode then
+        return false
     end
-    return false
+    local value = G_reader_settings:readSetting(mode.setting)
+    if value == nil then
+        return mode.default
+    end
+    return value == true
+end
+
+function QuickDock:setInfoPanelKindEnabled(kind, enabled)
+    local mode = INFO_PANEL_MODES_BY_KIND[kind]
+    if not mode then
+        return
+    end
+    G_reader_settings:saveSetting(mode.setting, enabled and true or false)
+    if not enabled and mode.release then
+        InfoPanel[mode.release](self)
+    end
 end
 
 -- Enabled panels in the order the switch button cycles through them.
 function QuickDock:getEnabledInfoPanelKinds()
     local kinds = {}
-    for __, kind in ipairs(INFO_PANEL_KINDS) do
-        if self:isInfoPanelKindEnabled(kind) then
-            kinds[#kinds + 1] = kind
+    for _index, mode in ipairs(INFO_PANEL_MODES) do
+        if self:isInfoPanelKindEnabled(mode.kind) then
+            kinds[#kinds + 1] = mode.kind
         end
     end
     return kinds
@@ -989,6 +1057,8 @@ function QuickDock:collectInfoPanelData(kind, metrics)
     local data
     if kind == "network" then
         data = InfoPanel.collectNetwork()
+    elseif kind == "recent" then
+        data = InfoPanel.collectRecent(self, self:getRecentDocumentsCount())
     elseif kind == "stats" then
         data = InfoPanel.collectStats(
             self,
@@ -1031,10 +1101,10 @@ function QuickDock:showInfoPanelToggleButton()
     return #self:getEnabledInfoPanelKinds() > 1
 end
 
-function QuickDock:replaceInfoPanel(kind, metrics)
+function QuickDock:replaceInfoPanel(kind, metrics, data)
     metrics = metrics or self:getDockMetrics()
     local previous_widget = self.info_panel_widget
-    local data = self:collectInfoPanelData(kind, metrics)
+    data = data or self:collectInfoPanelData(kind, metrics)
     local widget = self:createInfoPanelOverlay(data, metrics)
 
     self.info_panel_widget = nil
@@ -1065,6 +1135,50 @@ function QuickDock:switchInfoPanel(kind)
     if toggle_button and toggle_button.dimen then
         UIManager:setDirty(self.dialog, "ui", toggle_button.dimen)
     end
+end
+
+-- Taps outside the dock reach the information panel first: the recent
+-- documents panel opens a document or turns its page, and keeps the dock
+-- open for any other tap on it.
+function QuickDock:handleInfoPanelTap(pos)
+    local widget = self.info_panel_widget
+    if not widget or type(widget.handleTap) ~= "function" then
+        return false
+    end
+    return widget:handleTap(pos) == true
+end
+
+function QuickDock:setRecentDocumentsPage(page)
+    local data = self.info_panel_data
+    if not self.dialog or not data or data.kind ~= "recent" or data.page == page then
+        return
+    end
+    data.page = page
+    self:closeStatusPanel()
+    self:replaceInfoPanel("recent", nil, data)
+end
+
+function QuickDock:openRecentDocument(file)
+    if not file then
+        return
+    end
+    if require("libs/libkoreader-lfs").attributes(file, "mode") ~= "file" then
+        UIManager:show(InfoMessage:new({ text = _("This document is no longer available.") }))
+        return
+    end
+    self:closeDock()
+    local ui = self.ui
+    UIManager:scheduleIn(0.05, function()
+        -- The same path as KOReader's History: switch documents inside the
+        -- reader, or open the reader from the file browser.
+        local ok, err = pcall(function()
+            require("apps/filemanager/filemanagerutil").openFile(ui, file, nil, true)
+        end)
+        if not ok then
+            logger.warn("QuickDock: could not open recent document:", err)
+            require("apps/reader/readerui"):showReader(file)
+        end
+    end)
 end
 
 function QuickDock:refreshVisibleNetworkInfoPanel(network_state)
@@ -1111,6 +1225,7 @@ dofile(PLUGIN_DIR .. "modules/arc_layout.lua")(QuickDock, {
     ArcDock = ArcDock,
     dock_margin = DOCK_MARGIN,
     make_fallback_label = makeFallbackLabel,
+    ARC_EMPTY_SPACE_START = ARC_EMPTY_SPACE_START,
 })
 function QuickDock:getConfiguredActions()
     local configured_actions = {}
@@ -1320,6 +1435,9 @@ end
 function QuickDock:presentDock(dialog, info_panel_data, metrics)
     self.dialog = dialog
     self.info_panel_data = info_panel_data
+    dialog.outside_tap_callback = function(pos)
+        return self.dialog == dialog and self:handleInfoPanelTap(pos)
+    end
     if info_panel_data then
         self.info_panel_widget = self:createInfoPanelOverlay(info_panel_data, metrics)
         UIManager:show(self.info_panel_widget, "[ui]")

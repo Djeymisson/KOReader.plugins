@@ -277,6 +277,21 @@ function FloatingControlButtonDialog:onClose()
     return ButtonDialog.onClose(self)
 end
 
+-- The information panel is a non-modal overlay, so taps on it arrive here
+-- as taps outside the dock. Let an interactive panel handle them before the
+-- dock closes.
+function FloatingControlButtonDialog:onTapClose(arg, ges)
+    if
+        self.outside_tap_callback
+        and ges and ges.pos
+        and ges.pos:notIntersectWith(self.movable.dimen)
+        and self.outside_tap_callback(ges.pos)
+    then
+        return true
+    end
+    return ButtonDialog.onTapClose(self, arg, ges)
+end
+
 function FloatingControlButtonDialog:init()
     ButtonDialog.init(self)
 

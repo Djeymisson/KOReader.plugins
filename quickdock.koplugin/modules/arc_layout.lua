@@ -27,6 +27,11 @@ function QuickDock:getArcGeometry(side, metrics, item_count)
         bottom_clearance = self:getSiblingOverlayClearance(side),
         max_height_factor = self:getMaxActionDockHeightFactor(),
         floating_count = self:getArcFloatingCount(),
+        -- Without filling, the floating buttons start from the same end of
+        -- the arc as the actions: the side end when the empty space is at
+        -- the start, the bottom end otherwise.
+        floating_from_end = not self:fillArc()
+            and self:getArcEmptySpace() == options.ARC_EMPTY_SPACE_START,
         angle = self:getArcAngle(),
         -- Room for one action between the two page arrows (or the
         -- reader/browser button and the next arrow on the first page).
