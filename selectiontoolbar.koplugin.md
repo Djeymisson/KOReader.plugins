@@ -1,4 +1,4 @@
-# Selection Toolbar ![Version](https://img.shields.io/badge/version-v1.2.0-blue)
+# Selection Toolbar ![Version](https://img.shields.io/badge/version-v1.2.2-blue)
 
 A KOReader plugin that replaces the centered text-selection menu with a compact toolbar displayed near the selected text, and adds draggable handles and a margin line marker to adjust and visualize the selection.
 
@@ -107,6 +107,14 @@ Selection handles and line marker:
 - while the toolbar is open it is the top widget and receives every gesture, so the handle gestures (`hold`, `pan`, `hold_pan`, `swipe`, `multiswipe`) are registered on the toolbar dialog itself. During a drag only `pan` and `hold_pan` keep it going; any other gesture ends it (the lift may arrive as `pan_release`, `hold_release`, `swipe` or `multiswipe` depending on timing and path), so the toolbar is never left hidden. Only gestures that start on a handle are consumed, and they are handled before the toolbar's own children, so dragging a handle across the toolbar never moves the toolbar. Toolbar buttons keep priority where the toolbar is shown, and the toolbar is placed clear of the handles' touch areas. A tap on a handle does not close the toolbar.
 - dragging a handle sets KOReader's hold position to the opposite end of the selection and drives `ReaderHighlight:onHoldPan()`, the same path used by long-press selection and by keyboard selection. Word snapping, page-corner scrolling and selection rendering are therefore KOReader's own.
 - the toolbar is hidden while a handle is dragged and re-anchored to the selection on release. Pan events are rate-limited with KOReader's `hold_pan_rate` setting.
+
+Screen refresh and battery:
+
+- while a handle is dragged, only the band of lines between the moving end's old and new position is refreshed, instead of the full-screen refresh KOReader's own selection uses on each change. The old end's position is taken from the selection boxes in the current view (KOReader does not recompute them after a page-corner scroll). The full screen is still refreshed when the view scrolls during a move and in two-page mode.
+- finger moves smaller than a few pixels are not sent to crengine while dragging, since word-snapped selection would rarely change. The position where the finger is lifted is always applied.
+- releasing a handle does not flash the hidden toolbar's area, and does not refresh the handles and line marker again, as they are already up to date on screen.
+- the line marker and handles are refreshed as separate small areas rather than as their bounding box, which for long selections covered most of the screen.
+- the selection boxes are only requested again from crengine when the selection or the view changed, not on every reader repaint while the toolbar is open; icon file checks are cached per path.
 
 When the plugin is closed, the patch applied to the highlight menu and to `IconWidget` is restored when it is still the active Selection Toolbar patch.
 

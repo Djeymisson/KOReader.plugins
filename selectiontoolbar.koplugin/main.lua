@@ -20,7 +20,7 @@ local math_max = math.max
 local math_min = math.min
 local math_sqrt = math.sqrt
 
-local PLUGIN_VERSION = "v1.2.0"
+local PLUGIN_VERSION = "v1.2.2"
 local QR_MESSAGE_MODULE = "ui/widget/qrmessage"
 
 local BUTTON_ICON_SIZE = Screen:scaleBySize(22)
@@ -36,6 +36,9 @@ local HANDLE_TOUCH_SIZE = Screen:scaleBySize(48)
 local HANDLE_TOUCH_EXTENT = math_max(HANDLE_EXTENT + 1, math.ceil(HANDLE_TOUCH_SIZE / 2) + HANDLE_KNOB_RADIUS + 1)
 local LINE_MARKER_WIDTH = math_max(2, Screen:scaleBySize(3))
 local LINE_MARKER_GAP = Screen:scaleBySize(6)
+-- Finger moves smaller than this are not sent to crengine: selection snaps to words,
+-- so they would only recompute the same text range.
+local DRAG_MIN_MOVE = math_max(2, Screen:scaleBySize(4))
 local MARKS_VIEW_MODULE = "selectiontoolbar_selection_marks"
 local HANDLE_SIDES = { "start", "end" }
 
@@ -304,7 +307,11 @@ function ShadowedButtonDialog:onTapClose(arg, ges)
 end
 
 function ShadowedButtonDialog:onCloseWidget()
-    ButtonDialog.onCloseWidget(self)
+    -- ButtonDialog flashes its area on close. A hidden toolbar left nothing there
+    -- (its area was repainted when it was hidden), so skip that flash refresh.
+    if not self.content_hidden then
+        ButtonDialog.onCloseWidget(self)
+    end
     if self.handle_controller then
         self.handle_controller:onToolbarClosed(self)
     end
@@ -470,14 +477,19 @@ function SelectionToolbar:patchIconWidget()
 
     IconWidget._selectiontoolbar_original_init = IconWidget.init
 
+    -- File existence per path, so showing the toolbar does not stat each icon every time.
+    local is_file = {}
     local patched_init = function(icon_widget)
         local explicit_icon = rawget(icon_widget, "icon")
-        if
-            type(explicit_icon) == "string"
-            and explicit_icon:match("%.%a+$")
-            and lfs.attributes(explicit_icon, "mode") == "file"
-        then
-            icon_widget.file = explicit_icon
+        if type(explicit_icon) == "string" and explicit_icon:match("%.%a+$") then
+            local exists = is_file[explicit_icon]
+            if exists == nil then
+                exists = lfs.attributes(explicit_icon, "mode") == "file"
+                is_file[explicit_icon] = exists
+            end
+            if exists then
+                icon_widget.file = explicit_icon
+            end
         end
 
         return IconWidget._selectiontoolbar_original_init(icon_widget)
@@ -1058,24 +1070,64 @@ function SelectionToolbar:computeSelectionMarks(reader_highlight)
         end
     end
 
-    local region
+    -- Painted areas, kept separate: refreshing the thin margin line and the two handles
+    -- is much cheaper on e-ink than refreshing their bounding box, which for a long
+    -- selection covers most of the screen.
+    local rects = {}
     for _, rect in ipairs(marks.lines) do
-        region = region and region:combine(rect) or rect
+        rects[#rects + 1] = rect
     end
-    for _, handle in pairs(marks.handles) do
-        region = region and region:combine(handle.visual) or handle.visual
+    for _, side in ipairs(HANDLE_SIDES) do
+        local handle = marks.handles[side]
+        if handle then
+            rects[#rects + 1] = handle.visual
+        end
     end
-    if not region then
+    if #rects == 0 then
         return nil
     end
 
-    marks.region = region
+    marks.rects = rects
+    marks.selected_text = selected_text
+    marks.boxes = boxes
+    marks.view_key = self:getMarksViewKey(reader_highlight)
     return marks
+end
+
+-- What the marks' screen positions depend on besides the selection itself.
+function SelectionToolbar:getMarksViewKey(reader_highlight)
+    local document = reader_highlight.ui.document
+    return table.concat({
+        tostring(document:getCurrentPos()),
+        tostring(reader_highlight.view.view_mode),
+        tostring(Screen:getWidth()),
+        tostring(Screen:getHeight()),
+    }, ":")
+end
+
+-- The reader repaints for many reasons while the toolbar is open; only ask crengine
+-- for the selection boxes again when the selection or the view actually changed.
+function SelectionToolbar:getSelectionMarks(reader_highlight)
+    local marks = self.marks
+    if
+        marks
+        and marks.selected_text == reader_highlight.selected_text
+        and marks.view_key == self:getMarksViewKey(reader_highlight)
+    then
+        return marks
+    end
+    return self:computeSelectionMarks(reader_highlight)
+end
+
+local function refreshRects(widget, rects)
+    for _, rect in ipairs(rects) do
+        UIManager:setDirty(widget, "ui", rect)
+    end
 end
 
 function SelectionToolbar:paintSelectionMarks(bb, x, y)
     local reader_highlight = self.marks_highlight
-    local marks = self.marks_dialog and reader_highlight and self:computeSelectionMarks(reader_highlight) or nil
+    local marks = self.marks_dialog and reader_highlight and self:getSelectionMarks(reader_highlight) or nil
     self.marks = marks
     if not marks then
         return
@@ -1096,7 +1148,7 @@ function SelectionToolbar:onToolbarClosed(dialog)
         return
     end
 
-    local region = self.marks and self.marks.region
+    local rects = self.marks and self.marks.rects
     local reader_highlight = self.marks_highlight
     self.marks_dialog = nil
     self.marks_highlight = nil
@@ -1105,9 +1157,10 @@ function SelectionToolbar:onToolbarClosed(dialog)
         self.drag = nil
     end
 
-    -- Repaint the page under the marks, which were drawn on the page itself.
-    if region and reader_highlight and reader_highlight.dialog then
-        UIManager:setDirty(reader_highlight.dialog, "ui", region)
+    -- Repaint the page under the marks, which were drawn on the page itself. Not needed
+    -- when the toolbar is re-opened after a drag: the same marks stay on screen.
+    if rects and reader_highlight and reader_highlight.dialog and not self.reopening_after_drag then
+        refreshRects(reader_highlight.dialog, rects)
     end
 end
 
@@ -1232,7 +1285,78 @@ function SelectionToolbar:beginHandleDrag(dialog, side, touch_pos)
     return true
 end
 
-function SelectionToolbar:updateHandleDrag(pos)
+-- Runs fn while holding back the full-screen "ui" refreshes of the reader it requests,
+-- and returns whether one was requested, so the caller can refresh a smaller region.
+local function withReaderRefreshHeld(reader_dialog, fn)
+    local own_set_dirty = rawget(UIManager, "setDirty")
+    local set_dirty = UIManager.setDirty
+    local requested = false
+    UIManager.setDirty = function(uimanager, widget, refreshtype, refreshregion, ...)
+        if widget == reader_dialog and refreshtype == "ui" and refreshregion == nil then
+            requested = true
+            return
+        end
+        return set_dirty(uimanager, widget, refreshtype, refreshregion, ...)
+    end
+    local ok, err = pcall(fn)
+    UIManager.setDirty = own_set_dirty
+    if not ok then
+        error(err, 0)
+    end
+    return requested
+end
+
+-- The boundary box at the moving end of a selection: the one not holding the anchor.
+local function movingEndBox(boxes, anchor)
+    if not (boxes and anchor) or #boxes == 0 then
+        return nil
+    end
+    local first, last = boxes[1], boxes[#boxes]
+    if #boxes == 1 then
+        return first
+    end
+    local function holdsAnchor(box)
+        return anchor.x >= box.x and anchor.x <= box.x + box.w and anchor.y >= box.y and anchor.y <= box.y + box.h
+    end
+    if holdsAnchor(first) then
+        return last
+    elseif holdsAnchor(last) then
+        return first
+    end
+end
+
+-- Moving one end of the selection only changes the lines between its old and new
+-- position: the highlight there, both handles' knobs (the anchor one too when the
+-- ends cross) and the ends of the margin line. All of it fits in a full-width band.
+local function dragRefreshBand(old_box, new_box)
+    local pad = HANDLE_EXTENT + 2
+    local top = math_max(0, math_min(old_box.y, new_box.y) - pad)
+    local bottom = math_min(Screen:getHeight(), math_max(old_box.y + old_box.h, new_box.y + new_box.h) + pad)
+    return Geom:new({ x = 0, y = top, w = Screen:getWidth(), h = bottom - top })
+end
+
+-- Screen boxes of a selection in the current view. selected_text.sboxes can be stale:
+-- when ReaderHighlight scrolls from a page corner it returns before recomputing the
+-- selection, so its boxes still have the coordinates from before the scroll.
+function SelectionToolbar:getCurrentScreenBoxes(reader_highlight, selected_text)
+    local marks = self.marks
+    if
+        marks
+        and marks.boxes
+        and marks.selected_text == selected_text
+        and marks.view_key == self:getMarksViewKey(reader_highlight)
+    then
+        return marks.boxes
+    end
+    local document = reader_highlight.ui.document
+    local ok, boxes =
+        pcall(document.getScreenBoxesFromPositions, document, selected_text.pos0, selected_text.pos1, true)
+    return ok and boxes or nil
+end
+
+-- is_final: the finger was lifted, so its last position must be applied even if it
+-- moved less than DRAG_MIN_MOVE (a couple of pixels can cross a word boundary).
+function SelectionToolbar:updateHandleDrag(pos, is_final)
     local drag = self.drag
     if not (drag and pos) then
         return false
@@ -1241,16 +1365,48 @@ function SelectionToolbar:updateHandleDrag(pos)
     local reader_highlight = drag.highlight
     local x = math_max(0, math_min(Screen:getWidth() - 1, pos.x - drag.offset_x))
     local y = math_max(0, math_min(Screen:getHeight() - 1, pos.y - drag.offset_y))
-    local previous = reader_highlight.selected_text
+    local small_move = drag.last_x
+        and math_abs(x - drag.last_x) < DRAG_MIN_MOVE
+        and math_abs(y - drag.last_y) < DRAG_MIN_MOVE
+    if small_move and not is_final then
+        return true
+    end
+    drag.last_x, drag.last_y = x, y
 
-    reader_highlight:onHoldPan(nil, { ges = "hold_pan", pos = Geom:new({ x = x, y = y, w = 0, h = 0 }) })
+    local document = reader_highlight.ui.document
+    local view = reader_highlight.view
+    local previous = reader_highlight.selected_text
+    local old_box = isLiveSelection(previous)
+        and movingEndBox(self:getCurrentScreenBoxes(reader_highlight, previous), reader_highlight.hold_pos)
+    local view_pos, view_mode = document:getCurrentPos(), view.view_mode
+
+    -- ReaderHighlight refreshes the whole screen on each selection change, as it cannot
+    -- tell what changed. Here we can: refresh only the band of lines the moving end
+    -- swept over, which saves most of the e-ink refresh work while dragging.
+    local refresh_requested = withReaderRefreshHeld(reader_highlight.dialog, function()
+        reader_highlight:onHoldPan(nil, { ges = "hold_pan", pos = Geom:new({ x = x, y = y, w = 0, h = 0 }) })
+    end)
 
     if not reader_highlight.selected_text and isLiveSelection(previous) then
         -- No text at this point: keep the last valid selection instead of losing it.
         reader_highlight.selected_text = previous
-        local document = reader_highlight.ui.document
         pcall(document.getTextFromXPointers, document, previous.pos0, previous.pos1, true)
         UIManager:setDirty(reader_highlight.dialog, "ui")
+        return true
+    end
+
+    if refresh_requested then
+        local band
+        -- Fresh boxes: the view did not move during this call (checked below).
+        local new_box = movingEndBox(reader_highlight.selected_text.sboxes, reader_highlight.hold_pos)
+        -- Full screen when the view moved (corner scroll) or in two-page mode, where
+        -- the lines between both ends are not a single vertical band.
+        local single_view = view.view_mode ~= "page" or document:getVisiblePageCount() == 1
+        local view_moved = view.view_mode ~= view_mode or document:getCurrentPos() ~= view_pos
+        if old_box and new_box and single_view and not view_moved then
+            band = dragRefreshBand(old_box, new_box)
+        end
+        UIManager:setDirty(reader_highlight.dialog, "ui", band)
     end
     return true
 end
@@ -1261,7 +1417,7 @@ function SelectionToolbar:endHandleDrag(pos)
         return false
     end
 
-    self:updateHandleDrag(pos)
+    self:updateHandleDrag(pos, true)
     self.drag = nil
 
     local reader_highlight = drag.highlight
@@ -1279,8 +1435,14 @@ function SelectionToolbar:endHandleDrag(pos)
         dialog.content_hidden = nil
         UIManager:setDirty(dialog, "ui", dialog.movable and dialog.movable.dimen)
     else
-        -- Re-open the toolbar so it is anchored to the adjusted selection.
-        self:showToolbar(reader_highlight)
+        -- Re-open the toolbar so it is anchored to the adjusted selection. The marks on
+        -- screen are already up to date, so it does not need to refresh them again.
+        self.reopening_after_drag = true
+        local ok, err = pcall(self.showToolbar, self, reader_highlight)
+        self.reopening_after_drag = nil
+        if not ok then
+            error(err, 0)
+        end
     end
     return true
 end
@@ -1369,8 +1531,8 @@ function SelectionToolbar:showToolbar(reader_highlight, index)
         local marks = self:computeSelectionMarks(reader_highlight)
         -- Current handle positions, for the toolbar anchor computed at its first paint.
         self.marks = marks
-        if marks then
-            UIManager:setDirty(reader_highlight.dialog, "ui", marks.region)
+        if marks and not self.reopening_after_drag then
+            refreshRects(reader_highlight.dialog, marks.rects)
         end
     end
 
