@@ -9,7 +9,7 @@ local lfs = require("libs/libkoreader-lfs")
 local UIManager = require("ui/uimanager")
 local _ = require("quickdock_l10n")
 
-local PLUGIN_VERSION = "v0.26.0"
+local PLUGIN_VERSION = "v0.26.1"
 
 local function pluginDir()
     local source = debug.getinfo(1, "S").source or ""
@@ -380,7 +380,15 @@ function QuickDock:refreshVisibleNetworkInfoPanel(network_state)
         return false
     end
 
-    self:replaceInfoPanel("network")
+    -- NetworkMgr broadcasts its events before updating pending_connection,
+    -- so the state that triggered this refresh takes precedence while the
+    -- panel data is collected.
+    self.network_state_hint = network_state
+    local ok, err = pcall(self.replaceInfoPanel, self, "network")
+    self.network_state_hint = nil
+    if not ok then
+        error(err, 0)
+    end
     self.network_info_refresh_state = network_state
     return true
 end

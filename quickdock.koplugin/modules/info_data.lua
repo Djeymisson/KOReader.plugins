@@ -438,19 +438,25 @@ return function(Util, Covers)
         return table.concat(lines, "\n")
     end
 
-    local function collectNetwork()
+    local function collectNetwork(plugin)
+        local state_hint = plugin and plugin.network_state_hint or nil
         local wifi_on = safeCall(function()
             return NetworkMgr:isWifiOn()
         end, false) == true
         local connected = wifi_on and safeCall(function()
             return NetworkMgr:isConnected()
         end, false) == true
-        local connecting = wifi_on and NetworkMgr.pending_connection == true
+        -- NetworkMgr broadcasts NetworkConnecting before setting
+        -- pending_connection, and NetworkConnected before clearing it, so a
+        -- completed connection wins over the pending flag, and the event that
+        -- triggered the refresh wins over both.
         local status
-        if connecting then
+        if state_hint == "connecting" then
             status = _("Connecting to Wi-Fi…")
         elseif connected then
             status = _("Connected")
+        elseif wifi_on and NetworkMgr.pending_connection == true then
+            status = _("Connecting to Wi-Fi…")
         elseif wifi_on then
             status = _("Wi-Fi on, not connected")
         else

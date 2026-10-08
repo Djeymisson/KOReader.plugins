@@ -1,4 +1,4 @@
-# Quick Dock ![Version](https://img.shields.io/badge/version-v0.26.0-blue)
+# Quick Dock ![Version](https://img.shields.io/badge/version-v0.26.1-blue)
 
 Quick Dock adds a floating action dock with lighting controls and an optional information panel to KOReader. It is designed for touch devices and can be assigned to any gesture supported by KOReader.
 
@@ -140,7 +140,7 @@ The settings follow the same grouped layout as the other plugins in this reposit
   - `Reset actions to defaults`: restores the initial actions and their order after confirmation without changing the other plugin settings.
   - `Reset behavior and actions`: additionally restores extra buttons, default actions, order, and visibility while preserving appearance.
 - `Gesture setup`: displays instructions for assigning the dock to a KOReader gesture.
-- `Version: v0.26.0`: shows the installed plugin version.
+- `Version: v0.26.1`: shows the installed plugin version.
 
 The side selector and visibility options keep their menu open after a change, making it easier to review related settings.
 
