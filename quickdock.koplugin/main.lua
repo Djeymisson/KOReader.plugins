@@ -9,7 +9,7 @@ local lfs = require("libs/libkoreader-lfs")
 local UIManager = require("ui/uimanager")
 local _ = require("quickdock_l10n")
 
-local PLUGIN_VERSION = "v0.25.6"
+local PLUGIN_VERSION = "v0.26.0"
 
 local function pluginDir()
     local source = debug.getinfo(1, "S").source or ""

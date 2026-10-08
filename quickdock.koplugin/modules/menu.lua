@@ -2,6 +2,7 @@ local Device = require("device")
 local Dispatcher = require("dispatcher")
 local ConfirmBox = require("ui/widget/confirmbox")
 local InfoMessage = require("ui/widget/infomessage")
+local SortWidget = require("ui/widget/sortwidget")
 local UIManager = require("ui/uimanager")
 local _ = require("quickdock_l10n")
 local T = require("ffi/util").template
@@ -77,6 +78,7 @@ return function(QuickDock, C, lib)
     local INFO_PANEL_TEXT_CENTER = C.INFO_PANEL_TEXT_CENTER
     local INFO_PANEL_TEXT_SCREEN_EDGE = C.INFO_PANEL_TEXT_SCREEN_EDGE
     local INFO_PANEL_MODES = C.INFO_PANEL_MODES
+    local INFO_PANEL_MODES_BY_KIND = C.INFO_PANEL_MODES_BY_KIND
     local PLUGIN_VERSION = C.PLUGIN_VERSION
 
     function QuickDock:resetBehavior()
@@ -676,6 +678,33 @@ return function(QuickDock, C, lib)
         }
     end
 
+    -- Reorders the panel modes; the menu is rebuilt so its mode entries
+    -- follow the new order.
+    function QuickDock:showInfoPanelOrderDialog(touchmenu_instance)
+        local item_table = {}
+        for _index, kind in ipairs(Prefs.getInfoPanelOrder()) do
+            item_table[#item_table + 1] = {
+                text = INFO_PANEL_MODES_BY_KIND[kind].title,
+                kind = kind,
+            }
+        end
+        UIManager:show(SortWidget:new({
+            title = _("Panel order"),
+            item_table = item_table,
+            callback = function()
+                local kinds = {}
+                for index, item in ipairs(item_table) do
+                    kinds[index] = item.kind
+                end
+                Prefs.setInfoPanelOrder(kinds)
+                if touchmenu_instance then
+                    touchmenu_instance.item_table = self:getInformationPanelMenu()
+                    refreshMenu(touchmenu_instance)
+                end
+            end,
+        }))
+    end
+
     function QuickDock:getInformationPanelMenu()
         local alignment_labels = {
             [INFO_PANEL_TEXT_LEFT] = _("Left"),
@@ -683,10 +712,18 @@ return function(QuickDock, C, lib)
             [INFO_PANEL_TEXT_SCREEN_EDGE] = _("Nearest screen edge"),
         }
         local menu = {}
-        for _index, mode in ipairs(INFO_PANEL_MODES) do
-            menu[#menu + 1] = self:getInfoPanelModeItem(mode)
+        for _index, kind in ipairs(Prefs.getInfoPanelOrder()) do
+            menu[#menu + 1] = self:getInfoPanelModeItem(INFO_PANEL_MODES_BY_KIND[kind])
         end
         menu[#menu].separator = true
+        menu[#menu + 1] = {
+            text = _("Panel order"),
+            help_text = _("Arrange the panel modes. The panel-switch button cycles through the enabled ones in this order, starting from the first."),
+            keep_menu_open = true,
+            callback = function(touchmenu_instance)
+                self:showInfoPanelOrderDialog(touchmenu_instance)
+            end,
+        }
         menu[#menu + 1] = {
             text_func = function()
                 return T(_("Panel text alignment: %1"), alignment_labels[Prefs.getInfoPanelTextAlignment()])

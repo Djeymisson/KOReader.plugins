@@ -243,12 +243,40 @@ return function(C)
         end
     end
 
+    -- Every panel kind in the user's order: the saved kinds first, skipping
+    -- unknown and repeated ones, then any missing (new) kinds in their
+    -- default order.
+    function Prefs.getInfoPanelOrder()
+        local saved_order = G_reader_settings:readSetting(C.SETTING_INFO_PANEL_ORDER)
+        local kinds = {}
+        local seen = {}
+        local function add(kind)
+            if C.INFO_PANEL_MODES_BY_KIND[kind] and not seen[kind] then
+                seen[kind] = true
+                kinds[#kinds + 1] = kind
+            end
+        end
+        if type(saved_order) == "table" then
+            for _index, kind in ipairs(saved_order) do
+                add(kind)
+            end
+        end
+        for _index, mode in ipairs(C.INFO_PANEL_MODES) do
+            add(mode.kind)
+        end
+        return kinds
+    end
+
+    function Prefs.setInfoPanelOrder(kinds)
+        G_reader_settings:saveSetting(C.SETTING_INFO_PANEL_ORDER, kinds)
+    end
+
     -- Enabled panels in the order the switch button cycles through them.
     function Prefs.getEnabledInfoPanelKinds()
         local kinds = {}
-        for _index, mode in ipairs(C.INFO_PANEL_MODES) do
-            if Prefs.isInfoPanelKindEnabled(mode.kind) then
-                kinds[#kinds + 1] = mode.kind
+        for _index, kind in ipairs(Prefs.getInfoPanelOrder()) do
+            if Prefs.isInfoPanelKindEnabled(kind) then
+                kinds[#kinds + 1] = kind
             end
         end
         return kinds

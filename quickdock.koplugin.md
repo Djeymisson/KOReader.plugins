@@ -1,4 +1,4 @@
-# Quick Dock ![Version](https://img.shields.io/badge/version-v0.25.6-blue)
+# Quick Dock ![Version](https://img.shields.io/badge/version-v0.26.0-blue)
 
 Quick Dock adds a floating action dock with lighting controls and an optional information panel to KOReader. It is designed for touch devices and can be assigned to any gesture supported by KOReader.
 
@@ -123,12 +123,13 @@ The settings follow the same grouped layout as the other plugins in this reposit
       - `Show band behind buttons`: draws the arc's buttons on a white band (the default) or lets each one float on the page with its own outline.
       - `Fill the arc when there are few actions`: spreads each page's buttons along the whole arc and, when every action fits on one page, enlarges them up to 1.5 times. Button size then varies with the number of actions. Disabled by default.
       - `Empty space: <position>`: with filling disabled, leaves the unused part of the arc `At the end, near the side edge` (the default) or `At the start, near the bottom edge`. The floating buttons follow: they start at the bottom end in the first case and at the side end in the second.
-  - `Information panel`: one entry per panel mode, checked when that mode is shown. Each opens a submenu with `Show this panel` and the mode's own options; the modes enabled here are the ones the panel-switch button cycles through, in this order.
+  - `Information panel`: one entry per panel mode, checked when that mode is shown. Each opens a submenu with `Show this panel` and the mode's own options; the modes enabled here are the ones the panel-switch button cycles through, in the order set by `Panel order`. The entries are listed in that order too.
     - `Reading information`: the Mini Receipt-inspired reading content. Enabled by default. Option: `Show book cover`.
     - `Book statistics`: the open book's statistics panel (see [Book statistics panel](#book-statistics-panel)). Disabled by default. Option: `Show book cover`.
     - `Recent documents`: covers of recently opened documents (see [Recent documents panel](#recent-documents-panel)). Disabled by default. Option: `Documents to show: <count>`, the maximum number of documents: 3, 6 (the default), 9, 12, 18, or 24.
     - `Network information`: Wi-Fi state and each interface's MAC, SSID, IP, and gateway. Disabled by default.
     - `Show book cover` (in the reading and statistics submenus) is one shared setting: it shows or hides the open document's cover in both panels, above the text in the side panel, or to its left in the arc dock's top panel.
+    - `Panel order`: opens KOReader's sort dialog to rearrange the panel modes. The panel-switch button cycles through the enabled modes in this order, starting from the first one. The default order is reading information, book statistics, recent documents, and network information; modes added in later versions are appended at the end.
     - `Panel text alignment`: aligns every line of every panel, including the clock and battery, to the `Left`, `Center`, or `Nearest screen edge`. The last option aligns left when the panel is on the left and right when it is on the right. `Nearest screen edge` is the default.
   - `Lighting controls`:
     - `Show frontlight control`: shows or hides the brightness slider and light toggle on devices with a frontlight: a column beside the column dock, or a button inside the arc.
@@ -139,7 +140,7 @@ The settings follow the same grouped layout as the other plugins in this reposit
   - `Reset actions to defaults`: restores the initial actions and their order after confirmation without changing the other plugin settings.
   - `Reset behavior and actions`: additionally restores extra buttons, default actions, order, and visibility while preserving appearance.
 - `Gesture setup`: displays instructions for assigning the dock to a KOReader gesture.
-- `Version: v0.25.6`: shows the installed plugin version.
+- `Version: v0.26.0`: shows the installed plugin version.
 
 The side selector and visibility options keep their menu open after a change, making it easier to review related settings.
 
@@ -292,6 +293,7 @@ Quick Dock stores its preferences through KOReader's reader settings using these
 | `quickdock_recent_documents_count` | Maximum number of documents in the recent-documents panel: 3, 6, 9, 12, 18, or 24; defaults to 6 |
 | `quickdock_show_network_info_panel` | Visibility of the network-information panel; disabled by default |
 | `quickdock_show_info_panel_cover` | Visibility of the open book's cover at the top of the information panel; enabled by default |
+| `quickdock_info_panel_order` | Order of the information panel modes, as a list of kinds (`reading`, `stats`, `recent`, `network`); unset uses the default order |
 | `quickdock_info_panel_text_alignment` | Left, centered, or nearest-screen-edge alignment for all information-panel text |
 | `quickdock_dock_size` | Selected Small, Medium, or Large dock scale |
 | `quickdock_max_action_dock_height` | Maximum dock-column height as 100%, 60%, or 33% of the screen; defaults to 100% |

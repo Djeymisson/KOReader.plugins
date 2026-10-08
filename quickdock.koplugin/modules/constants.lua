@@ -26,6 +26,7 @@ C.SETTING_SHOW_RECENT_INFO_PANEL = "quickdock_show_recent_info_panel"
 C.SETTING_RECENT_DOCUMENTS_COUNT = "quickdock_recent_documents_count"
 C.SETTING_SHOW_INFO_PANEL_COVER = "quickdock_show_info_panel_cover"
 C.SETTING_INFO_PANEL_TEXT_ALIGNMENT = "quickdock_info_panel_text_alignment"
+C.SETTING_INFO_PANEL_ORDER = "quickdock_info_panel_order"
 C.SETTING_DOCK_SIZE = "quickdock_dock_size"
 C.SETTING_MAX_ACTION_DOCK_HEIGHT = "quickdock_max_action_dock_height"
 C.SETTING_CLOSE_TOGETHER = "quickdock_close_together"
@@ -49,8 +50,9 @@ C.ARC_EMPTY_SPACE_START = "start"
 C.SIDE_MODE_FIXED = "fixed"
 C.SIDE_MODE_GESTURE = "gesture"
 
--- The information panel's modes, in the order the switch button cycles
--- through them and the settings menu lists them. Adding a mode takes an entry
+-- The information panel's modes, in their default order: the one the switch
+-- button cycles through them and the settings menu lists them, until the
+-- user reorders them. Adding a mode takes an entry
 -- here, a collector and a renderer in modules/info_data.lua and
 -- modules/info_render.lua and, optionally, its own options in the settings
 -- menu (modules/menu.lua).
