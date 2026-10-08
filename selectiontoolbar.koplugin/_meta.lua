@@ -2,5 +2,5 @@ local _ = require("gettext")
 return {
     fullname = _("Selection Toolbar"),
     description = _("Shows a compact icon toolbar near selected text instead of the default centered selection menu."),
-    version = "v1.0.6",
+    version = "v1.2.0",
 }
