@@ -1,4 +1,4 @@
-# Selection Toolbar ![Version](https://img.shields.io/badge/version-v1.2.2-blue)
+# Selection Toolbar ![Version](https://img.shields.io/badge/version-v1.4.0-blue)
 
 A KOReader plugin that replaces the centered text-selection menu with a compact toolbar displayed near the selected text, and adds draggable handles and a margin line marker to adjust and visualize the selection.
 
@@ -11,7 +11,7 @@ The plugin is developed for **EPUB** documents only (KOReader's crengine engine)
 - When the selection fills the screen, the toolbar is pinned to the screen edge opposite to the last selection point (top if you last selected near the bottom, and vice versa), and slid sideways so it covers neither selection handle when the width allows it.
 - Native actions reuse the original `ReaderHighlight` callbacks, preserving KOReader's default behavior.
 - Icons are loaded directly from the plugin's own folder — no need to copy files into internal KOReader directories.
-- Selection handles: while the toolbar is open, a handle is drawn at the start and at the end of the selection. Drag a handle to extend or shrink the selection; dragging one past the other swaps them.
+- Selection handles: while the toolbar is open, a handle is drawn at the start and at the end of the selection. Drag a handle to extend or shrink the selection; dragging one past the other swaps them. Four handle styles are available (lollipop, teardrop, brackets and flag tabs), with an optional high-contrast outline.
 - Cross-page selection: dragging a handle into a page corner continues the selection on the next or previous page, reusing KOReader's own corner-scroll behavior (`Long-press on text > Auto-scroll when selection reaches a corner` must be enabled).
 - Line marker: a vertical line in the page margin beside the selected lines, one per visible page in two-page mode.
 - Reversible: disabling the plugin restores the original menu immediately.
@@ -73,6 +73,14 @@ Options:
   - `Show toolbar shadow`: shows or removes the dithered shadow along the right and bottom edges. The shadow follows the toolbar's rounded corners.
 - `Selection marks`: controls the handles and the line marker.
   - `Show selection handles`: shows the draggable start/end handles (touch devices only).
+  - `Handle style`: how the handles are drawn.
+    - `Lollipop` (default): a bar at the selection edge with a round knob above the start and below the end.
+    - `Teardrop`: a drop below the line, pointing at the selection edge, as on Android.
+    - `Brackets`: a `[` at the start and a `]` at the end. The most discreet style.
+    - `Flag tabs`: a pole at the selection edge with a trapezoid grab tab pointing outwards, above the start and below the end. Only the tab's side facing the text is slanted, so it narrows toward the text instead of covering it.
+    - `High-contrast outline`: draws lollipops, teardrops and flag tabs as a black outline over white, readable over dark or highlighted text. Not available for brackets, whose strokes are too thin to outline. A `High-contrast wireframe` style saved by v1.3.0 is read as a lollipop with this outline.
+
+    All styles share the same touch area around the handle, so the style changes only the look, not how easy the handles are to grab.
   - `Show line marker`: shows the vertical line beside the selected lines.
   - `Line marker in right margin`: draws the line marker in the right margin instead of the left one (mirrored for right-to-left interface languages).
 - `Visible actions`: lets you choose which actions appear in the toolbar.

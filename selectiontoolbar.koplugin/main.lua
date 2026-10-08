@@ -20,7 +20,7 @@ local math_max = math.max
 local math_min = math.min
 local math_sqrt = math.sqrt
 
-local PLUGIN_VERSION = "v1.2.2"
+local PLUGIN_VERSION = "v1.4.0"
 local QR_MESSAGE_MODULE = "ui/widget/qrmessage"
 
 local BUTTON_ICON_SIZE = Screen:scaleBySize(22)
@@ -30,7 +30,17 @@ local BUTTON_WIDTH = BUTTON_HEIGHT + 2 * BUTTON_SIDE_PADDING
 
 local HANDLE_BAR_WIDTH = math_max(2, Screen:scaleBySize(2))
 local HANDLE_KNOB_RADIUS = math_max(3, Screen:scaleBySize(7))
-local HANDLE_EXTENT = 2 * HANDLE_KNOB_RADIUS
+-- Flag tab: a trapezoid grab area beyond the line.
+local HANDLE_TAB_HEIGHT = math_max(8, Screen:scaleBySize(22))
+local HANDLE_TAB_WIDTH = math_max(6, Screen:scaleBySize(16))
+local HANDLE_TAB_SLANT = math_max(3, Screen:scaleBySize(10))
+-- Every handle style stays within this distance beyond its line (toolbar gap and drag
+-- refresh band rely on it).
+local HANDLE_EXTENT = math_max(2 * HANDLE_KNOB_RADIUS, HANDLE_TAB_HEIGHT)
+local HANDLE_BRACKET_WIDTH = math_max(2, Screen:scaleBySize(3))
+local HANDLE_BRACKET_SERIF = math_max(4, Screen:scaleBySize(7))
+local HANDLE_OUTLINE = math_max(1, Screen:scaleBySize(1))
+local HANDLE_RING_WIDTH = math_max(2, Screen:scaleBySize(2))
 local HANDLE_TOUCH_SIZE = Screen:scaleBySize(48)
 -- How far a handle's touch area can reach beyond its line (knob plus centered touch padding).
 local HANDLE_TOUCH_EXTENT = math_max(HANDLE_EXTENT + 1, math.ceil(HANDLE_TOUCH_SIZE / 2) + HANDLE_KNOB_RADIUS + 1)
@@ -62,6 +72,10 @@ local SETTING_SHADOWS = "selectiontoolbar_shadows"
 local SETTING_HANDLES = "selectiontoolbar_handles"
 local SETTING_LINE_MARKER = "selectiontoolbar_line_marker"
 local SETTING_LINE_MARKER_RIGHT = "selectiontoolbar_line_marker_right"
+local SETTING_HANDLE_STYLE = "selectiontoolbar_handle_style"
+local SETTING_HANDLE_OUTLINE = "selectiontoolbar_handle_outline"
+-- v1.3.0 had the outline as a separate "wireframe" style: read it as lollipop + outline.
+local LEGACY_WIREFRAME_STYLE = "wireframe"
 
 local ACTIONS = {
     { id = "select", key = "01_select", icon = "select", text = _("Select") },
@@ -76,6 +90,34 @@ local ACTIONS = {
     { id = "search", key = "12_search", icon = "search", text = _("Search") },
 }
 local QR_ICON_ACTION = { icon = "qr_code" }
+
+local DEFAULT_HANDLE_STYLE = "lollipop"
+-- Styles drawn with solid shapes large enough to get a high-contrast outline.
+local OUTLINE_STYLES = { lollipop = true, teardrop = true, flag = true }
+local HANDLE_STYLES = {
+    {
+        id = "lollipop",
+        text = _("Lollipop"),
+        help_text = _("A bar at the selection edge with a round knob above the start and below the end."),
+    },
+    {
+        id = "teardrop",
+        text = _("Teardrop"),
+        help_text = _("A drop below the line, pointing at the selection edge, as on Android."),
+    },
+    {
+        id = "bracket",
+        text = _("Brackets"),
+        help_text = _("A [ at the start and a ] at the end of the selection. The most discreet style."),
+    },
+    {
+        id = "flag",
+        text = _("Flag tabs"),
+        help_text = _(
+            "A pole with a grab tab pointing outwards, above the start and below the end, slanted toward the text."
+        ),
+    },
+}
 
 local TOOLBAR_SHADOW_CACHE = {}
 
@@ -429,6 +471,34 @@ function SelectionToolbar:showLineMarker()
     return G_reader_settings:nilOrTrue(SETTING_LINE_MARKER)
 end
 
+function SelectionToolbar:getHandleStyle()
+    local style = G_reader_settings:readSetting(SETTING_HANDLE_STYLE)
+    if style == LEGACY_WIREFRAME_STYLE then
+        return DEFAULT_HANDLE_STYLE
+    end
+    for _, item in ipairs(HANDLE_STYLES) do
+        if item.id == style then
+            return style
+        end
+    end
+    return DEFAULT_HANDLE_STYLE
+end
+
+function SelectionToolbar:handleOutline()
+    return G_reader_settings:isTrue(SETTING_HANDLE_OUTLINE)
+        or G_reader_settings:readSetting(SETTING_HANDLE_STYLE) == LEGACY_WIREFRAME_STYLE
+end
+
+-- Saving either setting also resolves a legacy "wireframe" style into its two parts.
+function SelectionToolbar:setHandleStyle(style, outline)
+    G_reader_settings:saveSetting(SETTING_HANDLE_STYLE, style)
+    G_reader_settings:saveSetting(SETTING_HANDLE_OUTLINE, outline and true or false)
+end
+
+function SelectionToolbar:canOutlineHandles()
+    return OUTLINE_STYLES[self:getHandleStyle()] or false
+end
+
 function SelectionToolbar:lineMarkerOnRight()
     return G_reader_settings:isTrue(SETTING_LINE_MARKER_RIGHT)
 end
@@ -580,6 +650,42 @@ function SelectionToolbar:addToMainMenu(menu_items)
         })
     end
 
+    local handle_style_items = {}
+    for _, style in ipairs(HANDLE_STYLES) do
+        table.insert(handle_style_items, {
+            text = style.text,
+            help_text = style.help_text,
+            radio = true,
+            checked_func = function()
+                return self:getHandleStyle() == style.id
+            end,
+            callback = function(touchmenu_instance)
+                self:setHandleStyle(style.id, self:handleOutline())
+                if touchmenu_instance and touchmenu_instance.updateItems then
+                    touchmenu_instance:updateItems()
+                end
+            end,
+            keep_menu_open = true,
+        })
+    end
+    handle_style_items[#handle_style_items].separator = true
+    table.insert(handle_style_items, {
+        text = _("High-contrast outline"),
+        help_text = _(
+            "Black outline over white, readable over dark or highlighted text. Not for brackets."
+        ),
+        enabled_func = function()
+            return self:canOutlineHandles()
+        end,
+        checked_func = function()
+            return self:canOutlineHandles() and self:handleOutline()
+        end,
+        callback = function()
+            self:setHandleStyle(self:getHandleStyle(), not self:handleOutline())
+        end,
+        keep_menu_open = true,
+    })
+
     menu_items.selectiontoolbar = {
         text = _("Selection toolbar"),
         sorting_hint = "tools",
@@ -633,10 +739,21 @@ function SelectionToolbar:addToMainMenu(menu_items)
                         checked_func = function()
                             return self:showHandles()
                         end,
-                        callback = function()
+                        callback = function(touchmenu_instance)
                             self:toggleSetting(SETTING_HANDLES, true)
+                            if touchmenu_instance and touchmenu_instance.updateItems then
+                                touchmenu_instance:updateItems()
+                            end
                         end,
                         keep_menu_open = true,
+                    },
+                    {
+                        text = _("Handle style"),
+                        help_text = _("Choose how the selection handles are drawn."),
+                        enabled_func = function()
+                            return self:showHandles()
+                        end,
+                        sub_item_table = handle_style_items,
                     },
                     {
                         text = _("Show line marker"),
@@ -923,28 +1040,185 @@ local function isLiveSelection(selected_text)
     return selected_text and type(selected_text.pos0) == "string" and type(selected_text.pos1) == "string"
 end
 
-local function handleGeometry(box, is_start)
+-- Handles are drawn from a few simple shapes, so every style shares the same painting,
+-- touch area and refresh logic.
+local function rectShape(x, y, w, h, color)
+    return {
+        kind = "rect",
+        x = math_floor(x),
+        y = math_floor(y),
+        w = w,
+        h = h,
+        color = color or Blitbuffer.COLOR_BLACK,
+    }
+end
+
+-- Filled disc, or a ring when width is given.
+local function circleShape(cx, cy, r, color, width)
+    return { kind = "circle", cx = math_floor(cx), cy = math_floor(cy), r = r, width = width, color = color }
+end
+
+-- Grab tab hanging from the pole at pole_x and extending left or right. It is a right
+-- trapezoid: straight on the pole side, the outer side and the side away from the text;
+-- only the side facing the text line is slanted (slant_top: the top side, else the bottom),
+-- so the tab narrows toward the text instead of covering it.
+local function tabShape(pole_x, y, w, h, slant, to_left, slant_top, color)
+    return {
+        kind = "tab",
+        pole_x = math_floor(pole_x),
+        y = math_floor(y),
+        w = w,
+        h = h,
+        slant = math_max(1, slant),
+        to_left = to_left,
+        slant_top = slant_top,
+        color = color or Blitbuffer.COLOR_BLACK,
+    }
+end
+
+local function shapeBounds(shape)
+    if shape.kind == "circle" then
+        return Geom:new({ x = shape.cx - shape.r, y = shape.cy - shape.r, w = 2 * shape.r + 1, h = 2 * shape.r + 1 })
+    elseif shape.kind == "tab" then
+        local x = shape.to_left and (shape.pole_x - shape.w) or shape.pole_x
+        return Geom:new({ x = x, y = shape.y, w = shape.w, h = shape.h })
+    end
+    return Geom:new({ x = shape.x, y = shape.y, w = shape.w, h = shape.h })
+end
+
+local function paintShape(bb, x, y, shape)
+    if shape.kind == "rect" then
+        bb:paintRect(x + shape.x, y + shape.y, shape.w, shape.h, shape.color)
+    elseif shape.kind == "circle" then
+        bb:paintCircle(x + shape.cx, y + shape.cy, shape.r, shape.color or Blitbuffer.COLOR_BLACK, shape.width)
+    elseif shape.kind == "tab" then
+        -- Row by row: full width, except along the slanted side where it narrows to the pole.
+        local w, h, slant = shape.w, shape.h, shape.slant
+        for row = 0, h - 1 do
+            local len = w
+            if shape.slant_top and row < slant then
+                len = math_floor(w * (row + 1) / slant + 0.5)
+            elseif not shape.slant_top and row >= h - slant then
+                len = math_floor(w * (h - row) / slant + 0.5)
+            end
+            if len > 0 then
+                local px = shape.to_left and (shape.pole_x - len) or shape.pole_x
+                bb:paintRect(x + px, y + shape.y + row, len, 1, shape.color)
+            end
+        end
+    end
+end
+
+-- The vertical bar along the selection edge; in outline mode it gets a white halo so it
+-- stays visible against black text.
+local function barShapes(shapes, edge_x, y, h, outline)
+    local bar_x = edge_x - HANDLE_BAR_WIDTH / 2
+    if outline then
+        shapes[#shapes + 1] =
+            rectShape(bar_x - HANDLE_OUTLINE, y, HANDLE_BAR_WIDTH + 2 * HANDLE_OUTLINE, h, Blitbuffer.COLOR_WHITE)
+    end
+    shapes[#shapes + 1] = rectShape(bar_x, y, HANDLE_BAR_WIDTH, h)
+end
+
+-- Each style returns its shapes and the knob center (the point a finger aims at, used
+-- to pick the nearest handle when touch areas overlap). Shapes must stay within
+-- HANDLE_EXTENT above/below the line. With outline, the solid knob is drawn black and
+-- its inside, inset by HANDLE_RING_WIDTH, white: a black outline over white.
+local HANDLE_STYLE_BUILDERS = {
+    lollipop = function(box, is_start, edge_x, outline)
+        local r, ring = HANDLE_KNOB_RADIUS, HANDLE_RING_WIDTH
+        local knob_y = is_start and (box.y - r) or (box.y + box.h + r)
+        local shapes = {}
+        barShapes(shapes, edge_x, box.y, box.h, outline)
+        shapes[#shapes + 1] = circleShape(edge_x, knob_y, r, Blitbuffer.COLOR_BLACK)
+        if outline then
+            shapes[#shapes + 1] = circleShape(edge_x, knob_y, r - ring, Blitbuffer.COLOR_WHITE)
+        end
+        return shapes, edge_x, knob_y
+    end,
+    teardrop = function(box, is_start, edge_x, outline)
+        -- Both drops hang below the line; a squared corner turns the disc into a drop
+        -- whose point touches the selection edge.
+        local r, ring = HANDLE_KNOB_RADIUS, HANDLE_RING_WIDTH
+        local bottom = box.y + box.h
+        local cx = is_start and (edge_x - r) or (edge_x + r)
+        local cy = bottom + r
+        local corner_x = is_start and (edge_x - r) or edge_x
+        local shapes = {
+            circleShape(cx, cy, r, Blitbuffer.COLOR_BLACK),
+            rectShape(corner_x, bottom, r + 1, r + 1),
+        }
+        if outline then
+            -- The corner inset only from its two outer sides (the point side and the top).
+            local inner_corner_x = is_start and (edge_x - r) or (edge_x + ring)
+            shapes[#shapes + 1] = circleShape(cx, cy, r - ring, Blitbuffer.COLOR_WHITE)
+            shapes[#shapes + 1] =
+                rectShape(inner_corner_x, bottom + ring, r + 1 - ring, r + 1 - ring, Blitbuffer.COLOR_WHITE)
+        end
+        return shapes, cx, cy
+    end,
+    bracket = function(box, is_start, edge_x)
+        local t, serif = HANDLE_BRACKET_WIDTH, HANDLE_BRACKET_SERIF
+        local top, height = box.y - t, box.h + 2 * t
+        local stem_x = is_start and (edge_x - t) or edge_x
+        -- Serifs point into the selection: right for "[", left for "]".
+        local serif_x = is_start and stem_x or (edge_x + t - serif)
+        return {
+            rectShape(stem_x, top, t, height),
+            rectShape(serif_x, top, serif, t),
+            rectShape(serif_x, top + height - t, serif, t),
+        }, stem_x + math_floor(t / 2), box.y + math_floor(box.h / 2)
+    end,
+    flag = function(box, is_start, edge_x, outline)
+        -- A pole along the selection edge with a grab tab beyond the line: above and
+        -- outward (left) at the start, below and outward (right) at the end.
+        local w, h, slant, ring = HANDLE_TAB_WIDTH, HANDLE_TAB_HEIGHT, HANDLE_TAB_SLANT, HANDLE_RING_WIDTH
+        local pole_top = is_start and (box.y - h) or box.y
+        local tab_y = is_start and (box.y - h) or (box.y + box.h)
+        local shapes = {}
+        barShapes(shapes, edge_x, pole_top, box.h + h, outline)
+        -- The slanted side is the one facing the text: bottom at the start, top at the end.
+        shapes[#shapes + 1] = tabShape(edge_x, tab_y, w, h, slant, is_start, not is_start)
+        if outline then
+            -- Inset the white tab by the ring width on every side. Along the slanted side
+            -- the inset must be measured perpendicular to it, so the inner diagonal is the
+            -- outer one shifted by ring / cos(angle) and keeps the same slope; otherwise the
+            -- black border thins out to a broken line there.
+            local slope = slant / w
+            local diagonal_shift = ring * math_sqrt(1 + slope * slope)
+            local inner_w = w - 2 * ring
+            local inner_h = math_floor(h - ring - slope * ring - diagonal_shift + 0.5)
+            local inner_y = is_start and (tab_y + ring) or math_floor(tab_y + slope * ring + diagonal_shift + 0.5)
+            shapes[#shapes + 1] = tabShape(
+                edge_x + (is_start and -ring or ring),
+                inner_y,
+                inner_w,
+                inner_h,
+                math_floor(slope * inner_w + 0.5),
+                is_start,
+                not is_start,
+                Blitbuffer.COLOR_WHITE
+            )
+        end
+        return shapes, edge_x + (is_start and -1 or 1) * math_floor(w / 2), tab_y + math_floor(h / 2)
+    end,
+}
+
+local function handleGeometry(box, is_start, style, outline)
     local edge_x = is_start and box.x or (box.x + box.w)
-    local knob_y = is_start and (box.y - HANDLE_KNOB_RADIUS) or (box.y + box.h + HANDLE_KNOB_RADIUS)
-    local bar = Geom:new({
-        x = math_floor(edge_x - HANDLE_BAR_WIDTH / 2),
-        y = box.y,
-        w = HANDLE_BAR_WIDTH,
-        h = box.h,
-    })
-    local knob = Geom:new({
-        x = edge_x - HANDLE_KNOB_RADIUS,
-        y = knob_y - HANDLE_KNOB_RADIUS,
-        w = 2 * HANDLE_KNOB_RADIUS + 1,
-        h = 2 * HANDLE_KNOB_RADIUS + 1,
-    })
-    local visual = bar:combine(knob)
+    local build = HANDLE_STYLE_BUILDERS[style] or HANDLE_STYLE_BUILDERS[DEFAULT_HANDLE_STYLE]
+    local shapes, knob_x, knob_y = build(box, is_start, edge_x, outline and OUTLINE_STYLES[style] or false)
+    local visual
+    for _, shape in ipairs(shapes) do
+        local bounds = shapeBounds(shape)
+        visual = visual and visual:combine(bounds) or bounds
+    end
     local touch_w = math_max(HANDLE_TOUCH_SIZE, visual.w)
     local touch_h = math_max(HANDLE_TOUCH_SIZE, visual.h)
 
     return {
-        bar = bar,
-        knob_x = edge_x,
+        shapes = shapes,
+        knob_x = knob_x,
         knob_y = knob_y,
         visual = visual,
         touch = Geom:new({
@@ -1061,12 +1335,13 @@ function SelectionToolbar:computeSelectionMarks(reader_highlight)
         marks.lines = self:computeLineMarkers(reader_highlight, boxes)
     end
     if self:showHandles() then
+        local style, outline = self:getHandleStyle(), self:handleOutline()
         local first_box, last_box = boxes[1], boxes[#boxes]
         if isBoundaryVisible(document, selected_text.pos0, first_box) then
-            marks.handles.start = handleGeometry(first_box, true)
+            marks.handles.start = handleGeometry(first_box, true, style, outline)
         end
         if isBoundaryVisible(document, selected_text.pos1, last_box) then
-            marks.handles["end"] = handleGeometry(last_box, false)
+            marks.handles["end"] = handleGeometry(last_box, false, style, outline)
         end
     end
 
@@ -1137,9 +1412,9 @@ function SelectionToolbar:paintSelectionMarks(bb, x, y)
         bb:paintRect(x + rect.x, y + rect.y, rect.w, rect.h, Blitbuffer.COLOR_BLACK)
     end
     for _, handle in pairs(marks.handles) do
-        local bar = handle.bar
-        bb:paintRect(x + bar.x, y + bar.y, bar.w, bar.h, Blitbuffer.COLOR_BLACK)
-        bb:paintCircle(x + handle.knob_x, y + handle.knob_y, HANDLE_KNOB_RADIUS, Blitbuffer.COLOR_BLACK)
+        for _, shape in ipairs(handle.shapes) do
+            paintShape(bb, x, y, shape)
+        end
     end
 end
 
