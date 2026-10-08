@@ -20,7 +20,7 @@ local math_max = math.max
 local math_min = math.min
 local math_sqrt = math.sqrt
 
-local PLUGIN_VERSION = "v1.4.0"
+local PLUGIN_VERSION = "v1.5.0"
 local QR_MESSAGE_MODULE = "ui/widget/qrmessage"
 
 local BUTTON_ICON_SIZE = Screen:scaleBySize(22)
@@ -74,8 +74,26 @@ local SETTING_LINE_MARKER = "selectiontoolbar_line_marker"
 local SETTING_LINE_MARKER_RIGHT = "selectiontoolbar_line_marker_right"
 local SETTING_HANDLE_STYLE = "selectiontoolbar_handle_style"
 local SETTING_HANDLE_OUTLINE = "selectiontoolbar_handle_outline"
+local SETTING_POSITION = "selectiontoolbar_position"
 -- v1.3.0 had the outline as a separate "wireframe" style: read it as lollipop + outline.
 local LEGACY_WIREFRAME_STYLE = "wireframe"
+
+local POSITION_NEAR = "near"
+local POSITION_EDGE = "edge"
+local POSITIONS = {
+    {
+        id = POSITION_NEAR,
+        text = _("Near the selection"),
+        help_text = _("Show the toolbar right below the selection, or above it when there is no room."),
+    },
+    {
+        id = POSITION_EDGE,
+        text = _("Fixed at screen edge"),
+        help_text = _(
+            "Show the toolbar centered at the bottom of the screen, or at the top when the selection is in the lower part."
+        ),
+    },
+}
 
 local ACTIONS = {
     { id = "select", key = "01_select", icon = "select", text = _("Select") },
@@ -463,6 +481,17 @@ function SelectionToolbar:setToolbarShadows(enabled)
     end
 end
 
+function SelectionToolbar:getToolbarPosition()
+    if G_reader_settings:readSetting(SETTING_POSITION) == POSITION_EDGE then
+        return POSITION_EDGE
+    end
+    return POSITION_NEAR
+end
+
+function SelectionToolbar:setToolbarPosition(position)
+    G_reader_settings:saveSetting(SETTING_POSITION, position)
+end
+
 function SelectionToolbar:showHandles()
     return Device:isTouchDevice() and G_reader_settings:nilOrTrue(SETTING_HANDLES)
 end
@@ -686,6 +715,22 @@ function SelectionToolbar:addToMainMenu(menu_items)
         keep_menu_open = true,
     })
 
+    local position_items = {}
+    for _, position in ipairs(POSITIONS) do
+        table.insert(position_items, {
+            text = position.text,
+            help_text = position.help_text,
+            radio = true,
+            checked_func = function()
+                return self:getToolbarPosition() == position.id
+            end,
+            callback = function()
+                self:setToolbarPosition(position.id)
+            end,
+            keep_menu_open = true,
+        })
+    end
+
     menu_items.selectiontoolbar = {
         text = _("Selection toolbar"),
         sorting_hint = "tools",
@@ -707,8 +752,13 @@ function SelectionToolbar:addToMainMenu(menu_items)
             },
             {
                 text = _("Appearance"),
-                help_text = _("Show or hide the toolbar's drop shadow."),
+                help_text = _("Choose where the toolbar is shown and whether it has a drop shadow."),
                 sub_item_table = {
+                    {
+                        text = _("Toolbar position"),
+                        help_text = _("Choose where the toolbar is shown on screen."),
+                        sub_item_table = position_items,
+                    },
                     {
                         text = _("Show toolbar shadow"),
                         help_text = _(
@@ -963,6 +1013,10 @@ function SelectionToolbar:getToolbarAnchor(reader_highlight, dialog, index)
         vertical_gap = gap + HANDLE_TOUCH_EXTENT
     end
 
+    if self:getToolbarPosition() == POSITION_EDGE then
+        return self:getEdgeToolbarAnchor(reader_highlight, dialog, dialog_size, selection_box, vertical_gap)
+    end
+
     local anchor_x = math_floor(selection_box.x + selection_box.w / 2 - dialog_size.w / 2)
     if anchor_x < gap then
         anchor_x = gap
@@ -995,6 +1049,34 @@ local function overlapsHandles(rect, handles)
         end
     end
     return false
+end
+
+-- Fixed position: centered on a screen edge, the bottom one unless the selection is in
+-- the lower half of the screen (or only the top edge keeps it clear).
+function SelectionToolbar:getEdgeToolbarAnchor(reader_highlight, dialog, dialog_size, selection_box, vertical_gap)
+    local screen_w, screen_h = Screen:getWidth(), Screen:getHeight()
+    local gap = Size.padding.large
+    local centered_x = math_max(gap, math_floor((screen_w - dialog_size.w) / 2))
+    local top_y = gap
+    local bottom_y = math_max(top_y, screen_h - dialog_size.h - gap)
+
+    local top_clear = top_y + dialog_size.h + vertical_gap <= selection_box.y
+    local bottom_clear = bottom_y >= selection_box.y + selection_box.h + vertical_gap
+    if not top_clear and not bottom_clear and self.marks_dialog == dialog then
+        -- The selection fills the screen: same placement as near the selection.
+        return self:getPinnedToolbarAnchor(reader_highlight, dialog_size, centered_x), true
+    end
+
+    local y
+    if top_clear ~= bottom_clear then
+        y = bottom_clear and bottom_y or top_y
+    elseif selection_box.y + selection_box.h / 2 >= screen_h / 2 then
+        y = top_y
+    else
+        y = bottom_y
+    end
+    -- w = content width keeps x as the left edge in mirrored (RTL) layouts too.
+    return Geom:new({ x = centered_x, y = y, w = dialog_size.w, h = 0 }), true
 end
 
 function SelectionToolbar:getPinnedToolbarAnchor(reader_highlight, dialog_size, centered_x)

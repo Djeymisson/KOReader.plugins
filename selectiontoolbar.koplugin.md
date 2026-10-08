@@ -1,4 +1,4 @@
-# Selection Toolbar ![Version](https://img.shields.io/badge/version-v1.4.0-blue)
+# Selection Toolbar ![Version](https://img.shields.io/badge/version-v1.5.0-blue)
 
 A KOReader plugin that replaces the centered text-selection menu with a compact toolbar displayed near the selected text, and adds draggable handles and a margin line marker to adjust and visualize the selection.
 
@@ -7,7 +7,7 @@ The plugin is developed for **EPUB** documents only (KOReader's crengine engine)
 ## Features
 
 - Replaces KOReader's default highlight menu with a single row of icon buttons whenever more than one word is selected.
-- The toolbar appears below the selection when there is enough space, otherwise above it.
+- The toolbar appears below the selection when there is enough space, otherwise above it. Alternatively, it can be kept at a fixed position: centered at the bottom of the screen, or at the top when the selection is in the lower part of the screen.
 - When the selection fills the screen, the toolbar is pinned to the screen edge opposite to the last selection point (top if you last selected near the bottom, and vice versa), and slid sideways so it covers neither selection handle when the width allows it.
 - Native actions reuse the original `ReaderHighlight` callbacks, preserving KOReader's default behavior.
 - Icons are loaded directly from the plugin's own folder — no need to copy files into internal KOReader directories.
@@ -70,6 +70,9 @@ Options:
 
 - `Use compact selection toolbar`: enables/disables replacement of the default menu.
 - `Appearance`: controls the toolbar's visual presentation.
+  - `Toolbar position`: where the toolbar is shown.
+    - `Near the selection` (default): right below the selection, or above it when there is no room.
+    - `Fixed at screen edge`: centered at the bottom edge of the screen, or at the top edge when the selection's center is in the lower half (or when only the top edge keeps the toolbar clear of the selection and its handles). When the selection fills the screen, the toolbar is pinned as described in the features above, in both modes.
   - `Show toolbar shadow`: shows or removes the dithered shadow along the right and bottom edges. The shadow follows the toolbar's rounded corners.
 - `Selection marks`: controls the handles and the line marker.
   - `Show selection handles`: shows the draggable start/end handles (touch devices only).
