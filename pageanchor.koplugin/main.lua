@@ -12,19 +12,24 @@ local Button = require("ui/widget/button")
 local CenterContainer = require("ui/widget/container/centercontainer")
 local ConfirmBox = require("ui/widget/confirmbox")
 local Device = require("device")
+local Dispatcher = require("dispatcher")
 local Event = require("ui/event")
 local Font = require("ui/font")
 local FrameContainer = require("ui/widget/container/framecontainer")
 local Geom = require("ui/geometry")
 local HorizontalGroup = require("ui/widget/horizontalgroup")
+local HorizontalSpan = require("ui/widget/horizontalspan")
 local IconWidget = require("ui/widget/iconwidget")
 local InfoMessage = require("ui/widget/infomessage")
 local LineWidget = require("ui/widget/linewidget")
 local lfs = require("libs/libkoreader-lfs")
 local logger = require("logger")
+local Notification = require("ui/widget/notification")
 local Size = require("ui/size")
+local TextBoxWidget = require("ui/widget/textboxwidget")
 local TextWidget = require("ui/widget/textwidget")
 local UIManager = require("ui/uimanager")
+local Widget = require("ui/widget/widget")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local _ = require("pageanchor_l10n")
 local T = require("ffi/util").template
@@ -37,13 +42,15 @@ local Screen = Device.screen
 -- Constants
 -- ============================================================================
 
-local PLUGIN_VERSION = "v1.7.3"
+local PLUGIN_VERSION = "v1.11.4"
 
 local SETTING_ENABLED = "pageanchor_enabled"
 local SETTING_DESTINATION_FORMAT = "pageanchor_destination_format"
 local SETTING_BUTTON_SIZE = "pageanchor_button_size"
 local SETTING_AUTO_DISMISS_SECONDS = "pageanchor_auto_dismiss_seconds"
 local SETTING_FORWARD_DISMISS_PAGES = "pageanchor_forward_dismiss_pages"
+local SETTING_HIDE_MODE = "pageanchor_hide_mode"
+local SETTING_HIDDEN_EXPIRY_SECONDS = "pageanchor_hidden_expiry_seconds"
 
 -- Format (page/percentage/text) and scope (book/chapter) used to be two
 -- separate settings ("Format" and "Relative to" screens), but scope only
@@ -75,6 +82,21 @@ local AUTO_DISMISS_OPTIONS = {
 	{ value = 300, label = "5 minutes" },
 }
 
+-- How long the buttons may stay hidden (or parked as a tab) before Page
+-- Anchor gives up on the trip: the anchor is discarded and the current
+-- position becomes the reading reference, exactly as tapping the anchor
+-- button would. Counted from the moment they were hidden; "Never" (0, the
+-- default) keeps them waiting until dismissed by hand.
+local HIDDEN_EXPIRY_DEFAULT_SECONDS = 0
+local HIDDEN_EXPIRY_OPTIONS = {
+	{ value = 0, label = "Never (until dismissed)" },
+	{ value = 60, label = "1 minute" },
+	{ value = 300, label = "5 minutes" },
+	{ value = 900, label = "15 minutes" },
+	{ value = 1800, label = "30 minutes" },
+	{ value = 3600, label = "1 hour" },
+}
+
 local FORWARD_DISMISS_DEFAULT_PAGES = 1
 local FORWARD_DISMISS_PAGE_OPTIONS = {
 	{ value = 0, label = "Off" },
@@ -87,10 +109,24 @@ local FORWARD_DISMISS_PAGE_OPTIONS = {
 local ACTION_BACK = "back"
 local ACTION_FORWARD = "forward"
 local ACTION_DISMISS = "dismiss"
+local ACTION_SHOW = "show"
+
+-- What hiding the buttons (inactivity timeout, or the show/hide gesture
+-- action) leaves on screen: a small anchor tab in the same corner that one
+-- tap expands back into the full control -- so getting the buttons back
+-- never means digging through the menu -- or nothing at all, for a clean
+-- page (then the menu or the gesture action brings them back).
+local HIDE_MODE_MINIMIZE = "minimize"
+local HIDE_MODE_HIDE = "hide"
+local HIDE_MODE_OPTIONS = {
+	{ value = HIDE_MODE_MINIMIZE, label = "Minimize to an anchor tab" },
+	{ value = HIDE_MODE_HIDE, label = "Hide completely" },
+}
 
 local ICON_ANCHOR = "anchor.svg"
 local ICON_CHEVRON_LEFT = "chevron-left.svg"
 local ICON_CHEVRON_RIGHT = "chevron-right.svg"
+local ICON_UNDO = "undo.svg"
 
 -- Three predefined scales, the same factors and naming Quick Dock uses for
 -- its own dock-size setting (quickdock.koplugin/main.lua's DOCK_SIZE_*),
@@ -136,7 +172,17 @@ local BUTTON_MARGIN = Size.padding.large
 -- How long a hold-triggered hint stays up before it dismisses itself, and
 -- the font it uses -- unrelated to the pill's own geometry above.
 local HINT_DISMISS_SECONDS = 3
+-- How long the undo notice stays up after a discard. The undo itself stays
+-- available afterwards from the menu and the gesture action.
+local UNDO_HINT_SECONDS = 3
 local HINT_FONT_SIZE = 18
+
+-- Page-turn tolerance for telling plain reading apart from a jump made by a
+-- tool that doesn't announce itself (see trackPage): one turn back is a
+-- re-read, up to two turns forward is reading on. Counted in page turns,
+-- not raw page numbers (see History.countPageTurns).
+local READING_TURNS_BEHIND = 1
+local READING_TURNS_AHEAD = 2
 
 local function pluginDir()
 	local source = debug.getinfo(1, "S").source or ""
@@ -173,6 +219,9 @@ end
 -- screen center, mirroring Quick Dock's own icon ordering.
 function FloatingHistoryOverlay:_makeDock(spec)
 	local metrics = self.owner:getButtonMetrics()
+	if spec.minimized then
+		return self:_makeTab(spec, metrics)
+	end
 	local action_button = Button:new({
 		icon = ICONS_DIR .. spec.icon,
 		icon_width = metrics.icon_size,
@@ -236,6 +285,81 @@ function FloatingHistoryOverlay:_makeDock(spec)
 	}
 end
 
+-- The minimized form: a narrow tab glued to the screen edge, holding just
+-- the anchor icon, so it reads as "something is parked here" rather than
+-- as live navigation. Drawn by hand instead of with a FrameContainer, which
+-- can only round all four corners: here the inner corners are rounded and
+-- the screen-edge side is square and borderless, like a tab pulled out of
+-- the side of the page. Everything is painted inside the screen -- the
+-- outer side is squared off by overpainting, never by drawing past the
+-- edge, which not every blitbuffer path clips.
+local AnchorTab = Widget:extend({
+	side = "right",
+	width = 0,
+	height = 0,
+	radius = 0,
+	bordersize = 0,
+	border_color = Blitbuffer.COLOR_DARK_GRAY,
+	icon_widget = nil,
+})
+
+function AnchorTab:getSize()
+	return Geom:new({ w = self.width, h = self.height })
+end
+
+function AnchorTab:paintTo(bb, x, y)
+	local w, h, bw = self.width, self.height, self.bordersize
+	local r = math.min(self.radius, math.floor(w / 2), math.floor(h / 2))
+	bb:paintRoundedRect(x, y, w, h, Blitbuffer.COLOR_WHITE, r)
+	bb:paintBorder(x, y, w, h, bw, self.border_color, r)
+	if r > 0 then
+		-- Square off the screen-edge side: white over its rounded corners
+		-- and side border, then carry the top and bottom edges across.
+		local edge_x = self.side == "left" and x or x + w - r
+		bb:paintRect(edge_x, y, r, h, Blitbuffer.COLOR_WHITE)
+		bb:paintRect(edge_x, y, r, bw, self.border_color)
+		bb:paintRect(edge_x, y + h - bw, r, bw, self.border_color)
+	else
+		local edge_x = self.side == "left" and x or x + w - bw
+		bb:paintRect(edge_x, y + bw, bw, h - 2 * bw, Blitbuffer.COLOR_WHITE)
+	end
+	local icon_size = self.icon_widget:getSize()
+	self.icon_widget:paintTo(bb,
+		x + math.floor((w - icon_size.w) / 2),
+		y + math.floor((h - icon_size.h) / 2))
+end
+
+function AnchorTab:free()
+	if self.icon_widget and self.icon_widget.free then
+		self.icon_widget:free()
+	end
+end
+
+-- Same height as the full control, so it sits exactly where the control
+-- was and keeps Quick Dock's clearance (getOverlayClearance) unchanged when
+-- it expands; only as wide as the icon plus a little air. The tap target is
+-- wider than what's drawn (see paintTo), so narrow never means hard to hit.
+function FloatingHistoryOverlay:_makeTab(spec, metrics)
+	local border = Size.border.button
+	local widget = AnchorTab:new({
+		side = spec.side,
+		width = metrics.icon_size + 2 * Size.padding.default + border,
+		height = metrics.height + 2 * (metrics.padding + border),
+		radius = Size.radius.button,
+		bordersize = border,
+		icon_widget = IconWidget:new({
+			icon = ICONS_DIR .. ICON_ANCHOR,
+			width = metrics.icon_size,
+			height = metrics.icon_size,
+		}),
+	})
+	return {
+		widget = widget,
+		minimized = true,
+		hit_width = metrics.segment_width + 2 * (metrics.padding + border),
+	}
+end
+
 function FloatingHistoryOverlay:_getDock(spec)
 	-- getButtonSpecs() returns the same cached table between invalidates, so
 	-- most repaints (anything not caused by navigation/settings activity)
@@ -248,6 +372,7 @@ function FloatingHistoryOverlay:_getDock(spec)
 	local key = table.concat({
 		spec.action, spec.side, spec.icon,
 		spec.dismiss_marked and "marked" or "plain",
+		spec.minimized and "minimized" or "full",
 		self.owner:getButtonSize(),
 	}, ":")
 	if key ~= self.dock_key then
@@ -275,10 +400,28 @@ function FloatingHistoryOverlay:paintTo(bb, x, y)
 	local view_width = view and view.dimen and view.dimen.w or Screen:getWidth()
 	local view_height = view and view.dimen and view.dimen.h or Screen:getHeight()
 	local size = widget:getSize()
+	-- The tab is glued to the screen edge; the full control keeps a margin.
+	local side_margin = dock.minimized and 0 or margin
 	local widget_x = spec.side == "left"
-		and x + margin
-		or x + view_width - size.w - margin
+		and x + side_margin
+		or x + view_width - size.w - side_margin
 	local widget_y = y + view_height - margin - size.h
+
+	-- Kept for the hold hint's own positioning (see PageAnchor:showHint)
+	-- and the swipe zone: the pill's on-screen box and its side.
+	self.pill_dimen = Geom:new({ x = widget_x, y = widget_y, w = size.w, h = size.h })
+	self.pill_side = spec.side
+
+	if dock.minimized then
+		-- Tap target reaches further into the page than the narrow tab.
+		local hit_w = math.max(size.w, dock.hit_width or size.w)
+		local hit_x = spec.side == "left" and widget_x or widget_x + size.w - hit_w
+		self.button_dimens = {
+			{ action = ACTION_SHOW, dimen = Geom:new({ x = hit_x, y = widget_y, w = hit_w, h = size.h }) },
+		}
+		widget:paintTo(bb, widget_x, widget_y)
+		return
+	end
 
 	local dismiss_left = widget_x + dock.dismiss_x
 	local dismiss_dimen = Geom:new({ x = dismiss_left, y = widget_y, w = dock.dismiss_w, h = size.h })
@@ -294,10 +437,6 @@ function FloatingHistoryOverlay:paintTo(bb, x, y)
 		{ action = spec.action, dimen = action_dimen },
 		{ action = ACTION_DISMISS, dimen = dismiss_dimen },
 	}
-	-- Kept for the hold hint's own positioning (see PageAnchor:showHint):
-	-- it needs the pill's on-screen box and which side it's anchored to.
-	self.pill_dimen = Geom:new({ x = widget_x, y = widget_y, w = size.w, h = size.h })
-	self.pill_side = spec.side
 	widget:paintTo(bb, widget_x, widget_y)
 end
 
@@ -305,6 +444,9 @@ function FloatingHistoryOverlay:handleTap(gesture)
 	local pos = gesture and gesture.pos
 	if not pos then
 		return false
+	end
+	if self.owner:handleHintTap(pos) then
+		return true
 	end
 	for _, button in ipairs(self.button_dimens or {}) do
 		if button.dimen:contains(pos) then
@@ -330,12 +472,26 @@ function FloatingHistoryOverlay:handleHold(gesture)
 	return false
 end
 
--- A swipe-down anywhere in the overlay's zone dismisses it, without requiring
--- the precise hit-test that tapping a specific button needs. Anything but a
--- clean south swipe (e.g. a diagonal one) is left to fall through so it can
--- still reach the reader's own page-turn/menu swipe handlers underneath.
+-- A swipe-down starting on or near the pill dismisses it, without requiring
+-- the precise hit-test that tapping a specific button needs. The slack
+-- around the pill is one button height: forgiving enough to hit, while a
+-- swipe elsewhere along the bottom of the screen (frontlight, menus, other
+-- plugins' gestures) still falls through, as does anything but a clean
+-- south swipe.
 function FloatingHistoryOverlay:handleSwipe(gesture)
-	if gesture and gesture.direction == "south" and self.button_dimens and #self.button_dimens > 0 then
+	local pos = gesture and gesture.pos
+	local pill = self.pill_dimen
+	if not pos or not pill or gesture.direction ~= "south" then
+		return false
+	end
+	local slack = self.owner:getButtonMetrics().height
+	local zone = Geom:new({
+		x = pill.x - slack,
+		y = pill.y - slack,
+		w = pill.w + 2 * slack,
+		h = pill.h + 2 * slack,
+	})
+	if zone:contains(pos) then
 		return self.owner:activate(ACTION_DISMISS)
 	end
 	return false
@@ -386,6 +542,15 @@ function HintToast:onGesture(ev)
 	if ev and ev.ges == "hold_release" then
 		return false
 	end
+	-- A tappable notice (undo) must survive the touch/tap landing on it:
+	-- toasts can't consume events, so the tap carries on to Page Anchor's
+	-- own touch zone underneath, which runs the action and closes this
+	-- (see PageAnchor:handleHintTap). Closing here first would leave
+	-- nothing for that tap to hit.
+	if self.on_tap and ev and (ev.ges == "touch" or ev.ges == "tap")
+			and ev.pos and self.dimen:contains(ev.pos) then
+		return false
+	end
 	self.owner:closeHint()
 	return false
 end
@@ -411,8 +576,13 @@ function PageAnchor:init()
 	self.reference_location = nil
 	self.anchor = nil
 	self.forward_target = nil
-	self.return_baseline_page = nil
+	self.return_baseline_location = nil
+	self.controls_hidden = false
+	self.pending_jump_origin = nil
 	self.auto_dismiss_fn = nil
+	self.hidden_expiry_fn = nil
+	self.pinned_location = nil
+	self.last_discarded = nil
 	self.button_specs = nil
 	self.button_specs_computed = false
 	self.hint_widget = nil
@@ -420,6 +590,7 @@ function PageAnchor:init()
 	self._installed = false
 
 	self:patchIconWidget()
+	self:onDispatcherRegisterActions()
 
 	if self.ui and self.ui.menu then
 		self.ui.menu:registerToMainMenu(self)
@@ -427,6 +598,97 @@ function PageAnchor:init()
 	self.ui:registerPostInitCallback(function()
 		self:installOverlay()
 	end)
+end
+
+-- Gesture/hotkey actions (and, through them, Quick Dock buttons): a way to
+-- bring hidden buttons back, or to act on the anchor directly, without
+-- opening the Page Anchor menu. Reader-only, like the plugin itself.
+function PageAnchor:onDispatcherRegisterActions()
+	Dispatcher:registerAction("pageanchor_toggle_buttons", {
+		category = "none",
+		event = "PageAnchorToggleButtons",
+		title = _("Page Anchor: show/hide buttons"),
+		reader = true,
+	})
+	Dispatcher:registerAction("pageanchor_switch", {
+		category = "none",
+		event = "PageAnchorSwitch",
+		title = _("Page Anchor: go to anchor / return point"),
+		reader = true,
+	})
+	Dispatcher:registerAction("pageanchor_pin", {
+		category = "none",
+		event = "PageAnchorPin",
+		title = _("Page Anchor: pin anchor here"),
+		reader = true,
+	})
+	Dispatcher:registerAction("pageanchor_discard", {
+		category = "none",
+		event = "PageAnchorDiscard",
+		title = _("Page Anchor: discard anchor"),
+		reader = true,
+	})
+	Dispatcher:registerAction("pageanchor_undo", {
+		category = "none",
+		event = "PageAnchorUndo",
+		title = _("Page Anchor: restore discarded anchor"),
+		reader = true,
+		separator = true,
+	})
+end
+
+-- Gesture actions fire blind (no button on screen to show what happened),
+-- so each one confirms itself through KOReader's own notification, which
+-- honours the user's "notifications from gestures" preference.
+local function notify(text)
+	Notification:notify(text, Notification.SOURCE_DISPATCHER)
+end
+
+function PageAnchor:onPageAnchorToggleButtons()
+	if not self:hasTargets() then
+		notify(_("No anchor to show"))
+	elseif self.controls_hidden then
+		self:showControls()
+	else
+		self:hideControls()
+	end
+	return true
+end
+
+-- Back to the anchor while away from it; back out to the return point once
+-- there -- the same thing the arrow segment does, from any gesture.
+function PageAnchor:onPageAnchorSwitch()
+	if self.anchor then
+		self:activate(ACTION_BACK)
+	elseif self.forward_target then
+		self:activate(ACTION_FORWARD)
+	else
+		notify(_("No anchor to show"))
+	end
+	return true
+end
+
+function PageAnchor:onPageAnchorDiscard()
+	if self:hasTargets() then
+		self:discardWithUndo()
+	else
+		notify(_("No anchor to show"))
+	end
+	return true
+end
+
+function PageAnchor:onPageAnchorPin()
+	if self:pinHere() then
+		notify(_("Anchor pinned here"))
+	end
+	return true
+end
+
+function PageAnchor:onPageAnchorUndo()
+	if not self:restoreDiscarded() then
+		notify(_("Nothing to restore"))
+	end
+	return true
 end
 
 local function fileExists(path)
@@ -515,8 +777,8 @@ end
 
 function PageAnchor:getDestinationFormat()
 	local value = G_reader_settings:readSetting(SETTING_DESTINATION_FORMAT)
-	for _index, option in ipairs(DESTINATION_FORMAT_OPTIONS) do
-		if option.value == value then
+	for i = 1, #DESTINATION_FORMAT_OPTIONS do
+		if DESTINATION_FORMAT_OPTIONS[i].value == value then
 			return value
 		end
 	end
@@ -594,10 +856,22 @@ function PageAnchor:setForwardDismissPages(pages)
 	G_reader_settings:saveSetting(SETTING_FORWARD_DISMISS_PAGES, pages)
 end
 
+function PageAnchor:getHideMode()
+	local value = G_reader_settings:readSetting(SETTING_HIDE_MODE)
+	return value == HIDE_MODE_HIDE and HIDE_MODE_HIDE or HIDE_MODE_MINIMIZE
+end
+
+function PageAnchor:setHideMode(mode)
+	G_reader_settings:saveSetting(SETTING_HIDE_MODE, mode == HIDE_MODE_HIDE and HIDE_MODE_HIDE or HIDE_MODE_MINIMIZE)
+	self:_onDisplaySettingChanged()
+end
+
 -- Hides the floating buttons after a period without any relevant activity,
--- so one left on screen doesn't linger forever. Follows Reader Header/
--- Footer's own schedule/cancel-by-reference pattern: a self-nilling closure,
--- scheduled and unscheduled by that same stored reference.
+-- so one left on screen doesn't linger forever. Hiding is all it does: the
+-- anchor and the forward target stay, so a long read away from the anchor
+-- never costs the way back (see hideControls/showControls). Follows Reader
+-- Header/Footer's own schedule/cancel-by-reference pattern: a self-nilling
+-- closure, scheduled and unscheduled by that same stored reference.
 function PageAnchor:cancelAutoDismiss()
 	if self.auto_dismiss_fn then
 		UIManager:unschedule(self.auto_dismiss_fn)
@@ -644,9 +918,96 @@ function PageAnchor:scheduleAutoDismiss()
 			self:scheduleAutoDismiss()
 			return
 		end
-		self:clearHistory()
+		self:hideControls()
 	end
 	UIManager:scheduleIn(seconds, self.auto_dismiss_fn)
+end
+
+-- Somewhere the buttons can take you right now.
+function PageAnchor:hasNavTargets()
+	return self.anchor ~= nil or self.forward_target ~= nil
+end
+
+-- Anything Page Anchor is holding on to, including a pinned anchor you are
+-- currently standing on (nothing to navigate to yet, but still something
+-- to discard).
+function PageAnchor:hasTargets()
+	return self:hasNavTargets() or self.pinned_location ~= nil
+end
+
+function PageAnchor:areControlsHidden()
+	return self.controls_hidden and self:hasTargets()
+end
+
+-- Takes the floating buttons off screen while keeping both targets, so they
+-- can be brought back (showControls) with the way back intact.
+function PageAnchor:hideControls()
+	self:cancelAutoDismiss()
+	if self.controls_hidden then
+		return
+	end
+	self.controls_hidden = true
+	self:scheduleHiddenExpiry()
+	self:invalidateButtonSpecs()
+	self:refresh()
+end
+
+function PageAnchor:getHiddenExpirySeconds()
+	local value = G_reader_settings:readSetting(SETTING_HIDDEN_EXPIRY_SECONDS)
+	if type(value) == "number" then
+		return value
+	end
+	return HIDDEN_EXPIRY_DEFAULT_SECONDS
+end
+
+function PageAnchor:setHiddenExpirySeconds(seconds)
+	G_reader_settings:saveSetting(SETTING_HIDDEN_EXPIRY_SECONDS, seconds)
+	-- Restart a pending countdown with the new duration (or drop it, for
+	-- "Never"), rather than waiting for the next hide to pick it up.
+	if self:areControlsHidden() then
+		self:scheduleHiddenExpiry()
+	end
+end
+
+function PageAnchor:cancelHiddenExpiry()
+	if self.hidden_expiry_fn then
+		UIManager:unschedule(self.hidden_expiry_fn)
+		self.hidden_expiry_fn = nil
+	end
+end
+
+-- Started when the buttons get hidden, cancelled when they come back (or
+-- the anchor is dismissed some other way); see HIDDEN_EXPIRY_OPTIONS.
+function PageAnchor:scheduleHiddenExpiry()
+	self:cancelHiddenExpiry()
+	local seconds = self:getHiddenExpirySeconds()
+	-- A pinned anchor was asked for explicitly and stays until dismissed.
+	if not seconds or seconds <= 0 or self.pinned_location then
+		return
+	end
+	self.hidden_expiry_fn = function()
+		self.hidden_expiry_fn = nil
+		if self:areControlsHidden() then
+			self:clearHistory()
+		end
+	end
+	UIManager:scheduleIn(seconds, self.hidden_expiry_fn)
+end
+
+-- Brings hidden buttons back and restarts the inactivity timer. Called from
+-- the menu, and whenever something new happens that the buttons should
+-- announce (a new anchor, arriving back at the anchor).
+function PageAnchor:showControls()
+	local was_hidden = self.controls_hidden
+	self.controls_hidden = false
+	self:cancelHiddenExpiry()
+	if self:hasNavTargets() then
+		self:scheduleAutoDismiss()
+	end
+	if was_hidden then
+		self:invalidateButtonSpecs()
+		self:refresh()
+	end
 end
 
 function PageAnchor:isRightToLeftReading()
@@ -682,6 +1043,21 @@ function PageAnchor:computeButtonSpecs()
 	if not self:isEnabled() or not self.ui or not self.ui.link then
 		return nil
 	end
+	if self.controls_hidden then
+		if self:getHideMode() ~= HIDE_MODE_MINIMIZE or not self:hasNavTargets() then
+			return nil
+		end
+		-- Parked in the corner the full control would use, so expanding it
+		-- doesn't make the buttons jump to the other side.
+		local side = self.anchor and self:getTargetSide(self.anchor, -1)
+			or self:getTargetSide(self.forward_target, 1)
+		return {
+			action = ACTION_SHOW,
+			side = side,
+			icon = ICON_ANCHOR,
+			minimized = true,
+		}
+	end
 
 	if self.anchor then
 		local side = self:getTargetSide(self.anchor, -1)
@@ -691,6 +1067,7 @@ function PageAnchor:computeButtonSpecs()
 			icon = side == "left" and ICON_CHEVRON_LEFT or ICON_CHEVRON_RIGHT,
 			label = self:getDestinationLabel(self.anchor),
 			dismiss_marked = false,
+			pinned = self.pinned_location ~= nil,
 		}
 	elseif self.forward_target then
 		local side = self:getTargetSide(self.forward_target, 1)
@@ -700,6 +1077,7 @@ function PageAnchor:computeButtonSpecs()
 			icon = side == "left" and ICON_CHEVRON_LEFT or ICON_CHEVRON_RIGHT,
 			label = self:getDestinationLabel(self.forward_target),
 			dismiss_marked = true,
+			pinned = self.pinned_location ~= nil,
 		}
 	end
 	return nil
@@ -800,8 +1178,14 @@ function PageAnchor:showButtonHint(action)
 		return false
 	end
 	local text
-	if action == ACTION_DISMISS then
-		text = spec.dismiss_marked and _("This is the starting position") or _("Continue here")
+	if action == ACTION_SHOW then
+		text = _("Anchor kept · tap to show the buttons")
+	elseif action == ACTION_DISMISS then
+		if spec.pinned then
+			text = spec.dismiss_marked and _("This is the pinned anchor") or _("Discard the pinned anchor and continue here")
+		else
+			text = spec.dismiss_marked and _("This is the starting position") or _("Continue here")
+		end
 	elseif action == spec.action then
 		-- ACTION_BACK genuinely returns to the anchor, so it says so
 		-- ("Back to") instead of the generic "Go to" ACTION_FORWARD keeps
@@ -816,14 +1200,62 @@ function PageAnchor:showButtonHint(action)
 	return true
 end
 
-function PageAnchor:showHint(text)
+-- opts (all optional): pill_dimen/pill_side to place it against a pill
+-- that's no longer on screen (the undo notice, after a discard removed
+-- it); in_place to sit where the pill was instead of above it; on_tap to
+-- make it tappable; icon to show a trailing action icon; seconds to
+-- override how long it stays up.
+function PageAnchor:showHint(text, opts)
+	opts = opts or {}
 	self:closeHint()
-	local pill_dimen = self.overlay.pill_dimen
-	local pill_side = self.overlay.pill_side
+	local pill_dimen = opts.pill_dimen or self.overlay.pill_dimen
+	local pill_side = opts.pill_side or self.overlay.pill_side
 	if not self.ui or not pill_dimen or not pill_side then
 		return
 	end
 
+	local margin = self:getButtonMetrics().margin
+	local screen_width = Screen:getWidth()
+	local frame_extra = 2 * (Size.border.button + Size.padding.default)
+	-- Long chapter titles wrap instead of running off screen: the text box
+	-- is as wide as the text needs, up to the screen width minus both
+	-- margins and the frame around it.
+	text = BD.ltr(tostring(text or ""))
+	local face = Font:getFace("cfont", HINT_FONT_SIZE)
+	-- opts.icon: a trailing action icon (the undo arrow), set off from the
+	-- text by the same kind of divider that splits the pill's segments.
+	local icon_size = Screen:scaleBySize(HINT_FONT_SIZE + 4)
+	local gap = Size.padding.default
+	local icon_extra = opts.icon and (icon_size + 2 * gap + Size.line.medium) or 0
+	local max_text_width = math.max(1, screen_width - 2 * margin - frame_extra - icon_extra)
+	local measure = TextWidget:new({ text = text, face = face, bold = true })
+	local natural_width = measure:getSize().w
+	measure:free()
+	local content = TextBoxWidget:new({
+		text = text,
+		face = face,
+		bold = true,
+		width = math.min(natural_width + 1, max_text_width),
+	})
+	if opts.icon then
+		local line_height = math.max(content:getSize().h, icon_size)
+		local row = {
+			content,
+			HorizontalSpan:new({ width = gap }),
+			LineWidget:new({
+				background = Blitbuffer.COLOR_GRAY,
+				dimen = Geom:new({ w = Size.line.medium, h = line_height }),
+			}),
+			HorizontalSpan:new({ width = gap }),
+			IconWidget:new({
+				icon = ICONS_DIR .. opts.icon,
+				width = icon_size,
+				height = icon_size,
+			}),
+		}
+		row.allow_mirroring = false
+		content = HorizontalGroup:new(row)
+	end
 	local panel = FrameContainer:new({
 		background = Blitbuffer.COLOR_WHITE,
 		bordersize = Size.border.button,
@@ -831,22 +1263,27 @@ function PageAnchor:showHint(text)
 		radius = Size.radius.button,
 		margin = 0,
 		padding = Size.padding.default,
-		TextWidget:new({
-			text = BD.ltr(tostring(text or "")),
-			face = Font:getFace("cfont", HINT_FONT_SIZE),
-			bold = true,
-		}),
+		content,
 	})
 	local panel_size = panel:getSize()
-	local margin = self:getButtonMetrics().margin
 	local left = pill_side == "left"
 		and margin
-		or Screen:getWidth() - margin - panel_size.w
-	local top = pill_dimen.y - Size.padding.default - panel_size.h
+		or screen_width - margin - panel_size.w
+	left = math.max(0, math.min(left, screen_width - panel_size.w))
+	local top
+	if opts.in_place then
+		-- Bottom-aligned with where the pill was: inside Page Anchor's own
+		-- touch zone, which is what makes on_tap reachable at all.
+		top = pill_dimen.y + pill_dimen.h - panel_size.h
+	else
+		top = pill_dimen.y - Size.padding.default - panel_size.h
+	end
+	top = math.max(0, top)
 
 	local hint = HintToast:new({
 		owner = self,
 		panel = panel,
+		on_tap = opts.on_tap,
 		dimen = Geom:new({
 			x = math.floor(left),
 			y = math.floor(top),
@@ -862,7 +1299,20 @@ function PageAnchor:showHint(text)
 		self.hint_dismiss_fn = nil
 		self:closeHint()
 	end
-	UIManager:scheduleIn(HINT_DISMISS_SECONDS, self.hint_dismiss_fn)
+	UIManager:scheduleIn(opts.seconds or HINT_DISMISS_SECONDS, self.hint_dismiss_fn)
+end
+
+-- Runs a tappable hint's action when the tap lands on it; see
+-- HintToast:onGesture for why this goes through the overlay's touch zone.
+function PageAnchor:handleHintTap(pos)
+	local hint = self.hint_widget
+	if not hint or not hint.on_tap or not hint.dimen:contains(pos) then
+		return false
+	end
+	local on_tap = hint.on_tap
+	self:closeHint()
+	on_tap()
+	return true
 end
 
 function PageAnchor:closeHint()
@@ -920,6 +1370,8 @@ function PageAnchor:installOverlay()
 		plugin._original_view_paintTo(reader_view, bb, x, y)
 		plugin.overlay:paintTo(bb, x, y)
 	end
+
+	self:patchReaderLink()
 
 	local overrides = {}
 	local known_overrides = {
@@ -990,6 +1442,7 @@ function PageAnchor:uninstallOverlay()
 			{ id = "pageanchor_swipe" },
 		})
 	end
+	self:unpatchReaderLink()
 	self:closeHint()
 	self.overlay:clearCache()
 	self._installed = false
@@ -1007,12 +1460,130 @@ function PageAnchor:goToLocation(location)
 	self.ui:handleEvent(Event:new("RestoreBookLocation", location))
 end
 
+-- Explicit-jump detection. Every standard KOReader navigation tool (Go to
+-- page, skim bar, table of contents, Book Map, page browser, bookmarks,
+-- search results, internal links, next/previous chapter) calls
+-- ReaderLink:addCurrentLocationToStack right before it jumps. Wrapping it
+-- tells trackPage that the next position update is a jump whatever its
+-- distance, so Go to page from 100 to 102 arms an anchor while a plain page
+-- turn never does. Patched on this ReaderLink instance only, not the class,
+-- and restored by putting back whatever the instance held before.
+function PageAnchor:patchReaderLink()
+	local link = self.ui and self.ui.link
+	if self._link_patch or not link or type(link.addCurrentLocationToStack) ~= "function" then
+		return
+	end
+	local original = link.addCurrentLocationToStack
+	local plugin = self
+	local patched = function(reader_link, loc)
+		-- Never let a bug here get in the way of KOReader's own history.
+		local ok, err = pcall(plugin.noteJumpOrigin, plugin, loc)
+		if not ok then
+			logger.warn("PageAnchor: noting jump origin failed:", err)
+		end
+		return original(reader_link, loc)
+	end
+	self._link_patch = {
+		link = link,
+		raw = rawget(link, "addCurrentLocationToStack"),
+		patched = patched,
+	}
+	link.addCurrentLocationToStack = patched
+end
+
+function PageAnchor:unpatchReaderLink()
+	if self.pending_jump_clear_fn then
+		UIManager:unschedule(self.pending_jump_clear_fn)
+		self.pending_jump_clear_fn = nil
+	end
+	self.pending_jump_origin = nil
+	local patch = self._link_patch
+	if not patch then
+		return
+	end
+	self._link_patch = nil
+	if patch.link.addCurrentLocationToStack ~= patch.patched then
+		-- Same caution as unpatchIconWidget: something layered on top of
+		-- ours, and restoring blindly would drop it.
+		logger.warn("PageAnchor: ReaderLink.addCurrentLocationToStack changed unexpectedly during unpatch; leaving it as-is")
+		return
+	end
+	rawset(patch.link, "addCurrentLocationToStack", patch.raw)
+end
+
+-- The origin only lives until the next UI tick: the jump itself follows
+-- synchronously in the same handler, while a bare "Add current location to
+-- history" gesture, with no jump behind it, must not leak into a later,
+-- ordinary page turn.
+function PageAnchor:noteJumpOrigin(loc)
+	self.pending_jump_origin = loc or History.getCurrentLocation(self.ui)
+	if not self.pending_jump_clear_fn then
+		self.pending_jump_clear_fn = function()
+			self.pending_jump_clear_fn = nil
+			self.pending_jump_origin = nil
+		end
+		UIManager:nextTick(self.pending_jump_clear_fn)
+	end
+end
+
+function PageAnchor:setReference(page, location)
+	self.reference_page = page
+	self.reference_location = location
+end
+
+-- The reference page, re-derived from the saved location every time: after
+-- a font, margin or orientation change the same location lands on another
+-- page number, and comparing against the stale number made the
+-- repagination itself look like a jump. The stored number is only a
+-- fallback for a location the document can no longer resolve.
+function PageAnchor:getReferencePage()
+	local page = History.getLocationPage(self.ui, self.reference_location)
+	if page then
+		self.reference_page = page
+	end
+	return self.reference_page
+end
+
+-- Whether moving from `location` to `page` goes beyond the reading
+-- tolerance (see READING_TURNS_BEHIND/AHEAD), i.e. looks like a jump rather
+-- than a page turn. False when there is no location to compare against.
+function PageAnchor:isJumpFrom(location, page)
+	local from_page = History.getLocationPage(self.ui, location)
+	if not from_page then
+		return false
+	end
+	local turns = History.countPageTurns(self.ui, from_page, page, READING_TURNS_AHEAD)
+	return not (turns and turns >= -READING_TURNS_BEHIND)
+end
+
+-- Pins a new anchor with the given location as the way out, and shows the
+-- buttons again if the inactivity timeout had hidden them.
+function PageAnchor:armAnchor(anchor_location, current_location)
+	-- A new trip supersedes whatever was discarded before it.
+	self.last_discarded = nil
+	self.anchor = anchor_location
+	self.forward_target = current_location
+	self.return_baseline_location = nil
+	self:showControls()
+end
+
 function PageAnchor:activate(action)
 	if not self.ui then
 		return false
 	end
 	if action == ACTION_DISMISS then
-		self:clearHistory()
+		-- Word the notice after what dismissing actually did. Away from the
+		-- anchor it moves your reading position here; already at the anchor
+		-- (only the way back out is pending) the position stays put and
+		-- dismissing just drops the buttons and that return point.
+		if self.anchor then
+			self:discardWithUndo(_("Anchor set here"))
+		else
+			self:discardWithUndo(_("Buttons dismissed"))
+		end
+		return true
+	elseif action == ACTION_SHOW then
+		self:showControls()
 		return true
 	elseif action == ACTION_BACK and self.anchor then
 		-- Resolve right away instead of waiting for the reader's own
@@ -1025,11 +1596,10 @@ function PageAnchor:activate(action)
 		self:goToLocation(anchor_location)
 		self.anchor = nil
 		self.forward_target = departure_location
-		self.reference_page = History.getLocationPage(self.ui, anchor_location)
-		self.reference_location = anchor_location
-		self.return_baseline_page = self.reference_page
+		self:setReference(History.getLocationPage(self.ui, anchor_location), anchor_location)
+		self.return_baseline_location = anchor_location
 		self:invalidateButtonSpecs()
-		self:scheduleAutoDismiss()
+		self:showControls()
 		return true
 	elseif action == ACTION_FORWARD and self.forward_target then
 		-- Same reasoning as above, mirrored: re-arm the anchor at the spot
@@ -1040,9 +1610,9 @@ function PageAnchor:activate(action)
 		self:goToLocation(target_location)
 		self.anchor = departure_location
 		self.forward_target = target_location
-		self.return_baseline_page = nil
+		self.return_baseline_location = nil
 		self:invalidateButtonSpecs()
-		self:scheduleAutoDismiss()
+		self:showControls()
 		return true
 	end
 	return false
@@ -1055,7 +1625,8 @@ end
 -- location_stack/forward_location_stack, which are for real link/footnote
 -- navigation and have different rules (e.g. a new jump there discards any
 -- pending forward target) that made a borrowed anchor drift and get
--- corrupted across repeated back-and-forth navigation.
+-- corrupted across repeated back-and-forth navigation. ReaderLink is only
+-- consulted as a signal that a jump is happening (see patchReaderLink).
 function PageAnchor:trackPage(page)
 	page = tonumber(page)
 	if not page then
@@ -1071,9 +1642,19 @@ function PageAnchor:trackPage(page)
 		return
 	end
 
-	if not self.reference_page or not self.reference_location then
-		self.reference_page = page
-		self.reference_location = current_location
+	-- Consumed by the first update after the jump, whatever happens below,
+	-- so one jump arms at most once (rolling documents send both a page and
+	-- a position update for the same move).
+	local jump_origin = self.pending_jump_origin
+	self.pending_jump_origin = nil
+
+	if not self.reference_location then
+		self:setReference(page, current_location)
+		return
+	end
+
+	if self.pinned_location then
+		self:trackPinned(page, current_location, jump_origin)
 		return
 	end
 
@@ -1084,44 +1665,197 @@ function PageAnchor:trackPage(page)
 			-- below), or the jump's original destination if you returned
 			-- immediately without wandering further.
 			self.anchor = nil
-			self.reference_page = page
-			self.reference_location = current_location
-			self.return_baseline_page = page
-			self:scheduleAutoDismiss()
+			self:setReference(page, current_location)
+			self.return_baseline_location = current_location
+			self:showControls()
 		else
+			-- A new jump while away (announced, or too far from the last
+			-- spot visited to be reading) is something the buttons should
+			-- announce, so it brings them back if the timeout hid them;
+			-- plain page turns leave hidden buttons hidden.
+			local previous_target = self.forward_target
 			self.forward_target = current_location
-			self:scheduleAutoDismiss()
+			if jump_origin or self:isJumpFrom(previous_target, page) then
+				self:showControls()
+			elseif not self.controls_hidden then
+				self:scheduleAutoDismiss()
+			end
 		end
 		return
 	end
 
-	local pages_behind = self.reference_page - page
-	local pages_ahead = page - self.reference_page
-	if pages_behind <= 1 and pages_ahead <= 2 then
-		-- Forward reading advances the reference. Going back a single page is
-		-- tolerated without moving it, so a second backward turn can still
-		-- offer the last confirmed reading position.
-		if page >= self.reference_page then
-			self.reference_page = page
-			self.reference_location = current_location
+	if jump_origin and not History.isCurrentLocation(self.ui, jump_origin) then
+		self:armAnchor(jump_origin, current_location)
+		return
+	end
+
+	-- No announced jump: fall back to distance, for tools that move without
+	-- going through ReaderLink's history (some third-party plugins).
+	local turns = History.countPageTurns(self.ui, self:getReferencePage(), page, READING_TURNS_AHEAD)
+	if turns and turns >= -READING_TURNS_BEHIND then
+		-- Forward reading advances the reference. Going back a single turn
+		-- is tolerated without moving it, so a second backward turn can
+		-- still offer the last confirmed reading position.
+		if turns >= 0 then
+			self:setReference(page, current_location)
 		end
 
 		-- Just returned to the anchor and reading on: hide the forward
 		-- target once enough pages have passed, so it does not linger
-		-- indefinitely as a stale "go back out" option.
-		if self.forward_target and self.return_baseline_page then
+		-- indefinitely as a stale "go back out" option. Only reading
+		-- forward counts -- stepping back a page to re-read the end of the
+		-- previous one keeps the way back out.
+		if self.forward_target and self.return_baseline_location then
 			local dismiss_after = self:getForwardDismissPages()
-			if dismiss_after > 0 and math.abs(page - self.return_baseline_page) >= dismiss_after then
+			local baseline_page = History.getLocationPage(self.ui, self.return_baseline_location)
+			if dismiss_after > 0 and baseline_page and page - baseline_page >= dismiss_after then
 				self.forward_target = nil
-				self.return_baseline_page = nil
+				self.return_baseline_location = nil
+				self.controls_hidden = false
 				self:cancelAutoDismiss()
+				self:cancelHiddenExpiry()
 			end
 		end
 	else
-		self.anchor = self.reference_location
+		self:armAnchor(self.reference_location, current_location)
+	end
+end
+
+-- A pinned anchor doesn't care how you leave it: any move away, a jump or
+-- a plain page turn, offers the way back, and coming back never resolves
+-- it -- it stays until discarded, so it can be returned to again and again.
+-- The return point follows wherever you are while away.
+function PageAnchor:trackPinned(page, current_location, jump_origin)
+	if History.isCurrentLocation(self.ui, self.pinned_location) then
+		if self.anchor then
+			self.anchor = nil
+			self:setReference(page, current_location)
+			self:showControls()
+		end
+		return
+	end
+	if not self.anchor then
+		self.anchor = self.pinned_location
 		self.forward_target = current_location
-		self.return_baseline_page = nil
+		self.return_baseline_location = nil
+		self:showControls()
+		return
+	end
+	local previous_target = self.forward_target
+	self.forward_target = current_location
+	if jump_origin or self:isJumpFrom(previous_target, page) then
+		self:showControls()
+	elseif not self.controls_hidden then
 		self:scheduleAutoDismiss()
+	end
+end
+
+-- Pins the anchor at the current position before exploring: unlike one
+-- set by a jump, it survives returning to it, the hidden-buttons expiry
+-- and forward reading, until it's discarded.
+function PageAnchor:pinHere()
+	local location = History.getCurrentLocation(self.ui)
+	if not location then
+		return false
+	end
+	self:cancelAutoDismiss()
+	self:cancelHiddenExpiry()
+	self.last_discarded = nil
+	self.pinned_location = location
+	self.anchor = nil
+	self.forward_target = nil
+	self.return_baseline_location = nil
+	self.controls_hidden = false
+	self:setReference(self.ui:getCurrentPage(), location)
+	self:invalidateButtonSpecs()
+	self:refresh()
+	return true
+end
+
+-- Everything restoreDiscarded needs to put a discarded trip back.
+function PageAnchor:snapshotTargets()
+	return {
+		anchor = self.anchor,
+		forward_target = self.forward_target,
+		return_baseline_location = self.return_baseline_location,
+		pinned_location = self.pinned_location,
+		reference_location = self.reference_location,
+		reference_page = self.reference_page,
+	}
+end
+
+function PageAnchor:canRestoreDiscarded()
+	return self.last_discarded ~= nil and not self:hasTargets()
+end
+
+-- Puts back what the last discard dropped. Only while nothing new has been
+-- set up since (a new anchor clears the snapshot, and restoring over live
+-- targets would silently lose them). If you've moved since, where you are
+-- now becomes the return point.
+function PageAnchor:restoreDiscarded()
+	if not self:canRestoreDiscarded() then
+		return false
+	end
+	local snapshot = self.last_discarded
+	self.last_discarded = nil
+	self.anchor = snapshot.anchor
+	self.forward_target = snapshot.forward_target
+	self.return_baseline_location = snapshot.return_baseline_location
+	self.pinned_location = snapshot.pinned_location
+	self:setReference(snapshot.reference_page, snapshot.reference_location)
+	-- Where you are now decides how the snapshot fits: the anchor ("home")
+	-- is the pinned spot, the pending anchor, or -- for a snapshot taken
+	-- while already back at the anchor -- the spot you'd returned to.
+	local current_location = History.getCurrentLocation(self.ui)
+	local home = self.pinned_location or self.anchor or self.return_baseline_location
+	if home and current_location then
+		if History.isCurrentLocation(self.ui, home) then
+			-- Back at the anchor since the discard: resolve it as if you'd
+			-- just arrived, keeping the way back out. Restoring it as a
+			-- pending anchor would make "back" point at this very page and
+			-- overwrite the return point with it.
+			self.anchor = nil
+			self:setReference(self.ui:getCurrentPage(), current_location)
+			self.return_baseline_location = current_location
+		else
+			self.anchor = home
+			self.forward_target = current_location
+			self.return_baseline_location = nil
+		end
+	end
+	self.controls_hidden = true -- so showControls repaints
+	self:showControls()
+	return true
+end
+
+-- Discards like clearHistory, then offers a few seconds to take it back,
+-- right where the buttons were -- or, when there was nothing on screen to
+-- put the notice against (buttons fully hidden), a plain notification.
+-- `text` words it after what the user just did: the anchor button sets the
+-- reading position here ("Continue here"), while the discard gesture
+-- action just discards. The undo arrow icon carries the "tap to undo".
+function PageAnchor:discardWithUndo(text)
+	text = text or _("Anchor discarded")
+	local had_targets = self:hasTargets()
+	local pill_dimen = self.overlay.pill_dimen
+	local pill_side = self.overlay.pill_side
+	self:clearHistory()
+	if not had_targets then
+		return
+	end
+	if pill_dimen and pill_side then
+		self:showHint(text, {
+			pill_dimen = pill_dimen,
+			pill_side = pill_side,
+			in_place = true,
+			icon = ICON_UNDO,
+			seconds = UNDO_HINT_SECONDS,
+			on_tap = function()
+				self:restoreDiscarded()
+			end,
+		})
+	else
+		notify(text)
 	end
 end
 
@@ -1139,33 +1873,50 @@ function PageAnchor:onPosUpdate(_pos, page)
 	end
 end
 
+-- Sent after a font/margin/orientation change re-paginated the book (after
+-- the PageUpdate for the new layout). Locations are unaffected, but page
+-- numbers and chapter positions in the hint text are not.
+function PageAnchor:onDocumentRerendered()
+	self:getReferencePage()
+	self:invalidateButtonSpecs()
+	self:refresh()
+end
+
 function PageAnchor:onCloseDocument()
 	self:cancelAutoDismiss()
+	self:cancelHiddenExpiry()
 	self:uninstallOverlay()
 	self:unpatchIconWidget()
 end
 
 function PageAnchor:stopPlugin()
 	self:cancelAutoDismiss()
+	self:cancelHiddenExpiry()
 	self:uninstallOverlay()
 	self:unpatchIconWidget()
 	self:refresh()
 	return true
 end
 
--- The center button and the menu's "Clear location history" both call this:
--- it is how a new anchor gets accepted, by dropping the current one (and any
--- pending forward target) and restarting tracking fresh from here.
+-- The anchor button and the menu's "Discard anchor and return point" both
+-- call this: it is how a new anchor gets accepted, by dropping the current
+-- one (and any pending forward target) and restarting tracking fresh from
+-- here.
 function PageAnchor:clearHistory()
 	if not self.ui then
 		return
 	end
 	self:cancelAutoDismiss()
+	self:cancelHiddenExpiry()
+	if self:hasTargets() then
+		self.last_discarded = self:snapshotTargets()
+	end
 	self.anchor = nil
 	self.forward_target = nil
-	self.return_baseline_page = nil
-	self.reference_page = self.ui:getCurrentPage()
-	self.reference_location = History.getCurrentLocation(self.ui)
+	self.return_baseline_location = nil
+	self.pinned_location = nil
+	self.controls_hidden = false
+	self:setReference(self.ui:getCurrentPage(), History.getCurrentLocation(self.ui))
 	self:invalidateButtonSpecs()
 	self:refresh()
 end
@@ -1184,9 +1935,10 @@ local function buildValueRadioItems(options, get_value, set_value, caption)
 	if caption then
 		items[#items + 1] = { text = caption, enabled = false }
 	end
-	-- Named (not "_"): that would shadow the gettext function used as
-	-- `_(option.label)` below for the rest of this loop body.
-	for _index, option in ipairs(options) do
+	-- Indexed (not "for _, option"): "_" would shadow the gettext function
+	-- used as `_(option.label)` below for the rest of this loop body.
+	for i = 1, #options do
+		local option = options[i]
 		items[#items + 1] = {
 			text = _(option.label),
 			radio = true,
@@ -1260,11 +2012,29 @@ function PageAnchor:addToMainMenu(menu_items)
 				sub_item_table = {
 					{
 						text = _("Timeout"),
-						help_text = _("Hides the floating buttons after this much time without navigation activity."),
+						help_text = _("Hides the floating buttons after this much time without navigation activity. The anchor is kept: tap the anchor tab (or use the show/hide gesture action) to bring them back."),
 						sub_item_table = buildValueRadioItems(
 							AUTO_DISMISS_OPTIONS,
 							function() return self:getAutoDismissSeconds() end,
 							function(value) self:setAutoDismissSeconds(value) end
+						),
+					},
+					{
+						text = _("When hiding"),
+						help_text = _("What the timeout (or the show/hide gesture action) leaves on screen: a small anchor tab that brings the buttons back with one tap, or nothing."),
+						sub_item_table = buildValueRadioItems(
+							HIDE_MODE_OPTIONS,
+							function() return self:getHideMode() end,
+							function(value) self:setHideMode(value) end
+						),
+					},
+					{
+						text = _("Discard when hidden for"),
+						help_text = _("If the buttons stay hidden (or parked as a tab) this long, the anchor is discarded and the current page becomes your reading position, as if you had tapped the anchor button. Never keeps them waiting until you dismiss them yourself."),
+						sub_item_table = buildValueRadioItems(
+							HIDDEN_EXPIRY_OPTIONS,
+							function() return self:getHiddenExpirySeconds() end,
+							function(value) self:setHiddenExpirySeconds(value) end
 						),
 					},
 					{
@@ -1280,17 +2050,54 @@ function PageAnchor:addToMainMenu(menu_items)
 				},
 			},
 			{
-				text = _("Clear location history"),
-				help_text = _("Forgets the current back/forward targets without changing your reading position."),
-				separator = true,
+				text = _("Pin anchor here"),
+				help_text = _("Marks the current position as the anchor before you go exploring. A pinned anchor stays, through any number of trips away and back, until you discard it."),
+				callback = function()
+					if self:pinHere() then
+						notify(_("Anchor pinned here"))
+					end
+				end,
+			},
+			{
+				-- Only enabled while the inactivity timeout has hidden the
+				-- buttons and there is still somewhere to go.
+				text = _("Show floating buttons"),
+				help_text = _("Brings back floating buttons hidden by the inactivity timeout, with the anchor and the way back still in place."),
+				enabled_func = function()
+					return self:areControlsHidden()
+				end,
+				callback = function()
+					self:showControls()
+				end,
+			},
+			{
+				-- Named after what it actually drops -- Page Anchor's own
+				-- targets -- so it isn't mistaken for clearing KOReader's
+				-- native location history, which it never touches.
+				text = _("Discard anchor and return point"),
+				help_text = _("Forgets the anchor and the return point and keeps reading from the current position. KOReader's own location history is not affected."),
+				enabled_func = function()
+					return self:hasTargets()
+				end,
 				callback = function()
 					UIManager:show(ConfirmBox:new({
-						text = _("Clear location history?"),
-						ok_text = _("Clear"),
+						text = _("Discard anchor and return point?"),
+						ok_text = _("Discard"),
 						ok_callback = function()
 							self:clearHistory()
 						end,
 					}))
+				end,
+			},
+			{
+				text = _("Restore discarded anchor"),
+				help_text = _("Brings back the anchor and return point you last discarded, as long as no new anchor has been set since."),
+				separator = true,
+				enabled_func = function()
+					return self:canRestoreDiscarded()
+				end,
+				callback = function()
+					self:restoreDiscarded()
 				end,
 			},
 			{

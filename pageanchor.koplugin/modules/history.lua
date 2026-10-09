@@ -15,7 +15,20 @@ function History.getLocationPage(ui, location)
 	return nil
 end
 
+-- ReaderRolling only refreshes its own xpointer *after* the PageUpdate/
+-- PosUpdate a move sends (see its onGotoPage, onGotoViewRel, ...), so while
+-- those events are being handled -- exactly when Page Anchor tracks
+-- position -- ReaderLink:getCurrentLocation() still reports the previous
+-- position. crengine itself has already moved by then, so ask it directly.
+-- Fixed-layout documents are fine: ReaderView updates its state before any
+-- plugin sees the PageUpdate.
 function History.getCurrentLocation(ui)
+	if ui and ui.rolling and ui.document and type(ui.document.getXPointer) == "function" then
+		local ok, xpointer = pcall(ui.document.getXPointer, ui.document)
+		if ok and xpointer then
+			return { xpointer = xpointer }
+		end
+	end
 	if not ui or not ui.link or type(ui.link.getCurrentLocation) ~= "function" then
 		return nil
 	end
@@ -65,7 +78,81 @@ function History.compareLocationToCurrent(ui, target)
 	return nil
 end
 
+-- Number of page turns needed to go from from_page to to_page (positive
+-- forward, negative backward), or nil when they are more than `limit` turns
+-- apart. Counted the way a page turn moves rather than by raw page numbers:
+-- crengine's two-page mode shows two pages per screen, and hidden
+-- non-linear flows make a single turn skip every hidden page in between --
+-- either would otherwise make plain reading look like a jump.
+function History.countPageTurns(ui, from_page, to_page, limit)
+	if not from_page or not to_page then
+		return nil
+	end
+	if from_page == to_page then
+		return 0
+	end
+	local document = ui and ui.document
+	local per_screen = 1
+	if ui and ui.rolling and document and type(document.getVisiblePageNumberCount) == "function" then
+		local ok, count = pcall(document.getVisiblePageNumberCount, document)
+		per_screen = ok and tonumber(count) or 1
+		if per_screen < 1 then
+			per_screen = 1
+		end
+	end
+
+	local forward = to_page > from_page
+	local pages
+	local has_hidden_flows = ui and ui.rolling and document and type(document.hasHiddenFlows) == "function"
+		and select(2, pcall(document.hasHiddenFlows, document)) == true
+	if has_hidden_flows then
+		-- Walk the visible pages one at a time, giving up past the limit.
+		local step = forward and document.getNextPage or document.getPrevPage
+		local max_pages = ((limit or 1000) + 1) * per_screen
+		local page = from_page
+		pages = 0
+		while pages <= max_pages do
+			local ok, next_page = pcall(step, document, page)
+			next_page = ok and tonumber(next_page) or 0
+			if next_page <= 0 then
+				return nil
+			end
+			pages = pages + 1
+			page = next_page
+			if (forward and page >= to_page) or (not forward and page <= to_page) then
+				break
+			end
+		end
+		if pages > max_pages then
+			return nil
+		end
+	else
+		pages = math.abs(to_page - from_page)
+	end
+
+	local turns = math.ceil(pages / per_screen)
+	if limit and turns > limit then
+		return nil
+	end
+	return forward and turns or -turns
+end
+
+-- Whether `location` is on screen right now. For reflowable documents this
+-- asks crengine whether the xpointer falls on the visible page(s): fresh
+-- during position events (unlike ReaderLink, see getCurrentLocation), and
+-- forgiving of a saved position that isn't exactly the page top (a link
+-- target, or one side of a two-page spread).
 function History.isCurrentLocation(ui, location)
+	if not location then
+		return false
+	end
+	if ui and ui.rolling and location.xpointer and ui.document
+			and type(ui.document.isXPointerInCurrentPage) == "function" then
+		local ok, on_page = pcall(ui.document.isXPointerInCurrentPage, ui.document, location.xpointer)
+		if ok then
+			return on_page == true
+		end
+	end
 	if not ui or not ui.link or type(ui.link.compareLocationToCurrent) ~= "function" then
 		return false
 	end
