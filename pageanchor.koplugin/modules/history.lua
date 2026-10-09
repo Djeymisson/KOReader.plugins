@@ -206,13 +206,45 @@ end
 -- computed -- kept separate from getPercentageLabel so callers that need
 -- the number itself (e.g. to build a chapter-aware sentence) don't have to
 -- parse a pre-formatted "78.00%" string back apart.
+--
+-- Measured as a position, first page = 0% and last page = 100%, rather than
+-- page / total (which reads 0.2% on page 1). In books with hidden
+-- non-linear flows, a page inside a flow is measured against that flow --
+-- the main text for linear pages, the footnotes/endnotes flow for a page
+-- there -- the same split KOReader uses for their page numbers.
 function History.getBookPercentage(ui, location)
 	local page = History.getLocationPage(ui, location)
-	local page_count = History.getBookPageCount(ui)
-	if not page or not page_count then
+	if not page then
 		return nil
 	end
-	return math.max(0, math.min(100, page / page_count * 100))
+	local position, total = page, History.getBookPageCount(ui)
+	local document = ui and ui.document
+	local ok_flows, has_flows = false, false
+	if document and type(document.hasHiddenFlows) == "function" then
+		ok_flows, has_flows = pcall(document.hasHiddenFlows, document)
+	end
+	if ok_flows and has_flows then
+		local ok, flow_position, flow_total = pcall(function()
+			local flow = document:getPageFlow(page)
+			return document:getPageNumberInFlow(page), document:getTotalPagesInFlow(flow)
+		end)
+		if ok and tonumber(flow_position) and tonumber(flow_total) then
+			position, total = tonumber(flow_position), tonumber(flow_total)
+		end
+	end
+	return History.positionPercentage(position, total)
+end
+
+-- 1-based position out of total, as 0-100 with the first at 0 and the last
+-- at 100; nil without a usable total. A single-page span is 100%.
+function History.positionPercentage(position, total)
+	if not position or not total or total <= 0 then
+		return nil
+	end
+	if total == 1 then
+		return 100
+	end
+	return math.max(0, math.min(100, (position - 1) / (total - 1) * 100))
 end
 
 function History.getPercentageLabel(ui, location)
@@ -284,7 +316,7 @@ function History.getChapterInfo(ui, location)
 		title = title,
 		page = chapter_page,
 		total = chapter_total,
-		percentage = math.max(0, math.min(100, chapter_page / chapter_total * 100)),
+		percentage = History.positionPercentage(chapter_page, chapter_total) or 0,
 	}
 end
 

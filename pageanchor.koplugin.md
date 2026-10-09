@@ -1,4 +1,4 @@
-# Page Anchor ![Version](https://img.shields.io/badge/version-v1.14.2-blue)
+# Page Anchor ![Version](https://img.shields.io/badge/version-v1.15.2-blue)
 
 Page Anchor adds a compact floating control to KOReader's reading screen.
 When you jump somewhere else in the book, it pins your reading position as
@@ -23,6 +23,9 @@ replace your reading position.
   (`‹ 100`) or its distance in pages (`+23`, `−23`).
 - Marks the exact line you return to when it is known: the link you tapped
   and the footnote or target it led to, or any position in scroll mode.
+- A trail of the other places visited on the same trip: hold the arrow to
+  pick one.
+- Buttons at the bottom, middle or top of the screen.
 - Automatic side/arrow mirroring for right-to-left books.
 - Inactivity timeout that only hides the control: by default it shrinks to
   a narrow anchor tab glued to the side of the screen, and one tap on the
@@ -83,6 +86,8 @@ Quick Dock and hotkeys), in the **Reader** section of the actions list:
 - **Page Anchor: go to anchor / return point**: same as tapping the arrow:
   back to the anchor while away from it, back out to the return point once
   there.
+- **Page Anchor: show trail**: opens the list of places visited on this
+  trip (see below).
 - **Page Anchor: pin anchor here**: pins the anchor at the current
   position (see below).
 - **Page Anchor: discard anchor**: same as tapping the anchor button.
@@ -91,6 +96,16 @@ Quick Dock and hotkeys), in the **Reader** section of the actions list:
 
 Each action confirms itself with a short notification, following
 KOReader's own setting for notifications from gestures.
+
+## Trail
+
+Every place you leave by jumping during the same trip joins a trail (up to
+eight, one per page). Holding the arrow then opens a list: the arrow's own
+destination first, then the trail, newest first. Pick an entry to go there;
+the spot you leave joins the trail in turn, and the anchor stays where it
+is. Going back to the anchor and out again keeps the trail; it starts over
+with a new trip, and is cleared when you discard the anchor (undo brings it
+back). Without a trail yet, holding the arrow shows the usual hint.
 
 ## Pinned anchor
 
@@ -137,7 +152,7 @@ from 100 to 102) pins an anchor, while ordinary page turns never do.
 
 For tools that jump without recording a location, Page Anchor also keeps a
 reading reference. Reading forward advances it; one page turn back is
-tolerated; moving farther back or more than two page turns ahead offers a
+tolerated (configurable up to five with **Re-reading tolerance**); moving farther back or more than two page turns ahead offers a
 return to it. Right after you return to the anchor, or after a discard you
 haven't read past yet, up to five page turns back are tolerated instead, so
 re-reading a little never replaces the return point or voids the undo. Distances are counted in page turns, so two-page mode and
@@ -183,7 +198,8 @@ management.
 While reading, open **Page Anchor** in the navigation menu. You can:
 
 - enable or disable the floating control;
-- choose the button size (small, medium, large);
+- choose the button size (small, medium, large) and position (bottom,
+  middle, top);
 - show the destination next to the arrow: off (default), the destination
   page, or the distance in pages;
 - choose what the hold hint shows: page number or percentage, of the book or
@@ -192,6 +208,7 @@ While reading, open **Page Anchor** in the navigation menu. You can:
   whether hiding leaves an anchor tab or nothing at all, how long hidden
   buttons wait before the anchor is discarded (or never), and after how
   many pages read forward past the anchor the return point is dropped;
+- set how many page turns back count as re-reading;
 - pin the anchor at the current position;
 - show the floating buttons again after the timeout hid them;
 - discard the anchor and the return point and keep reading from the current
@@ -211,7 +228,7 @@ that mapping.
   document is reopened.
 - Jumps made by third-party tools that don't record a location in
   KOReader's history are only detected when they move farther than the
-  reading tolerance (one page turn back, two forward).
+  reading tolerance (one page turn back by default, two forward).
 
 ## Uninstalling
 

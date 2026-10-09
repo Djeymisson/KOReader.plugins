@@ -15,7 +15,7 @@ Each plugin is kept in its own `.koplugin/` folder and has a dedicated documenta
 | Selection Toolbar | v1.15.6 | `selectiontoolbar.koplugin/` | [selectiontoolbar.koplugin.md](./selectiontoolbar.koplugin.md) |
 | Quick Dock | v0.26.1 | `quickdock.koplugin/` | [quickdock.koplugin.md](./quickdock.koplugin.md) |
 | Image Browser | v0.2.7 | `imagebrowser.koplugin/` | [imagebrowser.koplugin.md](./imagebrowser.koplugin.md) |
-| Page Anchor | v1.14.2 | `pageanchor.koplugin/` | [pageanchor.koplugin.md](./pageanchor.koplugin.md) |
+| Page Anchor | v1.15.2 | `pageanchor.koplugin/` | [pageanchor.koplugin.md](./pageanchor.koplugin.md) |
 | Dictionary Explorer | v1.0.0 | `dictionaryexplorer.koplugin/` | [dictionaryexplorer.koplugin.md](./dictionaryexplorer.koplugin.md) |
 
 Each `.koplugin/` folder contains the files required for KOReader to load the plugin, usually including at least:

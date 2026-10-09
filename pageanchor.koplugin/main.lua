@@ -10,6 +10,7 @@ local BD = require("ui/bidi")
 local Blitbuffer = require("ffi/blitbuffer")
 local Button = require("ui/widget/button")
 local CenterContainer = require("ui/widget/container/centercontainer")
+local ButtonDialog = require("ui/widget/buttondialog")
 local ConfirmBox = require("ui/widget/confirmbox")
 local Device = require("device")
 local Dispatcher = require("dispatcher")
@@ -42,7 +43,7 @@ local Screen = Device.screen
 -- Constants
 -- ============================================================================
 
-local PLUGIN_VERSION = "v1.14.2"
+local PLUGIN_VERSION = "v1.15.2"
 
 local SETTING_ENABLED = "pageanchor_enabled"
 local SETTING_DESTINATION_FORMAT = "pageanchor_destination_format"
@@ -52,6 +53,8 @@ local SETTING_FORWARD_DISMISS_PAGES = "pageanchor_forward_dismiss_pages"
 local SETTING_HIDE_MODE = "pageanchor_hide_mode"
 local SETTING_HIDDEN_EXPIRY_SECONDS = "pageanchor_hidden_expiry_seconds"
 local SETTING_INLINE_LABEL = "pageanchor_inline_label"
+local SETTING_VERTICAL_POSITION = "pageanchor_vertical_position"
+local SETTING_REREAD_TURNS = "pageanchor_reread_turns"
 
 -- Format (page/percentage/text) and scope (book/chapter) used to be two
 -- separate settings ("Format" and "Relative to" screens), but scope only
@@ -83,6 +86,32 @@ local INLINE_LABEL_OPTIONS = {
 	{ value = INLINE_LABEL_PAGE, label = "Destination page" },
 	{ value = INLINE_LABEL_DISTANCE, label = "Distance in pages" },
 }
+-- Where the pill sits vertically. Each position comes with the screen band
+-- its touch zones cover (as ratios of the screen height), which must hold
+-- the pill and anything shown in place of it (the undo notice).
+local VERTICAL_BOTTOM = "bottom"
+local VERTICAL_MIDDLE = "middle"
+local VERTICAL_TOP = "top"
+local VERTICAL_POSITION_OPTIONS = {
+	{ value = VERTICAL_BOTTOM, label = "Bottom" },
+	{ value = VERTICAL_MIDDLE, label = "Middle" },
+	{ value = VERTICAL_TOP, label = "Top" },
+}
+local VERTICAL_ZONES = {
+	[VERTICAL_BOTTOM] = { ratio_y = 0.7, ratio_h = 0.3 },
+	[VERTICAL_MIDDLE] = { ratio_y = 0.35, ratio_h = 0.3 },
+	[VERTICAL_TOP] = { ratio_y = 0, ratio_h = 0.3 },
+}
+
+-- How many page turns back still count as re-reading rather than a jump
+-- (for tools that jump without announcing it; see trackPage).
+local REREAD_TURNS_OPTIONS = {
+	{ value = 1, label = "1 page turn" },
+	{ value = 2, label = "2 page turns" },
+	{ value = 3, label = "3 page turns" },
+	{ value = 5, label = "5 page turns" },
+}
+
 -- Base (Small) size of that text, scaled with the button size like the
 -- icon is.
 local BASE_INLINE_LABEL_FONT_SIZE = 16
@@ -209,13 +238,18 @@ local HINT_DISMISS_SECONDS = 3
 -- How long the undo notice stays up after a discard. The undo itself stays
 -- available afterwards from the menu and the gesture action.
 local UNDO_HINT_SECONDS = 3
+
+-- The trail: other places visited during the current trip (each spot left
+-- by a jump while away), offered when holding the arrow. Capped, oldest
+-- dropped first, one entry per page.
+local TRAIL_MAX = 8
 local HINT_FONT_SIZE = 18
 
 -- Page-turn tolerance for telling plain reading apart from a jump made by a
 -- tool that doesn't announce itself (see trackPage): one turn back is a
 -- re-read, up to two turns forward is reading on. Counted in page turns,
 -- not raw page numbers (see History.countPageTurns).
-local READING_TURNS_BEHIND = 1
+local READING_TURNS_BEHIND = 1 -- default; see getRereadTurns
 local READING_TURNS_AHEAD = 2
 -- Wider backward tolerance while there's a way back to protect: a pending
 -- return point (just came back to the anchor), or a discard you can still
@@ -481,7 +515,15 @@ function FloatingHistoryOverlay:paintTo(bb, x, y)
 	local widget_x = spec.side == "left"
 		and x + side_margin
 		or x + view_width - size.w - side_margin
-	local widget_y = y + view_height - margin - size.h
+	local position = self.owner:getVerticalPosition()
+	local widget_y
+	if position == VERTICAL_TOP then
+		widget_y = y + margin
+	elseif position == VERTICAL_MIDDLE then
+		widget_y = y + math.floor((view_height - size.h) / 2)
+	else
+		widget_y = y + view_height - margin - size.h
+	end
 
 	-- Kept for the hold hint's own positioning (see PageAnchor:showHint)
 	-- and the swipe zone: the pill's on-screen box and its side.
@@ -660,6 +702,7 @@ function PageAnchor:init()
 	self.pinned_location = nil
 	self.last_discarded = nil
 	self.discard_location = nil
+	self.trail = {}
 	self.button_specs = nil
 	self.button_specs_computed = false
 	self.hint_widget = nil
@@ -691,6 +734,12 @@ function PageAnchor:onDispatcherRegisterActions()
 		category = "none",
 		event = "PageAnchorSwitch",
 		title = _("Page Anchor: go to anchor / return point"),
+		reader = true,
+	})
+	Dispatcher:registerAction("pageanchor_trail", {
+		category = "none",
+		event = "PageAnchorShowTrail",
+		title = _("Page Anchor: show trail"),
 		reader = true,
 	})
 	Dispatcher:registerAction("pageanchor_pin", {
@@ -750,6 +799,13 @@ function PageAnchor:onPageAnchorDiscard()
 		self:discardWithUndo()
 	else
 		notify(_("No anchor to show"))
+	end
+	return true
+end
+
+function PageAnchor:onPageAnchorShowTrail()
+	if not self:showTrailDialog() then
+		notify(_("No other places visited yet"))
 	end
 	return true
 end
@@ -953,6 +1009,33 @@ end
 function PageAnchor:setInlineLabelMode(mode)
 	G_reader_settings:saveSetting(SETTING_INLINE_LABEL, mode)
 	self:_onDisplaySettingChanged()
+end
+
+function PageAnchor:getVerticalPosition()
+	local value = G_reader_settings:readSetting(SETTING_VERTICAL_POSITION)
+	return VERTICAL_ZONES[value] and value or VERTICAL_BOTTOM
+end
+
+function PageAnchor:setVerticalPosition(position)
+	G_reader_settings:saveSetting(SETTING_VERTICAL_POSITION, VERTICAL_ZONES[position] and position or VERTICAL_BOTTOM)
+	-- The old band needs repainting to clear the pill from where it was.
+	self:refresh()
+	if self._installed then
+		self:registerOverlayZones()
+	end
+	self:_onDisplaySettingChanged()
+end
+
+function PageAnchor:getRereadTurns()
+	local value = G_reader_settings:readSetting(SETTING_REREAD_TURNS)
+	if type(value) == "number" and value >= 1 then
+		return value
+	end
+	return READING_TURNS_BEHIND
+end
+
+function PageAnchor:setRereadTurns(turns)
+	G_reader_settings:saveSetting(SETTING_REREAD_TURNS, turns)
 end
 
 -- The text shown next to the arrow for `location`, or nil for none (the
@@ -1282,7 +1365,8 @@ end
 -- BUTTON_MARGIN's definition.
 function PageAnchor:getOverlayClearance(side)
 	local spec = self:getButtonSpecs()
-	if not spec or spec.side ~= side then
+	-- Only the bottom position shares the corner Quick Dock uses.
+	if not spec or spec.side ~= side or self:getVerticalPosition() ~= VERTICAL_BOTTOM then
 		return nil
 	end
 	local size = self.overlay:_getDock(spec).widget:getSize()
@@ -1313,10 +1397,144 @@ function PageAnchor:showButtonHint(action)
 		-- spec.label (built by getDestinationLabel) already reads
 		-- naturally after either verb, with or without a chapter title.
 		text = T(spec.action == ACTION_BACK and _("Back to %1") or _("Go to %1"), spec.label)
+		if self:showTrailDialog() then
+			return true
+		end
 	else
 		return false
 	end
 	self:showHint(text)
+	return true
+end
+
+-- Trail bookkeeping. Locations are compared by page: one entry per page,
+-- and a page already reachable some other way (the anchor, the return
+-- point, where you are) is left out when the trail is offered.
+local function samePage(ui, a, b)
+	local page_a = History.getLocationPage(ui, a)
+	return page_a ~= nil and page_a == History.getLocationPage(ui, b)
+end
+
+function PageAnchor:pushTrail(location)
+	if not location then
+		return
+	end
+	self:removeFromTrail(location)
+	table.insert(self.trail, location)
+	while #self.trail > TRAIL_MAX do
+		table.remove(self.trail, 1)
+	end
+end
+
+function PageAnchor:removeFromTrail(location)
+	for i = #self.trail, 1, -1 do
+		if samePage(self.ui, self.trail[i], location) then
+			table.remove(self.trail, i)
+		end
+	end
+end
+
+-- The trail as offered right now, newest first.
+function PageAnchor:getVisibleTrail()
+	local current = History.getCurrentLocation(self.ui)
+	local home = self.pinned_location or self.anchor or self.return_baseline_location
+	local visible = {}
+	for i = #self.trail, 1, -1 do
+		local location = self.trail[i]
+		if not samePage(self.ui, location, current)
+				and not samePage(self.ui, location, home)
+				and not samePage(self.ui, location, self.forward_target) then
+			visible[#visible + 1] = location
+		end
+	end
+	return visible
+end
+
+-- With a trail to offer: a list with the arrow's own destination first
+-- (worded like the hold hint), then the trail. Returns false when there's
+-- no trail, so holding the arrow shows the plain hint instead.
+function PageAnchor:showTrailDialog()
+	-- Built from the trip itself, not from the on-screen buttons, so it
+	-- works the same with the buttons minimized, hidden or disabled (the
+	-- gesture action opens it then too).
+	local action, target
+	if self.anchor then
+		action, target = ACTION_BACK, self.anchor
+	elseif self.forward_target then
+		action, target = ACTION_FORWARD, self.forward_target
+	end
+	local trail = self:getVisibleTrail()
+	if not action or #trail == 0 then
+		return false
+	end
+	local arrow_text = T(action == ACTION_BACK and _("Back to %1") or _("Go to %1"),
+		self:getDestinationLabel(target))
+	self:closeHint()
+	local dialog
+	local buttons = {
+		{
+			{
+				text = arrow_text,
+				callback = function()
+					UIManager:close(dialog)
+					self:activate(action)
+				end,
+			},
+		},
+	}
+	-- Indexed, not "for _, location": "_" is gettext in this file.
+	for i = 1, #trail do
+		local location = trail[i]
+		local label = self:getDestinationLabel(location)
+		buttons[#buttons + 1] = {
+			{
+				text = label,
+				callback = function()
+					UIManager:close(dialog)
+					self:goToTrail(location)
+				end,
+			},
+		}
+	end
+	dialog = ButtonDialog:new({
+		title = _("Places visited on this trip"),
+		title_align = "center",
+		buttons = buttons,
+	})
+	UIManager:show(dialog)
+	return true
+end
+
+-- Goes to a trail entry. The spot being left joins the trail, the entry
+-- becomes the return point, and the anchor stays where it is -- or, if
+-- you were standing on the anchor, it's re-armed there, as the forward
+-- button would.
+function PageAnchor:goToTrail(location)
+	if not location then
+		return false
+	end
+	local departure
+	if self.anchor then
+		departure = self:departureLocation(self.forward_target)
+	else
+		departure = self:departureLocation(self.return_baseline_location)
+	end
+	local at_anchor = self.anchor == nil
+	self:removeFromTrail(location)
+	if not at_anchor then
+		self:pushTrail(departure)
+	elseif self.forward_target then
+		self:pushTrail(self.forward_target)
+	end
+	self:goToLocation(location)
+	if at_anchor then
+		self.anchor = departure
+	end
+	self.forward_target = location
+	self.return_baseline_location = nil
+	self:removeFromTrail(location)
+	self:invalidateButtonSpecs()
+	self:showControls()
 	return true
 end
 
@@ -1390,15 +1608,20 @@ function PageAnchor:showHint(text, opts)
 		and margin
 		or screen_width - margin - panel_size.w
 	left = math.max(0, math.min(left, screen_width - panel_size.w))
+	-- At the top of the screen the hint goes below the pill (and an in-place
+	-- notice hangs from the pill's top edge); elsewhere above it (and
+	-- bottom-aligned with it). In place keeps it inside Page Anchor's own
+	-- touch zone, which is what makes on_tap reachable at all.
+	local at_top = self:getVerticalPosition() == VERTICAL_TOP
 	local top
 	if opts.in_place then
-		-- Bottom-aligned with where the pill was: inside Page Anchor's own
-		-- touch zone, which is what makes on_tap reachable at all.
-		top = pill_dimen.y + pill_dimen.h - panel_size.h
+		top = at_top and pill_dimen.y or (pill_dimen.y + pill_dimen.h - panel_size.h)
+	elseif at_top then
+		top = pill_dimen.y + pill_dimen.h + Size.padding.default
 	else
 		top = pill_dimen.y - Size.padding.default - panel_size.h
 	end
-	top = math.max(0, top)
+	top = math.max(0, math.min(top, Screen:getHeight() - panel_size.h))
 
 	local hint = HintToast:new({
 		owner = self,
@@ -1447,12 +1670,15 @@ function PageAnchor:closeHint()
 	end
 end
 
+-- The band the pill lives in (the same one its touch zones cover).
 function PageAnchor:getRefreshRegion()
+	local zone = VERTICAL_ZONES[self:getVerticalPosition()]
+	local height = Screen:getHeight()
 	return Geom:new({
 		x = 0,
-		y = math.floor(Screen:getHeight() * 0.72),
+		y = math.floor(height * zone.ratio_y),
 		w = Screen:getWidth(),
-		h = math.ceil(Screen:getHeight() * 0.28),
+		h = math.ceil(height * zone.ratio_h),
 	})
 end
 
@@ -1488,12 +1714,34 @@ function PageAnchor:installOverlay()
 	local plugin = self
 	view.paintTo = function(reader_view, bb, x, y)
 		plugin._original_view_paintTo(reader_view, bb, x, y)
-		plugin.overlay:paintTo(bb, x, y)
+		-- Only on screen. The view also gets painted into other buffers to
+		-- capture the page itself -- ReaderThumbnail does it for every
+		-- Page browser / Book map thumbnail -- and the floating buttons
+		-- don't belong to the page. Skipping those also keeps their
+		-- coordinates out of the buttons' hit areas.
+		if bb == Screen.bb then
+			plugin.overlay:paintTo(bb, x, y)
+		end
 	end
 
 	self:patchReaderLink()
 
+	self:registerOverlayZones()
+end
+
+-- Registers (or re-registers: same ids replace the old ones) the tap, hold
+-- and swipe zones over the pill's band. They take precedence over every
+-- zone known at that moment -- KOReader's own and other plugins' -- and
+-- just pass through anything not on the pill. Called at install, again
+-- once the book is ready (some plugins only register their zones then, and
+-- would otherwise end up above ours), and when the position changes.
+function PageAnchor:registerOverlayZones()
+	if not self.ui or not self.ui.registerTouchZones then
+		return
+	end
+	local own = { pageanchor_tap = true, pageanchor_hold = true, pageanchor_swipe = true }
 	local overrides = {}
+	local seen = {}
 	local known_overrides = {
 		"tap_link",
 		"readerconfigmenu_ext_tap",
@@ -1504,23 +1752,23 @@ function PageAnchor:installOverlay()
 		"tap_backward",
 		"readerfooter_tap",
 	}
-	local override_ids = {}
 	for _, id in ipairs(known_overrides) do
-		override_ids[id] = true
+		seen[id] = true
 		overrides[#overrides + 1] = id
 	end
-	if self.ui._zones then
-		for id in pairs(self.ui._zones) do
-			if not override_ids[id] then
-				overrides[#overrides + 1] = id
-			end
+	for id in pairs(self.ui._zones or {}) do
+		if not seen[id] and not own[id] then
+			seen[id] = true
+			overrides[#overrides + 1] = id
 		end
 	end
+	local band = VERTICAL_ZONES[self:getVerticalPosition()]
+	local screen_zone = { ratio_x = 0, ratio_y = band.ratio_y, ratio_w = 1, ratio_h = band.ratio_h }
 	self.ui:registerTouchZones({
 		{
 			id = "pageanchor_tap",
 			ges = "tap",
-			screen_zone = { ratio_x = 0, ratio_y = 0.7, ratio_w = 1, ratio_h = 0.3 },
+			screen_zone = screen_zone,
 			handler = function(gesture)
 				return self.overlay:handleTap(gesture)
 			end,
@@ -1529,7 +1777,7 @@ function PageAnchor:installOverlay()
 		{
 			id = "pageanchor_hold",
 			ges = "hold",
-			screen_zone = { ratio_x = 0, ratio_y = 0.7, ratio_w = 1, ratio_h = 0.3 },
+			screen_zone = screen_zone,
 			handler = function(gesture)
 				return self.overlay:handleHold(gesture)
 			end,
@@ -1538,7 +1786,7 @@ function PageAnchor:installOverlay()
 		{
 			id = "pageanchor_swipe",
 			ges = "swipe",
-			screen_zone = { ratio_x = 0, ratio_y = 0.7, ratio_w = 1, ratio_h = 0.3 },
+			screen_zone = screen_zone,
 			handler = function(gesture)
 				return self.overlay:handleSwipe(gesture)
 			end,
@@ -1718,8 +1966,9 @@ function PageAnchor:isJumpFrom(location, page)
 	if not from_page then
 		return false
 	end
-	local turns = History.countPageTurns(self.ui, from_page, page, READING_TURNS_AHEAD)
-	return not (turns and turns >= -READING_TURNS_BEHIND)
+	local turns_behind = self:getRereadTurns()
+	local turns = History.countPageTurns(self.ui, from_page, page, math.max(READING_TURNS_AHEAD, turns_behind))
+	return not (turns and turns >= -turns_behind and turns <= READING_TURNS_AHEAD)
 end
 
 -- Pins a new anchor with the given location as the way out, and shows the
@@ -1727,6 +1976,14 @@ end
 function PageAnchor:armAnchor(anchor_location, current_location)
 	-- A new trip supersedes whatever was discarded before it.
 	self.last_discarded = nil
+	if self.forward_target then
+		-- Leaving again while a return point was pending (back at the
+		-- anchor): same trip, and that old return point stays reachable
+		-- from the trail.
+		self:pushTrail(self.forward_target)
+	elseif not self.anchor then
+		self.trail = {}
+	end
 	self.anchor = anchor_location
 	self.forward_target = current_location
 	self.return_baseline_location = nil
@@ -1820,6 +2077,7 @@ function PageAnchor:activate(action)
 		self.anchor = departure_location
 		self.forward_target = target_location
 		self.return_baseline_location = nil
+		self:removeFromTrail(target_location)
 		self:invalidateButtonSpecs()
 		self:showControls()
 		return true
@@ -1888,6 +2146,11 @@ function PageAnchor:trackPage(page)
 			local previous_target = self.forward_target
 			self.forward_target = self:followLocation(previous_target, current_location)
 			if jump_origin or self:isJumpFrom(previous_target, page) then
+				-- An announced jump captured where it left from at that
+				-- moment (a PDF's current pan/zoom, a link's exact line);
+				-- the return point may lag behind that, so it's only the
+				-- fallback for jumps that weren't announced.
+				self:pushTrail(jump_origin or previous_target)
 				self:showControls()
 			elseif not self.controls_hidden then
 				self:scheduleAutoDismiss()
@@ -1903,7 +2166,10 @@ function PageAnchor:trackPage(page)
 
 	-- No announced jump: fall back to distance, for tools that move without
 	-- going through ReaderLink's history (some third-party plugins).
-	local turns_behind = self:isWayBackProtected(page) and READING_TURNS_BEHIND_PROTECTED or READING_TURNS_BEHIND
+	local turns_behind = self:getRereadTurns()
+	if self:isWayBackProtected(page) then
+		turns_behind = math.max(turns_behind, READING_TURNS_BEHIND_PROTECTED)
+	end
 	local turns = History.countPageTurns(self.ui, self:getReferencePage(), page,
 		math.max(READING_TURNS_AHEAD, turns_behind))
 	if turns and turns >= -turns_behind and turns <= READING_TURNS_AHEAD then
@@ -1972,6 +2238,7 @@ function PageAnchor:trackPinned(page, current_location, jump_origin)
 	end
 	if not self.anchor then
 		self.anchor = self.pinned_location
+		self:pushTrail(self.forward_target)
 		self.forward_target = current_location
 		self.return_baseline_location = nil
 		self:showControls()
@@ -1980,6 +2247,7 @@ function PageAnchor:trackPinned(page, current_location, jump_origin)
 	local previous_target = self.forward_target
 	self.forward_target = self:followLocation(previous_target, current_location)
 	if jump_origin or self:isJumpFrom(previous_target, page) then
+		self:pushTrail(jump_origin or previous_target) -- see the same in trackPage
 		self:showControls()
 	elseif not self.controls_hidden then
 		self:scheduleAutoDismiss()
@@ -1997,6 +2265,7 @@ function PageAnchor:pinHere()
 	self:cancelAutoDismiss()
 	self:cancelHiddenExpiry()
 	self.last_discarded = nil
+	self.trail = {}
 	self.pinned_location = location
 	self.anchor = nil
 	self.forward_target = nil
@@ -2008,6 +2277,14 @@ function PageAnchor:pinHere()
 	return true
 end
 
+local function copyList(list)
+	local copy = {}
+	for i = 1, #list do
+		copy[i] = list[i]
+	end
+	return copy
+end
+
 -- Everything restoreDiscarded needs to put a discarded trip back.
 function PageAnchor:snapshotTargets()
 	return {
@@ -2017,6 +2294,7 @@ function PageAnchor:snapshotTargets()
 		pinned_location = self.pinned_location,
 		reference_location = self.reference_location,
 		reference_page = self.reference_page,
+		trail = copyList(self.trail),
 	}
 end
 
@@ -2038,6 +2316,7 @@ function PageAnchor:restoreDiscarded()
 	self.forward_target = snapshot.forward_target
 	self.return_baseline_location = snapshot.return_baseline_location
 	self.pinned_location = snapshot.pinned_location
+	self.trail = snapshot.trail or {}
 	self:setReference(snapshot.reference_page, snapshot.reference_location)
 	-- Where you are now decides how the snapshot fits: the anchor ("home")
 	-- is the pinned spot, the pending anchor, or -- for a snapshot taken
@@ -2096,6 +2375,13 @@ function PageAnchor:discardWithUndo(text)
 end
 
 function PageAnchor:onReaderReady()
+	-- After every module's own ReaderReady handling, so zones registered
+	-- there are known too (see registerOverlayZones).
+	UIManager:nextTick(function()
+		if self._installed then
+			self:registerOverlayZones()
+		end
+	end)
 	self:trackPage(self.ui:getCurrentPage())
 end
 
@@ -2154,6 +2440,7 @@ function PageAnchor:clearHistory()
 	self.forward_target = nil
 	self.return_baseline_location = nil
 	self.pinned_location = nil
+	self.trail = {}
 	self.controls_hidden = false
 	self:setReference(self.ui:getCurrentPage(), History.getCurrentLocation(self.ui))
 	self:invalidateButtonSpecs()
@@ -2223,6 +2510,15 @@ function PageAnchor:addToMainMenu(menu_items)
 					BUTTON_SIZE_OPTIONS,
 					function() return self:getButtonSize() end,
 					function(value) self:setButtonSize(value) end
+				),
+			},
+			{
+				text = _("Button position"),
+				help_text = _("Where on the screen the floating buttons sit: at the bottom (the default), in the middle, or at the top. They always stay on the side that leads to the destination."),
+				sub_item_table = buildValueRadioItems(
+					VERTICAL_POSITION_OPTIONS,
+					function() return self:getVerticalPosition() end,
+					function(value) self:setVerticalPosition(value) end
 				),
 			},
 			{
@@ -2296,6 +2592,15 @@ function PageAnchor:addToMainMenu(menu_items)
 						),
 					},
 				},
+			},
+			{
+				text = _("Re-reading tolerance"),
+				help_text = _("How many page turns back still count as re-reading instead of a jump, for tools that move without telling KOReader. Standard navigation (table of contents, go to page, links...) always offers the way back."),
+				sub_item_table = buildValueRadioItems(
+					REREAD_TURNS_OPTIONS,
+					function() return self:getRereadTurns() end,
+					function(value) self:setRereadTurns(value) end
+				),
 			},
 			{
 				text = _("Pin anchor here"),

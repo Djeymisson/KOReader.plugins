@@ -46,6 +46,17 @@ local pt = {
 	["Medium"] = "Médio",
 	["Large"] = "Grande",
 
+	["Button position"] = "Posição dos botões",
+	["Where on the screen the floating buttons sit: at the bottom (the default), in the middle, or at the top. They always stay on the side that leads to the destination."] = "Onde os botões flutuantes ficam na tela: embaixo (o padrão), no meio ou no topo. Eles sempre ficam do lado que leva ao destino.",
+	["Middle"] = "Meio",
+
+	["Re-reading tolerance"] = "Tolerância de releitura",
+	["How many page turns back still count as re-reading instead of a jump, for tools that move without telling KOReader. Standard navigation (table of contents, go to page, links...) always offers the way back."] = "Quantas viradas de página para trás ainda contam como releitura e não como salto, para ferramentas que navegam sem avisar o KOReader. A navegação padrão (índice, ir para página, links...) sempre oferece o caminho de volta.",
+	["1 page turn"] = "1 virada de página",
+	["2 page turns"] = "2 viradas de página",
+	["3 page turns"] = "3 viradas de página",
+	["5 page turns"] = "5 viradas de página",
+
 	["Show destination on button"] = "Mostrar destino no botão",
 	["Writes where the arrow leads next to it, so you don't have to hold the button to find out: the destination page, or how many pages away it is."] = "Escreve ao lado da seta para onde ela leva, para você não precisar segurar o botão: a página de destino, ou a quantas páginas de distância ela está.",
 	["Destination page"] = "Página de destino",
@@ -105,6 +116,9 @@ local pt = {
 	["No anchor to show"] = "Nenhuma âncora para mostrar",
 	["Anchor discarded"] = "Âncora descartada",
 
+	["Page Anchor: show trail"] = "Page Anchor: mostrar trilha",
+	["Places visited on this trip"] = "Lugares visitados nesta ida",
+	["No other places visited yet"] = "Nenhum outro lugar visitado ainda",
 	["Page Anchor: pin anchor here"] = "Page Anchor: fixar âncora aqui",
 	["Page Anchor: restore discarded anchor"] = "Page Anchor: restaurar âncora descartada",
 	["Anchor pinned here"] = "Âncora fixada aqui",
