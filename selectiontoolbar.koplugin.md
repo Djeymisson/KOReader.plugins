@@ -1,4 +1,4 @@
-# Selection Toolbar ![Version](https://img.shields.io/badge/version-v1.12.0-blue)
+# Selection Toolbar ![Version](https://img.shields.io/badge/version-v1.15.6-blue)
 
 A KOReader plugin that replaces the centered text-selection menu with a compact toolbar displayed near the selected text, and adds draggable handles and a margin line marker to adjust and visualize the selection.
 
@@ -32,6 +32,23 @@ Copy the plugin folder to KOReader's `plugins` directory:
 selectiontoolbar.koplugin/
 ├── _meta.lua
 ├── main.lua
+├── selectiontoolbar_l10n.lua
+├── modules/
+│   ├── constants.lua
+│   ├── handle_drag.lua
+│   ├── handle_shapes.lua
+│   ├── helpers.lua
+│   ├── icons.lua
+│   ├── marks.lua
+│   ├── marks_preview.lua
+│   ├── menu.lua
+│   ├── metrics.lua
+│   ├── placement.lua
+│   ├── preview.lua
+│   ├── settings.lua
+│   ├── shadow.lua
+│   ├── toolbar.lua
+│   └── toolbar_dialog.lua
 └── icons/
     ├── add_note.svg
     ├── copy.svg
@@ -62,8 +79,8 @@ In the reader, open:
 
 Options:
 
-- `Use compact selection toolbar`: enables/disables replacement of the default menu.
-- `Style presets`: ready-made looks for the toolbar and the selection marks, applied in one tap. While this submenu is open, the preview shows a selection with its handles and line marker, and the toolbar below it.
+- `Use compact selection toolbar`: enables/disables replacement of the default menu. While it is off, the other submenus are disabled, as KOReader's own selection menu is used.
+- `Style preset: <name>`: ready-made looks for the toolbar, the handles and the line marker, applied in one tap. While this submenu is open, the preview shows a selection with its handles and line marker, and the toolbar below it.
   - `Default`: the plugin's original look.
   - `Discreet`: thin border, rounded corners, no shadow and lines only between groups of actions; bracket handles and a thin line marker.
   - `Classic`: rectangular toolbar with a medium border, the standard shadow and separators between the buttons; lollipop handles.
@@ -71,8 +88,14 @@ Options:
   - `Custom` (not selectable): checked when the current look matches none of the presets.
 
   A preset sets the button density, icon size, shape, border, separators, shadow, handle style, outline and size, and the line marker thickness. The toolbar position, the visible actions, whether handles and line marker are shown, and the line marker side and distance are left as they are. No preset is stored: changing any of these settings afterwards simply makes the look custom.
-- `Appearance`: controls the toolbar's visual presentation. While this submenu (or `Visible actions`) is open, a live preview follows each change: a sheet titled `Preview`, docked across the bottom of the screen with rounded top corners, a thick border and a dithered shadow cast upwards over the page, where the toolbar lies over a few lines of sample text, as it would over the book, so borders, shadow and separators can be judged against text. When the menu leaves little room, fewer sample lines are shown. The preview is hidden while a dialog (such as an option's help) is shown, or when the menu is too tall to leave room for it, and it closes when you leave these submenus.
-  - `Toolbar position`: where the toolbar is shown.
+- `Actions: N of M`: which actions appear in the toolbar, in which order, and whether the toolbar is shortened with a More button. The item shows how many actions are enabled.
+  - One checkbox per action, first: enable/disable each toolbar action individually.
+  - `Arrange actions and groups`: reorder the actions, and move the three group separators between them. Groups show as lines with `Toolbar appearance > Separators` set to `Between groups`; the item's help says whether they show now, and moving a separator while they do not shows a reminder. A separator moved to the start or the end of the list, or next to another one, is not used, so groups are added and removed just by moving separators. Hidden actions are listed dimmed and keep their place. Separators never show around hidden actions or actions KOReader leaves out.
+  - `Shorten the toolbar: <choice>`: `No` (default) shows every visible action in one row. With `To 4 actions`, `To 5 actions` or `To 6 actions`, only the first actions of the order are shown, followed by a More button (`…`) that shows the others in a second row, and hides them again. More is only added when it saves room: if a single action would be left for the second row, it is shown in the first one instead. The preview shows the toolbar as it first opens, with More not expanded.
+  - `Show all actions`: re-enables every action.
+  - `Restore default order`: annotation (Select, Highlight, Add note), lookup (Dictionary, Wikipedia, Translate, Search) and tools (Copy, View HTML, Generate QR code) groups.
+- `Toolbar appearance`: where the toolbar is shown and how it looks, in three blocks: position; button density and icon size; shape, border, shadow and separators (the last two blocks are what the style presets change). While this submenu (or `Actions`) is open, a live preview follows each change: a sheet titled `Preview`, docked across the bottom of the screen with rounded top corners, a thick border and a dithered shadow cast upwards over the page, where the toolbar lies over a few lines of sample text, as it would over the book, so borders, shadow and separators can be judged against text. When the menu leaves little room, fewer sample lines are shown. The preview is hidden while a dialog (such as an option's help) is shown, or when the menu is too tall to leave room for it, and it closes when you leave these submenus.
+  - `Position`: where the toolbar is shown.
     - `Near the selection` (default): right below the selection, or above it when there is no room.
     - `Fixed at screen edge`: centered at the bottom edge of the screen, or at the top edge when the selection's center is in the lower half (or when only the top edge keeps the toolbar clear of the selection and its handles). When the selection fills the screen, the toolbar is pinned as described in the features above, in both modes.
   - `Button density`: size and spacing of the toolbar buttons.
@@ -82,19 +105,19 @@ Options:
 
     If the enabled actions do not fit across the screen at the chosen density, the buttons (and, if needed, the icons) are narrowed so the toolbar always stays on screen.
   - `Icon size`: `Small`, `Normal` (default) or `Large` icons, independently of the button density. An icon never grows beyond its button.
-  - `Toolbar shape`: how rounded the toolbar corners are.
+  - `Shape`: how rounded the toolbar corners are.
     - `Rectangle`: square corners, the most sober look.
     - `Rounded corners` (default): slightly rounded corners, as KOReader's own dialogs.
     - `Capsule`: fully rounded ends, also with the More row shown. The toolbar gets a little wider, so the buttons (and their tap feedback) stay inside the curves; with two rows the curves are larger, so the expanded toolbar is wider still.
   - `Border`: `Thin`, `Medium` (default) or `Thick` toolbar outline. A thick border helps the toolbar stand out over the text, especially with the shadow turned off.
-  - `Separators`: `Between all buttons` (default) draws a thin line between each pair of buttons; `Between groups` only between groups of actions (see `Arrange actions and groups` below); `None` removes them for a lighter look, including the line between the two rows when More is expanded. The toolbar keeps the same size in all three.
-  - `Toolbar shadow`: the dithered shadow along the right and bottom edges, which follows the toolbar's shape.
+  - `Shadow`: the dithered shadow along the right and bottom edges, which follows the toolbar's shape.
     - `No shadow`: a flat toolbar; a stronger border helps it stand out over the text.
     - `Subtle`: a shorter, lighter shadow.
     - `Standard` (default): the original shadow. The `Show toolbar shadow` on/off setting of earlier versions is read as `Standard` or `No shadow`.
-- `Selection marks`: controls the handles and the line marker. While this submenu (or one of its option lists) is open, the preview shows a sample text with a selection across two lines, drawn in your selection style (including the highlight color, when `Use highlight color for selection` is enabled), with the handles and the line marker as they will look on the page.
+  - `Separators`: `Between all buttons` (default) draws a thin line between each pair of buttons; `Between groups` only between groups of actions (see `Arrange actions and groups` in `Actions`); `None` removes them for a lighter look, including the line between the two rows when More is expanded. The toolbar keeps the same size in all three.
+- `Handles and line marker`: the selection handles and the line marker beside the selected lines. While this submenu (or one of its option lists) is open, the preview shows a sample text with a selection across two lines, drawn in your selection style (including the highlight color, when `Use highlight color for selection` is enabled), with the handles and the line marker as they will look on the page.
   - `Show selection handles`: shows the draggable start/end handles (touch devices only).
-  - `Handle style`: how the handles are drawn.
+  - `Handle style: <style>`: how the handles are drawn.
     - `Lollipop` (default): a bar at the selection edge with a round knob above the start and below the end.
     - `Teardrop`: a drop below the line, pointing at the selection edge, as on Android.
     - `Brackets`: a `[` at the start and a `]` at the end. The most discreet style.
@@ -102,18 +125,19 @@ Options:
     - `High-contrast outline`: draws lollipops, teardrops and flag tabs as a black outline over white, readable over dark or highlighted text. Not available for brackets, whose strokes are too thin to outline. A `High-contrast wireframe` style saved by v1.3.0 is read as a lollipop with this outline.
 
     All styles share the same touch area around the handle, so the style changes only the look, not how easy the handles are to grab.
-  - `Handle size`: `Small`, `Normal` (default) or `Large` handles. Only the drawing changes: the touch area keeps its size, so small handles are as easy to grab.
+  - `Handle size: <size>`: `Small`, `Normal` (default) or `Large` handles. Only the drawing changes: the touch area keeps its size, so small handles are as easy to grab.
   - `Show line marker`: shows the vertical line beside the selected lines.
   - `Line marker in right margin`: draws the line marker in the right margin instead of the left one (mirrored for right-to-left interface languages).
-  - `Line marker thickness`: `Thin`, `Medium` (default) or `Thick`.
-  - `Line marker distance`: `Close to the text`, `Normal` (default) or `Far from the text`. The marker always stays in the page margin: with a narrow margin it is drawn closer to the text, then thinner, and it is not drawn on a page without margin.
-- `Visible actions`: lets you choose which actions appear in the toolbar, and in which order.
-  - `Arrange actions and groups`: reorder the actions, and move the three group separators between them. Groups show as lines with `Separators` set to `Between groups`. A separator moved to the start or the end of the list, or next to another one, is not used, so groups are added and removed just by moving separators. Hidden actions are listed dimmed and keep their place. Separators never show around hidden actions or actions KOReader leaves out.
-  - `Actions before More`: `All actions` (default) shows every visible action in one row. With `4 actions`, `5 actions` or `6 actions`, only the first actions of the order are shown, followed by a More button (`…`) that shows the others in a second row, and hides them again. More is only added when it saves room: if a single action would be left for the second row, it is shown in the first one instead. The preview shows the toolbar as it first opens, with More not expanded.
-  - `Restore default order`: annotation (Select, Highlight, Add note), lookup (Dictionary, Wikipedia, Translate, Search) and tools (Copy, View HTML, Generate QR code) groups.
-  - `Show all actions`: restores all actions.
-  - Other items: enable/disable each toolbar action individually.
-- `Version: vX.Y.Z`: shows the installed plugin version.
+  - `Line marker thickness: <thickness>`: `Thin`, `Medium` (default) or `Thick`.
+  - `Line marker distance: <distance>`: `Close to the text`, `Normal` (default) or `Far from the text`. The marker always stays in the page margin: with a narrow margin it is drawn closer to the text, then thinner, and it is not drawn on a page without margin.
+- `Restore all defaults`: after a confirmation, restores every setting, the visible actions and their order. Whether the compact toolbar is turned on is kept.
+- `About`: shows the plugin name, its installed version and a short description.
+
+Each item that opens a list of choices shows the current choice in its name, such as `Position: Near the selection`, so the settings can be checked without opening each list.
+
+## Localization
+
+Selection Toolbar follows KOReader's active interface language. Its menu, help texts, preview and messages are translated into Brazilian and European Portuguese in `selectiontoolbar_l10n.lua`. Terms KOReader already translates (the action names, `Thin`, `Medium`, `Thick`, `None`, `Default`, `About`, `Version`) come from KOReader's own catalog, in every language it supports. In other interface languages, the plugin-specific texts fall back to English. A change of interface language applies after restarting KOReader, as for KOReader itself.
 
 ## Icons
 
@@ -156,6 +180,26 @@ Screen refresh and battery:
 - the selection boxes are only requested again from crengine when the selection or the view changed, not on every reader repaint while the toolbar is open; icon file checks are cached per path.
 
 When the plugin is closed, the patch applied to the highlight menu and to `IconWidget` is restored when it is still the active Selection Toolbar patch.
+
+## Code organization
+
+- `main.lua`: plugin lifecycle (patching and restoring KOReader on open and close) and module loading. Modules are loaded by path, so their generic names cannot clash with other plugins' modules. Each gets the constants (`C`) and the shared helpers (`lib`); the method modules add their methods to the plugin, and loading stops with an error if two of them define the same method.
+- `modules/constants.lua`: settings keys, the choices of each setting with their sizes, the style presets, the actions and their default order, the handle styles and the preview modes.
+- `modules/helpers.lua`: reading multiple-choice settings, telling a live selection from a saved highlight, and refreshing screen areas.
+- `modules/metrics.lua`: toolbar button and handle sizes in screen pixels, cached per setting combination.
+- `modules/shadow.lua`: the dithered toolbar shadow and `ShadowedPopup`, the widget that paints a popup with it.
+- `modules/toolbar_dialog.lua`: `ShadowedButtonDialog`, the dialog the toolbar is shown in, with its shape, border and the gestures it passes on to the handles.
+- `modules/handle_shapes.lua`: the shapes every handle style is drawn from, shared by the marks on the page and by their preview.
+- `modules/settings.lua`: the saved settings as plugin methods: getters with validation and defaults, setters, style presets, visible actions, action order and resets.
+- `modules/icons.lua`: icon lookup in the plugin folder and the `IconWidget` patch.
+- `modules/toolbar.lua`: the `ReaderHighlight` patch, the toolbar buttons and their actions, the More button and the toolbar dialog.
+- `modules/placement.lua`: where the toolbar goes on screen: near the selection, at a screen edge, or pinned when the selection fills the screen.
+- `modules/marks.lua`: where the handles and the line marker go on the page, and their painting by a `ReaderView` module.
+- `modules/handle_drag.lua`: dragging the handles: gesture routing, moving the selection end, and the partial screen refreshes.
+- `modules/preview.lua`: `ToolbarPreview`, the live preview sheet shown by the settings menu.
+- `modules/marks_preview.lua`: the handles and the line marker in that preview, over a sample text.
+- `modules/menu.lua`: the settings menu and the dialog to arrange the actions and their groups.
+- `selectiontoolbar_l10n.lua`: Portuguese translations for plugin-specific text, with KOReader gettext fallback.
 
 ## Known limitations
 
