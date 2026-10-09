@@ -42,7 +42,7 @@ local Screen = Device.screen
 -- Constants
 -- ============================================================================
 
-local PLUGIN_VERSION = "v1.11.4"
+local PLUGIN_VERSION = "v1.13.1"
 
 local SETTING_ENABLED = "pageanchor_enabled"
 local SETTING_DESTINATION_FORMAT = "pageanchor_destination_format"
@@ -51,6 +51,7 @@ local SETTING_AUTO_DISMISS_SECONDS = "pageanchor_auto_dismiss_seconds"
 local SETTING_FORWARD_DISMISS_PAGES = "pageanchor_forward_dismiss_pages"
 local SETTING_HIDE_MODE = "pageanchor_hide_mode"
 local SETTING_HIDDEN_EXPIRY_SECONDS = "pageanchor_hidden_expiry_seconds"
+local SETTING_INLINE_LABEL = "pageanchor_inline_label"
 
 -- Format (page/percentage/text) and scope (book/chapter) used to be two
 -- separate settings ("Format" and "Relative to" screens), but scope only
@@ -69,6 +70,22 @@ local DESTINATION_FORMAT_OPTIONS = {
 	{ value = DESTINATION_FORMAT_PERCENTAGE_CHAPTER, label = "Percentage in this chapter" },
 	{ value = DESTINATION_FORMAT_TEXT_ONLY, label = "Text only (chapter title)" },
 }
+
+-- Optional text next to the arrow, so the destination is visible without
+-- holding the button: its page number (the same label the hold hint uses,
+-- page-map aware), or how many pages away it is. Off by default -- the
+-- icon-only pill stays the compact one.
+local INLINE_LABEL_OFF = "off"
+local INLINE_LABEL_PAGE = "page"
+local INLINE_LABEL_DISTANCE = "distance"
+local INLINE_LABEL_OPTIONS = {
+	{ value = INLINE_LABEL_OFF, label = "Off" },
+	{ value = INLINE_LABEL_PAGE, label = "Destination page" },
+	{ value = INLINE_LABEL_DISTANCE, label = "Distance in pages" },
+}
+-- Base (Small) size of that text, scaled with the button size like the
+-- icon is.
+local BASE_INLINE_LABEL_FONT_SIZE = 16
 
 -- "value = 0" means "Off" for both: it reads clearly in the menu and avoids
 -- a separate nil-vs-zero special case in the getters below.
@@ -222,16 +239,21 @@ function FloatingHistoryOverlay:_makeDock(spec)
 	if spec.minimized then
 		return self:_makeTab(spec, metrics)
 	end
-	local action_button = Button:new({
-		icon = ICONS_DIR .. spec.icon,
-		icon_width = metrics.icon_size,
-		icon_height = metrics.icon_size,
-		width = metrics.segment_width,
-		height = metrics.height,
-		bordersize = 0,
-		margin = 0,
-		padding = 0,
-	})
+	local action_button
+	if spec.inline_text then
+		action_button = self:_makeLabeledSegment(spec, metrics)
+	else
+		action_button = Button:new({
+			icon = ICONS_DIR .. spec.icon,
+			icon_width = metrics.icon_size,
+			icon_height = metrics.icon_size,
+			width = metrics.segment_width,
+			height = metrics.height,
+			bordersize = 0,
+			margin = 0,
+			padding = 0,
+		})
+	end
 	-- Marked (you're back at the anchor) uses Button's own preselect/invert
 	-- treatment, covering this whole square instead of just the icon.
 	local dismiss_button = Button:new({
@@ -283,6 +305,36 @@ function FloatingHistoryOverlay:_makeDock(spec)
 		dismiss_x = metrics.padding + Size.border.button + dismiss_offset,
 		dismiss_w = dismiss_size.w,
 	}
+end
+
+-- The arrow segment with the destination written next to it. The arrow
+-- stays on the outer edge, pointing where it leads ("‹ 100" on the left,
+-- "100 ›" on the right), and the segment grows with the text but never
+-- gets narrower than the icon-only one. A plain group rather than a
+-- Button, since Button shows an icon or a text, not both; taps are
+-- hit-tested by the overlay anyway (see paintTo).
+function FloatingHistoryOverlay:_makeLabeledSegment(spec, metrics)
+	local icon = IconWidget:new({
+		icon = ICONS_DIR .. spec.icon,
+		width = metrics.icon_size,
+		height = metrics.icon_size,
+	})
+	local label = TextWidget:new({
+		text = spec.inline_text,
+		face = Font:getFace("cfont", metrics.label_font_size),
+		bold = true,
+	})
+	local gap = HorizontalSpan:new({ width = Size.padding.small })
+	local row = spec.side == "left" and { icon, gap, label } or { label, gap, icon }
+	row.allow_mirroring = false
+	local group = HorizontalGroup:new(row)
+	return CenterContainer:new({
+		dimen = Geom:new({
+			w = math.max(metrics.segment_width, group:getSize().w + 2 * metrics.side_padding),
+			h = metrics.height,
+		}),
+		group,
+	})
 end
 
 -- The minimized form: a narrow tab glued to the screen edge, holding just
@@ -373,6 +425,7 @@ function FloatingHistoryOverlay:_getDock(spec)
 		spec.action, spec.side, spec.icon,
 		spec.dismiss_marked and "marked" or "plain",
 		spec.minimized and "minimized" or "full",
+		spec.inline_text or "",
 		self.owner:getButtonSize(),
 	}, ":")
 	if key ~= self.dock_key then
@@ -820,6 +873,8 @@ function PageAnchor:getButtonMetrics()
 		icon_size = scaleMetric(BASE_BUTTON_ICON_SIZE, factor),
 		height = height,
 		segment_width = height + 2 * scaleMetric(BASE_BUTTON_SIDE_PADDING, factor),
+		side_padding = scaleMetric(BASE_BUTTON_SIDE_PADDING, factor),
+		label_font_size = math.floor(BASE_INLINE_LABEL_FONT_SIZE * factor + 0.5),
 		padding = BUTTON_OUTER_PADDING,
 		margin = BUTTON_MARGIN,
 	}
@@ -859,6 +914,44 @@ end
 function PageAnchor:getHideMode()
 	local value = G_reader_settings:readSetting(SETTING_HIDE_MODE)
 	return value == HIDE_MODE_HIDE and HIDE_MODE_HIDE or HIDE_MODE_MINIMIZE
+end
+
+function PageAnchor:getInlineLabelMode()
+	local value = G_reader_settings:readSetting(SETTING_INLINE_LABEL)
+	for i = 1, #INLINE_LABEL_OPTIONS do
+		if INLINE_LABEL_OPTIONS[i].value == value then
+			return value
+		end
+	end
+	return INLINE_LABEL_OFF
+end
+
+function PageAnchor:setInlineLabelMode(mode)
+	G_reader_settings:saveSetting(SETTING_INLINE_LABEL, mode)
+	self:_onDisplaySettingChanged()
+end
+
+-- The text shown next to the arrow for `location`, or nil for none (the
+-- setting is off, or the distance can't be worked out / is zero). The
+-- distance is signed, with a real minus sign, counted from the page on
+-- screen -- the arrow already says which way, the number says how far.
+function PageAnchor:getInlineLabel(location)
+	local mode = self:getInlineLabelMode()
+	if mode == INLINE_LABEL_PAGE then
+		return History.getPageLabel(self.ui, location)
+	elseif mode == INLINE_LABEL_DISTANCE then
+		local target_page = History.getLocationPage(self.ui, location)
+		local current_page = History.getLocationPage(self.ui, History.getCurrentLocation(self.ui))
+			or tonumber(self.ui:getCurrentPage())
+		if not target_page or not current_page or target_page == current_page then
+			return nil
+		end
+		local distance = target_page - current_page
+		-- "\226\136\146" is U+2212 MINUS SIGN as UTF-8 bytes (LuaJIT-safe,
+		-- unlike a \u{} escape).
+		return distance > 0 and ("+" .. distance) or ("\226\136\146" .. -distance)
+	end
+	return nil
 end
 
 function PageAnchor:setHideMode(mode)
@@ -1066,6 +1159,7 @@ function PageAnchor:computeButtonSpecs()
 			side = side,
 			icon = side == "left" and ICON_CHEVRON_LEFT or ICON_CHEVRON_RIGHT,
 			label = self:getDestinationLabel(self.anchor),
+			inline_text = self:getInlineLabel(self.anchor),
 			dismiss_marked = false,
 			pinned = self.pinned_location ~= nil,
 		}
@@ -1076,6 +1170,7 @@ function PageAnchor:computeButtonSpecs()
 			side = side,
 			icon = side == "left" and ICON_CHEVRON_LEFT or ICON_CHEVRON_RIGHT,
 			label = self:getDestinationLabel(self.forward_target),
+			inline_text = self:getInlineLabel(self.forward_target),
 			dismiss_marked = true,
 			pinned = self.pinned_location ~= nil,
 		}
@@ -1453,9 +1548,20 @@ end
 -- the anchor and forward target are tracked entirely by PageAnchor itself
 -- (see trackPage), so a real footnote/link jump elsewhere never interferes
 -- with them, and vice versa.
+--
+-- Locations that know their exact line (marker_xpointer, see
+-- refineJumpDestination) get KOReader's own brief margin marker on arrival.
+-- In scroll mode every location is exact -- it's the top of the view, not
+-- of a page -- so it's marked too. Page-top locations from ordinary page
+-- turns aren't: the marker would always just point at the first line.
+-- KOReader's "followed_link_marker" setting governs the marker either way.
 function PageAnchor:goToLocation(location)
 	if not location or not self.ui then
 		return
+	end
+	if location.xpointer and not location.marker_xpointer
+			and self.ui.view and self.ui.view.view_mode == "scroll" then
+		location = { xpointer = location.xpointer, marker_xpointer = location.xpointer }
 	end
 	self.ui:handleEvent(Event:new("RestoreBookLocation", location))
 end
@@ -1521,9 +1627,44 @@ function PageAnchor:noteJumpOrigin(loc)
 		self.pending_jump_clear_fn = function()
 			self.pending_jump_clear_fn = nil
 			self.pending_jump_origin = nil
+			self:refineJumpDestination()
 		end
 		UIManager:nextTick(self.pending_jump_clear_fn)
 	end
+end
+
+-- Exact-line marker, part 2. A link jump's origin already arrives exact:
+-- ReaderLink hands addCurrentLocationToStack the tapped link's position as
+-- both xpointer and marker_xpointer, that becomes the anchor, and
+-- RestoreBookLocation shows KOReader's own "followed link" marker there
+-- when going back. The destination is the other half: during the jump
+-- Page Anchor only sees the top of the new page, but once the jump has
+-- finished ReaderRolling holds the exact target it went to. If that's more
+-- precise than the page top (a link or footnote target rather than a page
+-- jump), the return point remembers it -- until the next page turn
+-- replaces it, at which point it's no longer where you were anyway.
+function PageAnchor:refineJumpDestination()
+	local target = self.jump_destination
+	self.jump_destination = nil
+	local rolling = self.ui and self.ui.rolling
+	if not target or self.forward_target ~= target or not rolling
+			or type(rolling.getBookLocation) ~= "function" then
+		return
+	end
+	local ok, exact = pcall(rolling.getBookLocation, rolling)
+	if not ok or type(exact) ~= "string" or exact == target.xpointer
+			or not History.isCurrentLocation(self.ui, { xpointer = exact }) then
+		return
+	end
+	-- Same split ReaderLink uses: in scroll mode go back to the same view
+	-- and just mark the line; in page mode the exact xpointer lands on the
+	-- same page anyway.
+	local scroll = self.ui.view and self.ui.view.view_mode == "scroll"
+	self.forward_target = {
+		xpointer = scroll and target.xpointer or exact,
+		marker_xpointer = exact,
+	}
+	self:invalidateButtonSpecs()
 end
 
 function PageAnchor:setReference(page, location)
@@ -1567,6 +1708,47 @@ function PageAnchor:armAnchor(anchor_location, current_location)
 	self:showControls()
 end
 
+-- Whether a saved location can stand in for the fresh one just read from
+-- the reader. Only worth it -- and only safe -- for a location carrying an
+-- exact line (marker_xpointer: a link origin or destination) that a fresh
+-- location would lose, and only while the view is still the one it was
+-- saved from: in page mode a page always shows the same view, so being on
+-- its page is enough; in scroll mode the view must not have moved at all.
+-- Anything else (every PDF view state, which also holds zoom and the
+-- visible area, and any plain page-level location) is always taken fresh,
+-- so a pan or scroll within the same page is never undone.
+function PageAnchor:canReuseLocation(saved, fresh)
+	if not saved or not saved.marker_xpointer or not self.ui or not self.ui.rolling then
+		return false
+	end
+	if self.ui.view and self.ui.view.view_mode == "scroll" then
+		return fresh ~= nil and fresh.xpointer == saved.xpointer
+	end
+	return History.isCurrentLocation(self.ui, saved)
+end
+
+-- The spot being left by a back/forward tap, which becomes the target of
+-- the opposite button: `known` (the target that already pointed here) when
+-- it can be reused (see canReuseLocation), else the fresh position.
+function PageAnchor:departureLocation(known)
+	local fresh = History.getCurrentLocation(self.ui)
+	if self:canReuseLocation(known, fresh) then
+		return known
+	end
+	return fresh
+end
+
+-- The return point while away follows wherever you are, except for an
+-- update that leaves the view as it was (a redraw, a repeated position
+-- event) while the return point holds the exact line refineJumpDestination
+-- found.
+function PageAnchor:followLocation(previous, current_location)
+	if self:canReuseLocation(previous, current_location) then
+		return previous
+	end
+	return current_location
+end
+
 function PageAnchor:activate(action)
 	if not self.ui then
 		return false
@@ -1592,7 +1774,7 @@ function PageAnchor:activate(action)
 		-- see the old anchor and show it for one extra frame (it took a
 		-- second tap to "catch up" before this fix).
 		local anchor_location = self.anchor
-		local departure_location = History.getCurrentLocation(self.ui)
+		local departure_location = self:departureLocation(self.forward_target)
 		self:goToLocation(anchor_location)
 		self.anchor = nil
 		self.forward_target = departure_location
@@ -1606,7 +1788,9 @@ function PageAnchor:activate(action)
 		-- being left immediately, rather than waiting for trackPage to infer
 		-- it from the next position update.
 		local target_location = self.forward_target
-		local departure_location = History.getCurrentLocation(self.ui)
+		-- Standing on the resolved anchor: return_baseline_location is that
+		-- anchor, possibly with its exact line (a link origin).
+		local departure_location = self:departureLocation(self.anchor or self.return_baseline_location)
 		self:goToLocation(target_location)
 		self.anchor = departure_location
 		self.forward_target = target_location
@@ -1647,6 +1831,9 @@ function PageAnchor:trackPage(page)
 	-- a position update for the same move).
 	local jump_origin = self.pending_jump_origin
 	self.pending_jump_origin = nil
+	-- Remembered so refineJumpDestination can tell, once the jump is over,
+	-- whether the return point is still this jump's destination.
+	self.jump_destination = jump_origin and current_location or nil
 
 	if not self.reference_location then
 		self:setReference(page, current_location)
@@ -1674,7 +1861,7 @@ function PageAnchor:trackPage(page)
 			-- announce, so it brings them back if the timeout hid them;
 			-- plain page turns leave hidden buttons hidden.
 			local previous_target = self.forward_target
-			self.forward_target = current_location
+			self.forward_target = self:followLocation(previous_target, current_location)
 			if jump_origin or self:isJumpFrom(previous_target, page) then
 				self:showControls()
 			elseif not self.controls_hidden then
@@ -1742,7 +1929,7 @@ function PageAnchor:trackPinned(page, current_location, jump_origin)
 		return
 	end
 	local previous_target = self.forward_target
-	self.forward_target = current_location
+	self.forward_target = self:followLocation(previous_target, current_location)
 	if jump_origin or self:isJumpFrom(previous_target, page) then
 		self:showControls()
 	elseif not self.controls_hidden then
@@ -1984,6 +2171,15 @@ function PageAnchor:addToMainMenu(menu_items)
 					BUTTON_SIZE_OPTIONS,
 					function() return self:getButtonSize() end,
 					function(value) self:setButtonSize(value) end
+				),
+			},
+			{
+				text = _("Show destination on button"),
+				help_text = _("Writes where the arrow leads next to it, so you don't have to hold the button to find out: the destination page, or how many pages away it is."),
+				sub_item_table = buildValueRadioItems(
+					INLINE_LABEL_OPTIONS,
+					function() return self:getInlineLabelMode() end,
+					function(value) self:setInlineLabelMode(value) end
 				),
 			},
 			{

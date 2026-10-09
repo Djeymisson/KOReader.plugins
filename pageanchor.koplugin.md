@@ -1,4 +1,4 @@
-# Page Anchor ![Version](https://img.shields.io/badge/version-v1.11.4-blue)
+# Page Anchor ![Version](https://img.shields.io/badge/version-v1.13.1-blue)
 
 Page Anchor adds a compact floating control to KOReader's reading screen.
 When you jump somewhere else in the book, it pins your reading position as
@@ -19,6 +19,10 @@ replace your reading position.
   layout), so re-pagination is never mistaken for navigation.
 - Hold any segment to see where it leads: chapter title plus a page or
   percentage, measured against the book or the chapter.
+- Optionally write the destination next to the arrow, as its page number
+  (`‹ 100`) or its distance in pages (`+23`, `−23`).
+- Marks the exact line you return to when it is known: the link you tapped
+  and the footnote or target it led to, or any position in scroll mode.
 - Automatic side/arrow mirroring for right-to-left books.
 - Inactivity timeout that only hides the control: by default it shrinks to
   a narrow anchor tab glued to the side of the screen, and one tap on the
@@ -106,6 +110,22 @@ the buttons were. Tap it to bring the anchor and the return point back. Later,
 same, as long as no new anchor has been set since. If you've moved after
 discarding, the current position becomes the return point.
 
+## Exact-line marker
+
+When Page Anchor knows the exact line of a position, it shows KOReader's
+own brief marker in the margin when you go back to it, the same one shown
+when following a link:
+
+- after following an internal link or footnote, going back marks the link
+  you tapped, and returning to the target marks the target;
+- in scroll mode, every return marks the line at the top of the view you
+  left.
+
+Positions reached by ordinary page turns or page jumps are only known to
+the page, so no marker is shown for them. Reading on from a link target
+(turning a page) also drops back to page precision. The marker follows
+KOReader's `followed_link_marker` setting.
+
 ## How it detects jumps
 
 KOReader's navigation tools record the current location in KOReader's
@@ -157,6 +177,8 @@ While reading, open **Page Anchor** in the navigation menu. You can:
 
 - enable or disable the floating control;
 - choose the button size (small, medium, large);
+- show the destination next to the arrow: off (default), the destination
+  page, or the distance in pages;
 - choose what the hold hint shows: page number or percentage, of the book or
   of the current chapter, or the chapter title only;
 - set the inactivity timeout that hides the control (the anchor is kept),

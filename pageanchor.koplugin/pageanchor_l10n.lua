@@ -46,6 +46,11 @@ local pt = {
 	["Medium"] = "Médio",
 	["Large"] = "Grande",
 
+	["Show destination on button"] = "Mostrar destino no botão",
+	["Writes where the arrow leads next to it, so you don't have to hold the button to find out: the destination page, or how many pages away it is."] = "Escreve ao lado da seta para onde ela leva, para você não precisar segurar o botão: a página de destino, ou a quantas páginas de distância ela está.",
+	["Destination page"] = "Página de destino",
+	["Distance in pages"] = "Distância em páginas",
+
 	["Position hint"] = "Dica de posição",
 	["Chooses what the text shown when you hold down a navigation button says."] = "Escolhe o que o texto exibido ao segurar um botão de navegação diz.",
 	["Page number of the book"] = "Número da página do livro",
