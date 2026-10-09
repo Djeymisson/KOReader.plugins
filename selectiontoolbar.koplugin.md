@@ -1,4 +1,4 @@
-# Selection Toolbar ![Version](https://img.shields.io/badge/version-v1.5.0-blue)
+# Selection Toolbar ![Version](https://img.shields.io/badge/version-v1.7.0-blue)
 
 A KOReader plugin that replaces the centered text-selection menu with a compact toolbar displayed near the selected text, and adds draggable handles and a margin line marker to adjust and visualize the selection.
 
@@ -69,10 +69,17 @@ In the reader, open:
 Options:
 
 - `Use compact selection toolbar`: enables/disables replacement of the default menu.
-- `Appearance`: controls the toolbar's visual presentation.
+- `Appearance`: controls the toolbar's visual presentation. While this submenu (or `Visible actions`) is open, a live preview follows each change: a sheet titled `Preview`, docked across the bottom of the screen with rounded top corners, a thick border and a dithered shadow cast upwards over the page, where the toolbar lies over a few lines of sample text, as it would over the book, so borders, shadow and separators can be judged against text. When the menu leaves little room, fewer sample lines are shown. The preview is hidden while a dialog (such as an option's help) is shown, or when the menu is too tall to leave room for it, and it closes when you leave these submenus.
   - `Toolbar position`: where the toolbar is shown.
     - `Near the selection` (default): right below the selection, or above it when there is no room.
     - `Fixed at screen edge`: centered at the bottom edge of the screen, or at the top edge when the selection's center is in the lower half (or when only the top edge keeps the toolbar clear of the selection and its handles). When the selection fills the screen, the toolbar is pinned as described in the features above, in both modes.
+  - `Button density`: size and spacing of the toolbar buttons.
+    - `Compact`: smaller, tighter buttons, so the toolbar covers less of the page.
+    - `Normal` (default): the standard button size and spacing.
+    - `Comfortable`: taller, more spaced buttons, easier to tap.
+
+    If the enabled actions do not fit across the screen at the chosen density, the buttons (and, if needed, the icons) are narrowed so the toolbar always stays on screen.
+  - `Icon size`: `Small`, `Normal` (default) or `Large` icons, independently of the button density. An icon never grows beyond its button.
   - `Show toolbar shadow`: shows or removes the dithered shadow along the right and bottom edges. The shadow follows the toolbar's rounded corners.
 - `Selection marks`: controls the handles and the line marker.
   - `Show selection handles`: shows the draggable start/end handles (touch devices only).
@@ -110,7 +117,10 @@ The plugin includes a few internal adjustments to reduce repeated work when open
 - cached dithered shadows, shared between toolbar openings of the same size;
 - single read of the visible actions when building the toolbar;
 - page offset calculation only once before iterating over the selection boxes;
-- button metrics centralized in a shared function, including width, height, icon size, and side padding.
+- button metrics (width, height, icon size and side padding) computed once per density and icon size combination.
+- the settings preview is built by the same function as the real toolbar, so both always look the same; it is a toast widget, so it never takes the menu's taps.
+- the preview keeps its sample text and title between changes, and only rebuilds the toolbar when a setting changes; the sample text is just long enough to fill its lines;
+- the preview's shadow is computed once per opening (and screen width or night mode), and changing a setting only refreshes the preview area, repainting the page under it only when the preview changes height.
 
 Selection handles and line marker:
 

@@ -2,13 +2,19 @@ local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local BD = require("ui/bidi")
 local Blitbuffer = require("ffi/blitbuffer")
 local ButtonDialog = require("ui/widget/buttondialog")
+local Font = require("ui/font")
 local IconWidget = require("ui/widget/iconwidget")
 local UIManager = require("ui/uimanager")
 local InfoMessage = require("ui/widget/infomessage")
 local Device = require("device")
 local Geom = require("ui/geometry")
 local GestureRange = require("ui/gesturerange")
+local OverlapGroup = require("ui/widget/overlapgroup")
 local Size = require("ui/size")
+local TextBoxWidget = require("ui/widget/textboxwidget")
+local TextWidget = require("ui/widget/textwidget")
+local VerticalGroup = require("ui/widget/verticalgroup")
+local VerticalSpan = require("ui/widget/verticalspan")
 local lfs = require("libs/libkoreader-lfs")
 local util = require("util")
 local _ = require("gettext")
@@ -20,13 +26,8 @@ local math_max = math.max
 local math_min = math.min
 local math_sqrt = math.sqrt
 
-local PLUGIN_VERSION = "v1.5.0"
+local PLUGIN_VERSION = "v1.7.0"
 local QR_MESSAGE_MODULE = "ui/widget/qrmessage"
-
-local BUTTON_ICON_SIZE = Screen:scaleBySize(22)
-local BUTTON_HEIGHT = Screen:scaleBySize(42)
-local BUTTON_SIDE_PADDING = Screen:scaleBySize(6)
-local BUTTON_WIDTH = BUTTON_HEIGHT + 2 * BUTTON_SIDE_PADDING
 
 local HANDLE_BAR_WIDTH = math_max(2, Screen:scaleBySize(2))
 local HANDLE_KNOB_RADIUS = math_max(3, Screen:scaleBySize(7))
@@ -75,6 +76,8 @@ local SETTING_LINE_MARKER_RIGHT = "selectiontoolbar_line_marker_right"
 local SETTING_HANDLE_STYLE = "selectiontoolbar_handle_style"
 local SETTING_HANDLE_OUTLINE = "selectiontoolbar_handle_outline"
 local SETTING_POSITION = "selectiontoolbar_position"
+local SETTING_DENSITY = "selectiontoolbar_density"
+local SETTING_ICON_SIZE = "selectiontoolbar_icon_size"
 -- v1.3.0 had the outline as a separate "wireframe" style: read it as lollipop + outline.
 local LEGACY_WIREFRAME_STYLE = "wireframe"
 
@@ -93,6 +96,40 @@ local POSITIONS = {
             "Show the toolbar centered at the bottom of the screen, or at the top when the selection is in the lower part."
         ),
     },
+}
+
+-- Button height (the icon area; ButtonTable adds its own vertical padding) and the side
+-- padding that, added on both sides, gives the button width.
+local DEFAULT_DENSITY = "normal"
+local DENSITIES = {
+    {
+        id = "compact",
+        text = _("Compact"),
+        help_text = _("Smaller, tighter buttons: the toolbar covers less of the page."),
+        height = 34,
+        side_padding = 4,
+    },
+    {
+        id = "normal",
+        text = _("Normal"),
+        help_text = _("The default button size and spacing."),
+        height = 42,
+        side_padding = 6,
+    },
+    {
+        id = "comfortable",
+        text = _("Comfortable"),
+        help_text = _("Taller, more spaced buttons: easier to tap."),
+        height = 50,
+        side_padding = 10,
+    },
+}
+
+local DEFAULT_ICON_SIZE = "normal"
+local ICON_SIZES = {
+    { id = "small", text = _("Small"), size = 18 },
+    { id = "normal", text = _("Normal"), size = 22 },
+    { id = "large", text = _("Large"), size = 28 },
 }
 
 local ACTIONS = {
@@ -393,18 +430,341 @@ function ShadowedButtonDialog:onSelectionHandleSwipe(_, ges)
     return self.handle_controller:onHandleSwipe(self, ges)
 end
 
+-- Live preview of the toolbar, docked at the bottom of the screen while its settings are
+-- open in the menu: a sheet with rounded top corners and a dithered shadow cast upwards,
+-- where the toolbar lies over a few lines of sample text as it would over the page. As a
+-- toast it stays above the menu without taking its gestures, and it holds the toolbar
+-- frame only to paint it, so its buttons never get events.
+local ToolbarPreview = WidgetContainer:extend({
+    name = "selectiontoolbar_preview",
+    toast = true,
+})
+
+local PREVIEW_SAMPLE_TEXT = _(
+    "This is a short sample of text, shown so you can see how the selection toolbar looks over the page. "
+)
+-- Sample lines shown above and below the toolbar, when the menu leaves room for them.
+local PREVIEW_MAX_EXTRA_LINES = 2
+local SHEET_RADIUS = Screen:scaleBySize(16)
+local SHEET_BORDER = Size.border.thick
+local SHEET_SHADOW = math_max(2, Screen:scaleBySize(10))
+-- Peak darkness of the shadow, right above the sheet (0..1).
+local SHEET_SHADOW_STRENGTH = 0.6
+local SHEET_GRIP_WIDTH = Screen:scaleBySize(36)
+local SHEET_GRIP_HEIGHT = math_max(2, Screen:scaleBySize(4))
+local SHEET_GRIP_MARGIN = Size.padding.default
+
+-- Lays the preview out again. The toolbar is only rebuilt when toolbar_changed (a setting
+-- changed) and the sample text only when its size changed: it is laid out and rendered
+-- when created, which is the costly part. Returns whether the preview looks different.
+function ToolbarPreview:update(toolbar_changed)
+    local plugin = self.plugin
+    local screen_w, screen_h = Screen:getWidth(), Screen:getHeight()
+    -- Space kept between the menu and the shadow.
+    local gap = Size.padding.large
+    local padding = Size.padding.large
+    local side = SHEET_BORDER + padding
+    local inner_w = screen_w - 2 * side
+    local menu_bottom = plugin:getMenuBottom()
+
+    if toolbar_changed or not self.toolbar_built then
+        if self.toolbar then
+            self.toolbar:free()
+        end
+        local dialog = plugin:buildPreviewDialog(inner_w)
+        self.toolbar = dialog and dialog.movable[1]
+        self.toolbar_built = true
+    end
+    local toolbar = self.toolbar
+    local toolbar_size = toolbar and toolbar:getSize() or Geom:new({ w = 0, h = 0 })
+
+    if not self.title then
+        self.title = TextWidget:new({
+            text = _("Preview"),
+            face = Font:getFace("smallinfofontbold"),
+        })
+    end
+    local title_span = Size.span.vertical_default
+    local face = Font:getFace("infofont")
+    -- TextBoxWidget's default line height: 1.3 em.
+    local line_h = math_floor(1.3 * face.size + 0.5)
+    -- Above the body: the shadow, the top border and the grip with its margins.
+    local body_top = SHEET_BORDER + 2 * SHEET_GRIP_MARGIN + SHEET_GRIP_HEIGHT
+    local fixed_h = SHEET_SHADOW + body_top + self.title:getSize().h + title_span + padding
+    local room = screen_h - menu_bottom - gap
+    local toolbar_lines = math.ceil(toolbar_size.h / line_h)
+    local lines
+    for extra = PREVIEW_MAX_EXTRA_LINES, 0, -1 do
+        lines = toolbar_lines + 2 * extra
+        if fixed_h + lines * line_h <= room then
+            break
+        end
+    end
+    lines = math_max(lines, 1)
+    local text_h = lines * line_h
+
+    local sample_key = inner_w .. ":" .. lines
+    if self.sample_key ~= sample_key then
+        if self.sample then
+            self.sample:free()
+        end
+        -- TextBoxWidget splits all of its text into lines: give it just enough to fill
+        -- them. 0.3 em per byte is generous for Latin text (~0.5 em per character) and
+        -- still enough for wide CJK glyphs (1 em for 3 bytes).
+        local repeats = math.ceil(lines * inner_w / (0.3 * face.size) / #PREVIEW_SAMPLE_TEXT) + 1
+        self.sample = TextBoxWidget:new({
+            text = PREVIEW_SAMPLE_TEXT:rep(repeats),
+            face = face,
+            width = inner_w,
+            height = text_h,
+        })
+        self.sample_key = sample_key
+    end
+
+    local stage = OverlapGroup:new({
+        dimen = Geom:new({ w = inner_w, h = text_h }),
+        self.sample,
+    })
+    if toolbar then
+        toolbar.overlap_offset = {
+            math_floor((inner_w - toolbar_size.w) / 2),
+            math_floor((text_h - toolbar_size.h) / 2),
+        }
+        stage[2] = toolbar
+    end
+
+    -- Only layout containers: the widgets they hold are kept and freed in freeContent().
+    self.content = VerticalGroup:new({
+        align = "left",
+        self.title,
+        VerticalSpan:new({ width = title_span }),
+        stage,
+    })
+    self.menu_bottom = menu_bottom
+    self.content_x = side
+    self.content_dy = body_top
+
+    local old_dimen = self.dimen
+    local sheet_h = body_top + self.content:getSize().h + padding
+    -- The shadow is part of the preview area, so it is refreshed and erased with it.
+    self.dimen = Geom:new({
+        x = 0,
+        y = math_max(0, screen_h - sheet_h - SHEET_SHADOW),
+        w = screen_w,
+        h = sheet_h + SHEET_SHADOW,
+    })
+    return toolbar_changed or not old_dimen or old_dimen.y ~= self.dimen.y or old_dimen.h ~= self.dimen.h
+end
+
+function ToolbarPreview:freeContent()
+    for _, name in ipairs({ "toolbar", "sample", "title" }) do
+        if self[name] then
+            self[name]:free()
+            self[name] = nil
+        end
+    end
+    self.content = nil
+    self.toolbar_built = nil
+    self.sample_key = nil
+end
+
+function ToolbarPreview:freeShadow()
+    if self.shadow_bb then
+        self.shadow_bb:free()
+        self.shadow_bb = nil
+        self.shadow_key = nil
+    end
+end
+
+function ToolbarPreview:onCloseWidget()
+    self:freeContent()
+    self:freeShadow()
+end
+
+-- Dithered shadow above a sheet of the given width, following its rounded top corners:
+-- SHEET_SHADOW rows above its top edge, plus the corner areas beside its top rows.
+-- Same colors and night mode handling as the toolbar shadow.
+function ToolbarPreview:getShadow(bb, width)
+    local night = Screen.night_mode
+    local inv = bb.getInverse and bb:getInverse() == 1
+    local render_inv = inv and not (night and Device.isAndroid and Device:isAndroid())
+    local key = table.concat({ width, tostring(night), tostring(render_inv) }, ":")
+    if self.shadow_key == key then
+        return self.shadow_bb
+    end
+    self:freeShadow()
+
+    local shadow_value = render_inv and 0x00 or (night and 0xFF or 0x00)
+    local shadow_on = Blitbuffer.ColorRGB32(shadow_value, shadow_value, shadow_value, 255)
+    local shadow_off = Blitbuffer.ColorRGB32(shadow_value, shadow_value, shadow_value, 0)
+    local r, s = SHEET_RADIUS, SHEET_SHADOW
+    local height = s + r
+    local shadow = Blitbuffer.new(width, height, Blitbuffer.TYPE_BBRGB32)
+    for py = 0, height - 1 do
+        -- Relative to the sheet's top edge (negative above it).
+        local sy = py + 0.5 - s
+        for px = 0, width - 1 do
+            local sx = px + 0.5
+            local distance
+            if sx < r or sx > width - r then
+                local cx = sx < r and r or (width - r)
+                distance = math_sqrt((sx - cx) ^ 2 + (sy - r) ^ 2) - r
+                if sy >= r then
+                    distance = -1
+                end
+            else
+                distance = -sy
+            end
+            local color = shadow_off
+            if distance >= 0 and distance < s then
+                local level = SHEET_SHADOW_STRENGTH * (1 - distance / s) * 255
+                local threshold = (SHADOW_BAYER8[(px % 8) + 1][(py % 8) + 1] + 0.5) * 4
+                if level > threshold then
+                    color = shadow_on
+                end
+            end
+            shadow:setPixel(px, py, color)
+        end
+    end
+    shadow:setInverse(render_inv and 1 or 0)
+    self.shadow_bb, self.shadow_key = shadow, key
+    return shadow
+end
+
+-- The sheet: white with a black border along its top and sides, rounded top corners
+-- and square bottom corners (it sits on the screen's bottom edge).
+local function paintSheet(bb, top, width, height)
+    local r, b = SHEET_RADIUS, SHEET_BORDER
+    local white, black = Blitbuffer.COLOR_WHITE, Blitbuffer.COLOR_BLACK
+    bb:paintRect(r, top, width - 2 * r, r, white)
+    bb:paintRect(r, top, width - 2 * r, b, black)
+    bb:paintRect(0, top + r, width, height - r, white)
+    bb:paintRect(0, top + r, b, height - r, black)
+    bb:paintRect(width - b, top + r, b, height - r, black)
+    -- Corners row by row: a black arc b thick around a white inside.
+    local inner_r = r - b
+    for row = 0, r - 1 do
+        local dy = r - row - 0.5
+        local outer = math_floor(math_sqrt(math_max(0, r * r - dy * dy)) + 0.5)
+        local inner = dy < inner_r and math_floor(math_sqrt(inner_r * inner_r - dy * dy) + 0.5) or 0
+        local y = top + row
+        if outer > 0 then
+            bb:paintRect(r - outer, y, outer - inner, 1, black)
+            bb:paintRect(width - r + inner, y, outer - inner, 1, black)
+            if inner > 0 then
+                bb:paintRect(r - inner, y, inner, 1, white)
+                bb:paintRect(width - r, y, inner, 1, white)
+            end
+        end
+    end
+end
+
+function ToolbarPreview:paintTo(bb)
+    local state = self.plugin:getPreviewState(self)
+    -- Not from within a repaint: closing or rebuilding changes what is being painted.
+    if state == "closed" then
+        UIManager:nextTick(function()
+            self.plugin:closePreview(self)
+        end)
+        return
+    end
+    if self.plugin:getMenuBottom() ~= self.menu_bottom then
+        -- The menu changed height: fit the sample text to the room left below it.
+        UIManager:nextTick(function()
+            if self.plugin.preview == self then
+                self.plugin:refreshPreview(false)
+            end
+        end)
+    end
+    local visible = state == "visible" and self.content ~= nil
+    if self.shown ~= nil and visible ~= self.shown then
+        -- The repaint that changed it only refreshes its own area (e.g. a help dialog
+        -- opening or closing): the preview's area must be refreshed as well.
+        local was_shown = self.shown
+        UIManager:nextTick(function()
+            if self.plugin.preview ~= self then
+                return
+            end
+            if was_shown then
+                -- Erase it: repaint the page (and what lies above it) under its area.
+                local ui = self.plugin.ui
+                UIManager:setDirty(ui and (ui.dialog or ui), "ui", self.dimen)
+            else
+                UIManager:setDirty(self, "ui", self.dimen)
+            end
+        end)
+    end
+    self.shown = visible
+    if not visible then
+        return
+    end
+
+    local dimen = self.dimen
+    local sheet_top = dimen.y + SHEET_SHADOW
+    ShadowedPopup._alphaBlitClipped(nil, bb, self:getShadow(bb, dimen.w), dimen.x, dimen.y)
+    paintSheet(bb, sheet_top, dimen.w, dimen.h - SHEET_SHADOW)
+    -- A grip, as on bottom sheets: it only tells the panel apart, it cannot be dragged.
+    bb:paintRoundedRect(
+        math_floor((dimen.w - SHEET_GRIP_WIDTH) / 2),
+        sheet_top + SHEET_BORDER + SHEET_GRIP_MARGIN,
+        SHEET_GRIP_WIDTH,
+        SHEET_GRIP_HEIGHT,
+        Blitbuffer.COLOR_DARK_GRAY,
+        math_floor(SHEET_GRIP_HEIGHT / 2)
+    )
+    self.content:paintTo(bb, dimen.x + self.content_x, sheet_top + self.content_dy)
+end
+
 local function pluginDir()
     local source = debug.getinfo(1, "S").source or ""
     local path = source:match("^@(.*/)") or source:match("^(.*/)")
     return path or "plugins/selectiontoolbar.koplugin/"
 end
 
-local function applyToolbarButtonMetrics(button)
-    button.icon_width = BUTTON_ICON_SIZE
-    button.icon_height = BUTTON_ICON_SIZE
-    button.height = BUTTON_HEIGHT
-    button.width = BUTTON_WIDTH
-    button.padding = BUTTON_SIDE_PADDING
+local function findChoice(choices, id)
+    for _, choice in ipairs(choices) do
+        if choice.id == id then
+            return choice
+        end
+    end
+end
+
+-- The saved choice of a multiple-choice setting, or the default one if it is unset or
+-- no longer exists.
+local function readChoice(setting, choices, default_id)
+    return findChoice(choices, G_reader_settings:readSetting(setting)) or findChoice(choices, default_id)
+end
+
+-- Toolbar sizes for the chosen density and icon size, in screen pixels.
+local toolbar_metrics_cache = {}
+
+local function getToolbarMetrics()
+    local density = readChoice(SETTING_DENSITY, DENSITIES, DEFAULT_DENSITY)
+    local icon_size = readChoice(SETTING_ICON_SIZE, ICON_SIZES, DEFAULT_ICON_SIZE)
+    local key = density.id .. ":" .. icon_size.id
+    local metrics = toolbar_metrics_cache[key]
+    if not metrics then
+        local height = Screen:scaleBySize(density.height)
+        local side_padding = Screen:scaleBySize(density.side_padding)
+        local width = height + 2 * side_padding
+        metrics = {
+            button_height = height,
+            button_width = width,
+            side_padding = side_padding,
+            -- The icon must fit inside the button, past ButtonTable's side padding.
+            icon_size = math_min(Screen:scaleBySize(icon_size.size), height, width - 2 * Size.padding.button),
+        }
+        toolbar_metrics_cache[key] = metrics
+    end
+    return metrics
+end
+
+local function applyToolbarButtonMetrics(button, metrics)
+    button.icon_width = metrics.icon_size
+    button.icon_height = metrics.icon_size
+    button.height = metrics.button_height
+    button.width = metrics.button_width
+    button.padding = metrics.side_padding
     button.margin = 0
     return button
 end
@@ -458,6 +818,9 @@ function SelectionToolbar:onClose()
     self.marks = nil
     self.drag = nil
 
+    if self.preview then
+        self:closePreview(self.preview)
+    end
     self:unpatchIconWidget()
     clearToolbarShadowCache()
 end
@@ -482,14 +845,27 @@ function SelectionToolbar:setToolbarShadows(enabled)
 end
 
 function SelectionToolbar:getToolbarPosition()
-    if G_reader_settings:readSetting(SETTING_POSITION) == POSITION_EDGE then
-        return POSITION_EDGE
-    end
-    return POSITION_NEAR
+    return readChoice(SETTING_POSITION, POSITIONS, POSITION_NEAR).id
 end
 
 function SelectionToolbar:setToolbarPosition(position)
     G_reader_settings:saveSetting(SETTING_POSITION, position)
+end
+
+function SelectionToolbar:getDensity()
+    return readChoice(SETTING_DENSITY, DENSITIES, DEFAULT_DENSITY).id
+end
+
+function SelectionToolbar:setDensity(density)
+    G_reader_settings:saveSetting(SETTING_DENSITY, density)
+end
+
+function SelectionToolbar:getIconSize()
+    return readChoice(SETTING_ICON_SIZE, ICON_SIZES, DEFAULT_ICON_SIZE).id
+end
+
+function SelectionToolbar:setIconSize(icon_size)
+    G_reader_settings:saveSetting(SETTING_ICON_SIZE, icon_size)
 end
 
 function SelectionToolbar:showHandles()
@@ -501,16 +877,8 @@ function SelectionToolbar:showLineMarker()
 end
 
 function SelectionToolbar:getHandleStyle()
-    local style = G_reader_settings:readSetting(SETTING_HANDLE_STYLE)
-    if style == LEGACY_WIREFRAME_STYLE then
-        return DEFAULT_HANDLE_STYLE
-    end
-    for _, item in ipairs(HANDLE_STYLES) do
-        if item.id == style then
-            return style
-        end
-    end
-    return DEFAULT_HANDLE_STYLE
+    -- A legacy "wireframe" style is not a known choice: it reads as the default one.
+    return readChoice(SETTING_HANDLE_STYLE, HANDLE_STYLES, DEFAULT_HANDLE_STYLE).id
 end
 
 function SelectionToolbar:handleOutline()
@@ -650,6 +1018,181 @@ function SelectionToolbar:closeHighlightDialog(reader_highlight)
     end
 end
 
+-- The toolbar dialog for a row of buttons, with the current appearance settings. Used
+-- for both the real toolbar and its preview, so that they always look the same.
+-- available_width: the room for the toolbar and its shadow (default: the screen width
+-- less a margin on both sides).
+function SelectionToolbar:buildToolbarDialog(row, metrics, options, available_width)
+    local show_shadow = self:showToolbarShadows()
+    local shadow_extent = show_shadow and SHADOW_EXTENT or 0
+    local count = #row
+    -- ButtonTable puts a separator line between buttons; the frame adds border and padding.
+    local separators = (count - 1) * Size.line.medium
+    local frame_extra = 2 * Size.border.window + 2 * Size.padding.button
+    local max_width = (available_width or (Screen:getWidth() - 2 * Size.padding.large)) - shadow_extent
+
+    -- ButtonTable never shrinks buttons with a given width, so a row wider than the
+    -- screen would run off it: narrow the buttons (and icons, if needed) to fit.
+    local button_width = metrics.button_width
+    local fit_width = math_floor((max_width - frame_extra - separators) / count)
+    if fit_width < button_width then
+        button_width = fit_width
+        local icon_size = math_min(metrics.icon_size, button_width - 2 * Size.padding.button)
+        for _, button in ipairs(row) do
+            button.width = button_width
+            button.icon_width = icon_size
+            button.icon_height = icon_size
+        end
+    end
+
+    options.buttons = { row }
+    options.width = count * button_width + separators + frame_extra
+    options.show_shadow = show_shadow
+    options.shrink_unneeded_width = true
+    options.shrink_min_width = button_width
+    return ShadowedButtonDialog:new(options)
+end
+
+-- A toolbar with every visible action, as it would show for a selection.
+function SelectionToolbar:buildPreviewDialog(available_width)
+    local metrics = getToolbarMetrics()
+    local action_settings = self:getActionSettings()
+    local row = {}
+    for _, action in ipairs(ACTIONS) do
+        if action_settings[action.id] ~= false then
+            row[#row + 1] = applyToolbarButtonMetrics({
+                id = "selectiontoolbar_preview_" .. action.id,
+                icon = self:getIconPath(action),
+                callback = function() end,
+            }, metrics)
+        end
+    end
+    if #row == 0 then
+        return nil
+    end
+    return self:buildToolbarDialog(row, metrics, {}, available_width)
+end
+
+-- Menu pages that show the preview: entering one of them opens it, and it closes itself
+-- once the menu shows any other page.
+function SelectionToolbar:trackPreviewPage(item_table)
+    self.preview_pages = self.preview_pages or {}
+    self.preview_pages[item_table] = true
+    return item_table
+end
+
+function SelectionToolbar:getReaderMenu()
+    local menu_container = self.ui and self.ui.menu and self.ui.menu.menu_container
+    return menu_container, menu_container and menu_container[1]
+end
+
+-- Bottom of the reader menu on screen (0 when it is not shown).
+function SelectionToolbar:getMenuBottom()
+    local _, touch_menu = self:getReaderMenu()
+    local menu_dimen = touch_menu and touch_menu.dimen
+    if not menu_dimen then
+        return 0
+    end
+    return (menu_dimen.y or 0) + (menu_dimen.h or 0)
+end
+
+-- "closed" when the menu left the preview pages, "hidden" when a dialog (e.g. an item's
+-- help) is over the menu or the preview would cover the menu, else "visible".
+function SelectionToolbar:isOnPreviewPage()
+    local _, touch_menu = self:getReaderMenu()
+    return touch_menu and touch_menu.item_table and self.preview_pages and self.preview_pages[touch_menu.item_table]
+        or false
+end
+
+function SelectionToolbar:getPreviewState(preview)
+    if not self:isOnPreviewPage() then
+        return "closed"
+    end
+    local menu_container = self:getReaderMenu()
+    local stack = UIManager._window_stack or {}
+    for i = #stack, 1, -1 do
+        local widget = stack[i].widget
+        if not widget.toast then
+            if widget ~= menu_container then
+                return "hidden"
+            end
+            break
+        end
+    end
+    if preview.dimen.y < self:getMenuBottom() + Size.padding.large then
+        return "hidden"
+    end
+    return "visible"
+end
+
+-- Called while entering a preview page, before the menu switches to it.
+function SelectionToolbar:schedulePreview()
+    UIManager:nextTick(function()
+        -- Also called while the menu is searched: only show it on an actual preview page.
+        if self.preview or not self:isOnPreviewPage() then
+            return
+        end
+        local preview = ToolbarPreview:new({ plugin = self })
+        preview:update()
+        self.preview = preview
+        UIManager:show(preview, "ui", preview.dimen)
+    end)
+end
+
+-- toolbar_changed: a setting changed (default), rather than only the room for the preview.
+function SelectionToolbar:refreshPreview(toolbar_changed)
+    local preview = self.preview
+    if not preview then
+        return
+    end
+    local old_dimen = preview.dimen
+    if not preview:update(toolbar_changed ~= false) then
+        return
+    end
+    if preview.dimen.y == old_dimen.y then
+        -- Same area: the opaque sheet covers its old content, and the shadow is the same.
+        UIManager:setDirty(preview, "ui", preview.dimen)
+    else
+        -- It moved: the page must be repainted under its old area, including the old
+        -- shadow dots, which the new shadow would only add to.
+        local reader = self.ui and (self.ui.dialog or self.ui)
+        UIManager:setDirty(reader, "ui", old_dimen:combine(preview.dimen))
+    end
+end
+
+function SelectionToolbar:closePreview(preview)
+    if not preview or self.preview ~= preview then
+        return
+    end
+    self.preview = nil
+    UIManager:close(preview, "ui", preview.dimen)
+end
+
+-- Radio items for a multiple-choice setting. get and set are methods of the plugin.
+-- Other items may depend on the choice, so the menu is updated after each change.
+function SelectionToolbar:choiceMenuItems(choices, get, set)
+    local items = {}
+    for _, choice in ipairs(choices) do
+        items[#items + 1] = {
+            text = choice.text,
+            help_text = choice.help_text,
+            radio = true,
+            checked_func = function()
+                return get(self) == choice.id
+            end,
+            callback = function(touchmenu_instance)
+                set(self, choice.id)
+                if touchmenu_instance and touchmenu_instance.updateItems then
+                    touchmenu_instance:updateItems()
+                end
+                self:refreshPreview()
+            end,
+            keep_menu_open = true,
+        }
+    end
+    return items
+end
+
 function SelectionToolbar:addToMainMenu(menu_items)
     local action_items = {
         {
@@ -674,29 +1217,15 @@ function SelectionToolbar:addToMainMenu(menu_items)
                 if touchmenu_instance and touchmenu_instance.updateItems then
                     touchmenu_instance:updateItems()
                 end
+                self:refreshPreview()
             end,
             keep_menu_open = true,
         })
     end
 
-    local handle_style_items = {}
-    for _, style in ipairs(HANDLE_STYLES) do
-        table.insert(handle_style_items, {
-            text = style.text,
-            help_text = style.help_text,
-            radio = true,
-            checked_func = function()
-                return self:getHandleStyle() == style.id
-            end,
-            callback = function(touchmenu_instance)
-                self:setHandleStyle(style.id, self:handleOutline())
-                if touchmenu_instance and touchmenu_instance.updateItems then
-                    touchmenu_instance:updateItems()
-                end
-            end,
-            keep_menu_open = true,
-        })
-    end
+    local handle_style_items = self:choiceMenuItems(HANDLE_STYLES, self.getHandleStyle, function(_, style)
+        self:setHandleStyle(style, self:handleOutline())
+    end)
     handle_style_items[#handle_style_items].separator = true
     table.insert(handle_style_items, {
         text = _("High-contrast outline"),
@@ -715,20 +1244,41 @@ function SelectionToolbar:addToMainMenu(menu_items)
         keep_menu_open = true,
     })
 
-    local position_items = {}
-    for _, position in ipairs(POSITIONS) do
-        table.insert(position_items, {
-            text = position.text,
-            help_text = position.help_text,
-            radio = true,
+    local position_items = self:choiceMenuItems(POSITIONS, self.getToolbarPosition, self.setToolbarPosition)
+    local density_items = self:choiceMenuItems(DENSITIES, self.getDensity, self.setDensity)
+    local icon_size_items = self:choiceMenuItems(ICON_SIZES, self.getIconSize, self.setIconSize)
+
+    local appearance_items = {
+        {
+            text = _("Toolbar position"),
+            help_text = _("Choose where the toolbar is shown on screen."),
+            sub_item_table = position_items,
+        },
+        {
+            text = _("Button density"),
+            help_text = _("Choose the size and spacing of the toolbar buttons."),
+            sub_item_table = density_items,
+        },
+        {
+            text = _("Icon size"),
+            help_text = _("Choose the size of the icons, independently of the button size."),
+            sub_item_table = icon_size_items,
+        },
+        {
+            text = _("Show toolbar shadow"),
+            help_text = _("Show a small dithered shadow along the right and bottom edges of the selection toolbar."),
             checked_func = function()
-                return self:getToolbarPosition() == position.id
+                return self:showToolbarShadows()
             end,
             callback = function()
-                self:setToolbarPosition(position.id)
+                self:setToolbarShadows(not self:showToolbarShadows())
+                self:refreshPreview()
             end,
             keep_menu_open = true,
-        })
+        },
+    }
+    for _, page in ipairs({ appearance_items, position_items, density_items, icon_size_items, action_items }) do
+        self:trackPreviewPage(page)
     end
 
     menu_items.selectiontoolbar = {
@@ -752,27 +1302,11 @@ function SelectionToolbar:addToMainMenu(menu_items)
             },
             {
                 text = _("Appearance"),
-                help_text = _("Choose where the toolbar is shown and whether it has a drop shadow."),
-                sub_item_table = {
-                    {
-                        text = _("Toolbar position"),
-                        help_text = _("Choose where the toolbar is shown on screen."),
-                        sub_item_table = position_items,
-                    },
-                    {
-                        text = _("Show toolbar shadow"),
-                        help_text = _(
-                            "Show a small dithered shadow along the right and bottom edges of the selection toolbar."
-                        ),
-                        checked_func = function()
-                            return self:showToolbarShadows()
-                        end,
-                        callback = function()
-                            self:setToolbarShadows(not self:showToolbarShadows())
-                        end,
-                        keep_menu_open = true,
-                    },
-                },
+                help_text = _("Choose where the toolbar is shown, its button and icon sizes, and whether it has a drop shadow."),
+                sub_item_table_func = function()
+                    self:schedulePreview()
+                    return appearance_items
+                end,
             },
             {
                 text = _("Selection marks"),
@@ -840,7 +1374,10 @@ function SelectionToolbar:addToMainMenu(menu_items)
             {
                 text = _("Visible actions"),
                 help_text = _("Choose which actions appear in the selection toolbar."),
-                sub_item_table = action_items,
+                sub_item_table_func = function()
+                    self:schedulePreview()
+                    return action_items
+                end,
                 separator = true,
             },
             {
@@ -906,7 +1443,7 @@ function SelectionToolbar:showQRCode(reader_highlight)
     }))
 end
 
-function SelectionToolbar:makeQRButton(reader_highlight)
+function SelectionToolbar:makeQRButton(reader_highlight, metrics)
     return applyToolbarButtonMetrics({
         id = "selectiontoolbar_qr_code",
         icon = self:getIconPath(QR_ICON_ACTION),
@@ -917,12 +1454,12 @@ function SelectionToolbar:makeQRButton(reader_highlight)
         hold_callback = function()
             UIManager:show(InfoMessage:new({ text = _("Generate QR code") }))
         end,
-    })
+    }, metrics)
 end
 
-function SelectionToolbar:makeButton(reader_highlight, action, index)
+function SelectionToolbar:makeButton(reader_highlight, action, index, metrics)
     if action.id == "qr_code" then
-        return self:makeQRButton(reader_highlight)
+        return self:makeQRButton(reader_highlight, metrics)
     end
 
     local make_original = reader_highlight._highlight_buttons and reader_highlight._highlight_buttons[action.key]
@@ -940,7 +1477,7 @@ function SelectionToolbar:makeButton(reader_highlight, action, index)
     end
 
     local original_callback = original.callback
-    local button = applyToolbarButtonMetrics(original)
+    local button = applyToolbarButtonMetrics(original, metrics)
     button.id = "selectiontoolbar_" .. action.id
     button.text = nil
     button.icon = self:getIconPath(action)
@@ -1836,11 +2373,12 @@ end
 
 function SelectionToolbar:showToolbar(reader_highlight, index)
     local row = {}
+    local metrics = getToolbarMetrics()
 
     local action_settings = self:getActionSettings()
     for _, action in ipairs(ACTIONS) do
         if action_settings[action.id] ~= false then
-            local button = self:makeButton(reader_highlight, action, index)
+            local button = self:makeButton(reader_highlight, action, index, metrics)
             if button then
                 row[#row + 1] = button
             end
@@ -1854,21 +2392,9 @@ function SelectionToolbar:showToolbar(reader_highlight, index)
 
     self:closeHighlightDialog(reader_highlight)
 
-    local button_size = BUTTON_WIDTH
-    local show_shadow = self:showToolbarShadows()
-    local shadow_extent = show_shadow and SHADOW_EXTENT or 0
-    local width = math_min(
-        Screen:getWidth() - 2 * Size.padding.large - shadow_extent,
-        #row * button_size + 2 * Size.border.window + 2 * Size.padding.button
-    )
     local with_marks = self:canShowMarks(reader_highlight, index)
 
-    reader_highlight.highlight_dialog = ShadowedButtonDialog:new({
-        buttons = { row },
-        width = width,
-        show_shadow = show_shadow,
-        shrink_unneeded_width = true,
-        shrink_min_width = button_size,
+    reader_highlight.highlight_dialog = self:buildToolbarDialog(row, metrics, {
         dismissable = true,
         handle_controller = with_marks and self or nil,
         handle_pan_rate = with_marks and self:getHandlePanRate() or nil,

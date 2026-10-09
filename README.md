@@ -12,7 +12,7 @@ Each plugin is kept in its own `.koplugin/` folder and has a dedicated documenta
 | Translator Preview | v1.0.2 | `translatorpreview.koplugin/` | [translatorpreview.koplugin.md](./translatorpreview.koplugin.md) |
 | Lookup Preview | v1.0.22 | `lookuppreview.koplugin/` | [lookuppreview.koplugin.md](./lookuppreview.koplugin.md) |
 | Reader Header Footer | v1.0.10 | `readerheaderfooter.koplugin/` | [readerheaderfooter.koplugin.md](./readerheaderfooter.koplugin.md) |
-| Selection Toolbar | v1.5.0 | `selectiontoolbar.koplugin/` | [selectiontoolbar.koplugin.md](./selectiontoolbar.koplugin.md) |
+| Selection Toolbar | v1.7.0 | `selectiontoolbar.koplugin/` | [selectiontoolbar.koplugin.md](./selectiontoolbar.koplugin.md) |
 | Quick Dock | v0.26.1 | `quickdock.koplugin/` | [quickdock.koplugin.md](./quickdock.koplugin.md) |
 | Image Browser | v0.2.7 | `imagebrowser.koplugin/` | [imagebrowser.koplugin.md](./imagebrowser.koplugin.md) |
 | Page Anchor | v1.7.3 | `pageanchor.koplugin/` | [pageanchor.koplugin.md](./pageanchor.koplugin.md) |
