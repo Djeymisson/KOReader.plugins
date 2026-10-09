@@ -26,36 +26,27 @@ local math_max = math.max
 local math_min = math.min
 local math_sqrt = math.sqrt
 
-local PLUGIN_VERSION = "v1.8.0"
+local PLUGIN_VERSION = "v1.9.0"
 local QR_MESSAGE_MODULE = "ui/widget/qrmessage"
 
-local HANDLE_BAR_WIDTH = math_max(2, Screen:scaleBySize(2))
-local HANDLE_KNOB_RADIUS = math_max(3, Screen:scaleBySize(7))
--- Flag tab: a trapezoid grab area beyond the line.
-local HANDLE_TAB_HEIGHT = math_max(8, Screen:scaleBySize(22))
-local HANDLE_TAB_WIDTH = math_max(6, Screen:scaleBySize(16))
-local HANDLE_TAB_SLANT = math_max(3, Screen:scaleBySize(10))
--- Every handle style stays within this distance beyond its line (toolbar gap and drag
--- refresh band rely on it).
-local HANDLE_EXTENT = math_max(2 * HANDLE_KNOB_RADIUS, HANDLE_TAB_HEIGHT)
-local HANDLE_BRACKET_WIDTH = math_max(2, Screen:scaleBySize(3))
-local HANDLE_BRACKET_SERIF = math_max(4, Screen:scaleBySize(7))
+-- Handle shapes are sized per handle size (see getHandleMetrics); these stay the same.
 local HANDLE_OUTLINE = math_max(1, Screen:scaleBySize(1))
 local HANDLE_RING_WIDTH = math_max(2, Screen:scaleBySize(2))
+-- The touch area does not follow the handle size: small handles stay easy to grab.
 local HANDLE_TOUCH_SIZE = Screen:scaleBySize(48)
--- How far a handle's touch area can reach beyond its line (knob plus centered touch padding).
-local HANDLE_TOUCH_EXTENT = math_max(HANDLE_EXTENT + 1, math.ceil(HANDLE_TOUCH_SIZE / 2) + HANDLE_KNOB_RADIUS + 1)
-local LINE_MARKER_WIDTH = math_max(2, Screen:scaleBySize(3))
-local LINE_MARKER_GAP = Screen:scaleBySize(6)
 -- Finger moves smaller than this are not sent to crengine: selection snaps to words,
 -- so they would only recompute the same text range.
 local DRAG_MIN_MOVE = math_max(2, Screen:scaleBySize(4))
 local MARKS_VIEW_MODULE = "selectiontoolbar_selection_marks"
 local HANDLE_SIDES = { "start", "end" }
 
-local SHADOW_WIDTH = math_max(2, Screen:scaleBySize(12))
-local SHADOW_OVERLAP = math_min(SHADOW_WIDTH - 1, math_max(1, Screen:scaleBySize(6)))
-local SHADOW_EXTENT = math_max(0, SHADOW_WIDTH - SHADOW_OVERLAP)
+-- A dithered toolbar shadow: width is how far it reaches from the toolbar edge, overlap
+-- how much of it lies under the toolbar, and strength scales its darkness.
+local function shadowFinish(id, width, overlap, strength)
+    width = math_max(2, Screen:scaleBySize(width))
+    overlap = math_min(width - 1, math_max(1, Screen:scaleBySize(overlap)))
+    return { id = id, width = width, overlap = overlap, extent = math_max(0, width - overlap), strength = strength }
+end
 local SHADOW_BAYER8 = {
     { 0, 32, 8, 40, 2, 34, 10, 42 },
     { 48, 16, 56, 24, 50, 18, 58, 26 },
@@ -81,6 +72,10 @@ local SETTING_ICON_SIZE = "selectiontoolbar_icon_size"
 local SETTING_SHAPE = "selectiontoolbar_shape"
 local SETTING_BORDER = "selectiontoolbar_border"
 local SETTING_SEPARATORS = "selectiontoolbar_separators"
+local SETTING_SHADOW_STYLE = "selectiontoolbar_shadow_style"
+local SETTING_HANDLE_SIZE = "selectiontoolbar_handle_size"
+local SETTING_LINE_MARKER_WIDTH = "selectiontoolbar_line_marker_width"
+local SETTING_LINE_MARKER_GAP = "selectiontoolbar_line_marker_gap"
 -- v1.3.0 had the outline as a separate "wireframe" style: read it as lollipop + outline.
 local LEGACY_WIREFRAME_STYLE = "wireframe"
 
@@ -192,6 +187,51 @@ local SEPARATOR_STYLES = {
     },
 }
 
+local SHADOW_NONE = "none"
+local DEFAULT_SHADOW_STYLE = "standard"
+local SHADOW_STYLES = {
+    {
+        id = SHADOW_NONE,
+        text = _("No shadow"),
+        help_text = _("A flat toolbar. A stronger border helps it stand out over the text."),
+    },
+    {
+        id = "subtle",
+        text = _("Subtle"),
+        help_text = _("A shorter, lighter shadow."),
+        finish = shadowFinish("subtle", 8, 4, 0.6),
+    },
+    {
+        id = DEFAULT_SHADOW_STYLE,
+        text = _("Standard"),
+        help_text = _("A dithered shadow along the right and bottom edges."),
+        finish = shadowFinish(DEFAULT_SHADOW_STYLE, 12, 6, 1),
+    },
+}
+
+-- Scale of the handle shapes, relative to the normal size.
+local DEFAULT_HANDLE_SIZE = "normal"
+local HANDLE_SIZES = {
+    { id = "small", text = _("Small"), help_text = _("Discreet handles. They are as easy to grab as normal ones."), scale = 0.7 },
+    { id = DEFAULT_HANDLE_SIZE, text = _("Normal"), help_text = _("The default handle size."), scale = 1 },
+    { id = "large", text = _("Large"), help_text = _("Handles that are easier to see."), scale = 1.4 },
+}
+
+local DEFAULT_LINE_MARKER_WIDTH = "medium"
+local LINE_MARKER_WIDTHS = {
+    { id = "thin", text = _("Thin"), width = math_max(1, Screen:scaleBySize(2)) },
+    { id = DEFAULT_LINE_MARKER_WIDTH, text = _("Medium"), width = math_max(2, Screen:scaleBySize(3)) },
+    { id = "thick", text = _("Thick"), width = math_max(3, Screen:scaleBySize(5)) },
+}
+
+-- Distance between the line marker and the text. It never leaves the page margin.
+local DEFAULT_LINE_MARKER_GAP = "normal"
+local LINE_MARKER_GAPS = {
+    { id = "near", text = _("Close to the text"), gap = Screen:scaleBySize(2) },
+    { id = DEFAULT_LINE_MARKER_GAP, text = _("Normal"), gap = Screen:scaleBySize(6) },
+    { id = "far", text = _("Far from the text"), gap = Screen:scaleBySize(14) },
+}
+
 local ACTIONS = {
     { id = "select", key = "01_select", icon = "select", text = _("Select") },
     { id = "highlight", key = "02_highlight", icon = "highlight", text = _("Highlight") },
@@ -262,14 +302,16 @@ end
 local ShadowedPopup = WidgetContainer:extend({})
 
 function ShadowedPopup:getSize()
+    local shadow = self.shadow
     local size = self[1]:getSize()
     return Geom:new({
-        w = size.w + SHADOW_EXTENT,
-        h = size.h + SHADOW_EXTENT,
+        w = size.w + shadow.extent,
+        h = size.h + shadow.extent,
     })
 end
 
 function ShadowedPopup:_ensureShadowBuffers(bb, width, height)
+    local shadow = self.shadow
     local radius = math_max(0, math_min(self.shadow_radius or 0, width / 2, height / 2))
     local night = Screen.night_mode
     local inv = bb.getInverse and bb:getInverse() == 1
@@ -280,6 +322,7 @@ function ShadowedPopup:_ensureShadowBuffers(bb, width, height)
         tostring(radius),
         tostring(night),
         tostring(render_inv),
+        shadow.id,
     }, ":")
     if TOOLBAR_SHADOW_CACHE.key == cache_key then
         return
@@ -303,9 +346,9 @@ function ShadowedPopup:_ensureShadowBuffers(bb, width, height)
     end
 
     local function shadowLevel(pos)
-        local t = (pos + 0.5) / SHADOW_WIDTH
+        local t = (pos + 0.5) / shadow.width
         local original_level = base_strength * baseFraction(t)
-        local visible_start = SHADOW_OVERLAP / SHADOW_WIDTH
+        local visible_start = shadow.overlap / shadow.width
         local bump
         if t <= visible_start then
             bump = 1
@@ -313,18 +356,18 @@ function ShadowedPopup:_ensureShadowBuffers(bb, width, height)
             local distance = (t - visible_start) / bump_width
             bump = distance < 1 and 0.5 * (1 + math.cos(math.pi * distance)) or 0
         end
-        return (original_level + bump * (peak_level - original_level)) * 255
+        return (original_level + bump * (peak_level - original_level)) * shadow.strength * 255
     end
 
-    TOOLBAR_SHADOW_CACHE.right = Blitbuffer.new(SHADOW_WIDTH, height, Blitbuffer.TYPE_BBRGB32)
-    for x = 0, SHADOW_WIDTH - 1 do
+    TOOLBAR_SHADOW_CACHE.right = Blitbuffer.new(shadow.width, height, Blitbuffer.TYPE_BBRGB32)
+    for x = 0, shadow.width - 1 do
         local column = (x % 8) + 1
         for y = 0, height - 1 do
             local level
             if radius > 0 then
-                local distance = roundedRectDistance(width - SHADOW_OVERLAP + x, y, width, height, radius)
-                local shadow_pos = SHADOW_OVERLAP + distance
-                level = shadow_pos >= 0 and shadow_pos < SHADOW_WIDTH and shadowLevel(shadow_pos) or 0
+                local distance = roundedRectDistance(width - shadow.overlap + x, y, width, height, radius)
+                local shadow_pos = shadow.overlap + distance
+                level = shadow_pos >= 0 and shadow_pos < shadow.width and shadowLevel(shadow_pos) or 0
             else
                 level = shadowLevel(x)
             end
@@ -335,27 +378,27 @@ function ShadowedPopup:_ensureShadowBuffers(bb, width, height)
     end
     TOOLBAR_SHADOW_CACHE.right:setInverse(render_inv and 1 or 0)
 
-    local bottom_width = width + SHADOW_EXTENT
-    TOOLBAR_SHADOW_CACHE.bottom = Blitbuffer.new(bottom_width, SHADOW_WIDTH, Blitbuffer.TYPE_BBRGB32)
-    for y = 0, SHADOW_WIDTH - 1 do
+    local bottom_width = width + shadow.extent
+    TOOLBAR_SHADOW_CACHE.bottom = Blitbuffer.new(bottom_width, shadow.width, Blitbuffer.TYPE_BBRGB32)
+    for y = 0, shadow.width - 1 do
         local bottom_level = shadowLevel(y)
         local row = (y % 8) + 1
         for x = 0, bottom_width - 1 do
             local level
             if radius > 0 then
-                if y < SHADOW_OVERLAP and x >= width - SHADOW_OVERLAP then
+                if y < shadow.overlap and x >= width - shadow.overlap then
                     level = 0
                 else
-                    local distance = roundedRectDistance(x, height - SHADOW_OVERLAP + y, width, height, radius)
-                    local shadow_pos = SHADOW_OVERLAP + distance
-                    level = shadow_pos >= 0 and shadow_pos < SHADOW_WIDTH and shadowLevel(shadow_pos) or 0
+                    local distance = roundedRectDistance(x, height - shadow.overlap + y, width, height, radius)
+                    local shadow_pos = shadow.overlap + distance
+                    level = shadow_pos >= 0 and shadow_pos < shadow.width and shadowLevel(shadow_pos) or 0
                 end
             else
                 level = bottom_level
-                if y < SHADOW_OVERLAP and x >= width - SHADOW_OVERLAP then
+                if y < shadow.overlap and x >= width - shadow.overlap then
                     level = 0
                 elseif x >= width then
-                    level = math_min(level, shadowLevel(SHADOW_OVERLAP + x - width))
+                    level = math_min(level, shadowLevel(shadow.overlap + x - width))
                 end
             end
             local threshold = (SHADOW_BAYER8[(x % 8) + 1][row] + 0.5) * 4
@@ -387,17 +430,18 @@ function ShadowedPopup:_alphaBlitClipped(bb, source, x, y)
 end
 
 function ShadowedPopup:paintTo(bb, x, y)
+    local shadow = self.shadow
     local content_size = self[1]:getSize()
     local width, height = content_size.w, content_size.h
     self:_ensureShadowBuffers(bb, width, height)
     self.dimen = Geom:new({
         x = x,
         y = y,
-        w = width + SHADOW_EXTENT,
-        h = height + SHADOW_EXTENT,
+        w = width + shadow.extent,
+        h = height + shadow.extent,
     })
-    self:_alphaBlitClipped(bb, TOOLBAR_SHADOW_CACHE.bottom, x, y + height - SHADOW_OVERLAP)
-    self:_alphaBlitClipped(bb, TOOLBAR_SHADOW_CACHE.right, x + width - SHADOW_OVERLAP, y)
+    self:_alphaBlitClipped(bb, TOOLBAR_SHADOW_CACHE.bottom, x, y + height - shadow.overlap)
+    self:_alphaBlitClipped(bb, TOOLBAR_SHADOW_CACHE.right, x + width - shadow.overlap, y)
     self[1]:paintTo(bb, x, y)
 end
 
@@ -416,9 +460,10 @@ function ShadowedButtonDialog:init()
         -- predicted capsule radius is checked against the actual height.
         frame.radius = math_min(style.radius, math_floor(frame:getSize().h / 2))
     end
-    if self.show_shadow then
+    if self.shadow then
         local frame = self.movable[1]
         self.movable[1] = ShadowedPopup:new({
+            shadow = self.shadow,
             shadow_radius = frame.radius,
             frame,
         })
@@ -525,10 +570,76 @@ local SHEET_GRIP_WIDTH = Screen:scaleBySize(36)
 local SHEET_GRIP_HEIGHT = math_max(2, Screen:scaleBySize(4))
 local SHEET_GRIP_MARGIN = Size.padding.default
 
--- Lays the preview out again. The toolbar is only rebuilt when toolbar_changed (a setting
--- changed) and the sample text only when its size changed: it is laid out and rendered
--- when created, which is the costly part. Returns whether the preview looks different.
-function ToolbarPreview:update(toolbar_changed)
+-- What the preview shows: the toolbar (Appearance, Visible actions) or the selection
+-- marks over a selected sample text (Selection marks).
+local PREVIEW_TOOLBAR = "toolbar"
+local PREVIEW_MARKS = "marks"
+
+-- Sample text of the given width and number of lines, kept while they do not change:
+-- it is laid out and rendered when created, which is the costly part.
+function ToolbarPreview:getSample(width, lines, face)
+    local key = width .. ":" .. lines
+    if self.sample_key ~= key then
+        if self.sample then
+            self.sample:free()
+        end
+        -- TextBoxWidget splits all of its text into lines: give it just enough to fill
+        -- them. 0.3 em per byte is generous for Latin text (~0.5 em per character) and
+        -- still enough for wide CJK glyphs (1 em for 3 bytes).
+        local repeats = math.ceil(lines * width / (0.3 * face.size) / #PREVIEW_SAMPLE_TEXT) + 1
+        self.sample = TextBoxWidget:new({
+            text = PREVIEW_SAMPLE_TEXT:rep(repeats),
+            face = face,
+            width = width,
+            height = lines * math_floor(1.3 * face.size + 0.5),
+        })
+        self.sample_key = key
+    end
+    return self.sample
+end
+
+-- The toolbar over the sample text, with up to PREVIEW_MAX_EXTRA_LINES lines above and
+-- below it when there is room.
+function ToolbarPreview:buildToolbarStage(settings_changed, inner_w, face, line_h, room)
+    if settings_changed or not self.toolbar_built then
+        if self.toolbar then
+            self.toolbar:free()
+        end
+        local dialog = self.plugin:buildPreviewDialog(inner_w)
+        self.toolbar = dialog and dialog.movable[1]
+        self.toolbar_built = true
+    end
+    local toolbar = self.toolbar
+    local toolbar_size = toolbar and toolbar:getSize() or Geom:new({ w = 0, h = 0 })
+
+    local toolbar_lines = math.ceil(toolbar_size.h / line_h)
+    local lines
+    for extra = PREVIEW_MAX_EXTRA_LINES, 0, -1 do
+        lines = toolbar_lines + 2 * extra
+        if lines * line_h <= room then
+            break
+        end
+    end
+    lines = math_max(lines, 1)
+    local text_h = lines * line_h
+
+    local stage = OverlapGroup:new({
+        dimen = Geom:new({ w = inner_w, h = text_h }),
+        self:getSample(inner_w, lines, face),
+    })
+    if toolbar then
+        toolbar.overlap_offset = {
+            math_floor((inner_w - toolbar_size.w) / 2),
+            math_floor((text_h - toolbar_size.h) / 2),
+        }
+        stage[2] = toolbar
+    end
+    return stage
+end
+
+-- Lays the preview out again. Its parts are only rebuilt when settings_changed (rather
+-- than only the room left by the menu). Returns whether the preview looks different.
+function ToolbarPreview:update(settings_changed)
     local plugin = self.plugin
     local screen_w, screen_h = Screen:getWidth(), Screen:getHeight()
     -- Space kept between the menu and the shadow.
@@ -537,17 +648,6 @@ function ToolbarPreview:update(toolbar_changed)
     local side = SHEET_BORDER + padding
     local inner_w = screen_w - 2 * side
     local menu_bottom = plugin:getMenuBottom()
-
-    if toolbar_changed or not self.toolbar_built then
-        if self.toolbar then
-            self.toolbar:free()
-        end
-        local dialog = plugin:buildPreviewDialog(inner_w)
-        self.toolbar = dialog and dialog.movable[1]
-        self.toolbar_built = true
-    end
-    local toolbar = self.toolbar
-    local toolbar_size = toolbar and toolbar:getSize() or Geom:new({ w = 0, h = 0 })
 
     if not self.title then
         self.title = TextWidget:new({
@@ -562,46 +662,14 @@ function ToolbarPreview:update(toolbar_changed)
     -- Above the body: the shadow, the top border and the grip with its margins.
     local body_top = SHEET_BORDER + 2 * SHEET_GRIP_MARGIN + SHEET_GRIP_HEIGHT
     local fixed_h = SHEET_SHADOW + body_top + self.title:getSize().h + title_span + padding
-    local room = screen_h - menu_bottom - gap
-    local toolbar_lines = math.ceil(toolbar_size.h / line_h)
-    local lines
-    for extra = PREVIEW_MAX_EXTRA_LINES, 0, -1 do
-        lines = toolbar_lines + 2 * extra
-        if fixed_h + lines * line_h <= room then
-            break
-        end
-    end
-    lines = math_max(lines, 1)
-    local text_h = lines * line_h
+    -- Height left for the stage below the menu.
+    local room = screen_h - menu_bottom - gap - fixed_h
 
-    local sample_key = inner_w .. ":" .. lines
-    if self.sample_key ~= sample_key then
-        if self.sample then
-            self.sample:free()
-        end
-        -- TextBoxWidget splits all of its text into lines: give it just enough to fill
-        -- them. 0.3 em per byte is generous for Latin text (~0.5 em per character) and
-        -- still enough for wide CJK glyphs (1 em for 3 bytes).
-        local repeats = math.ceil(lines * inner_w / (0.3 * face.size) / #PREVIEW_SAMPLE_TEXT) + 1
-        self.sample = TextBoxWidget:new({
-            text = PREVIEW_SAMPLE_TEXT:rep(repeats),
-            face = face,
-            width = inner_w,
-            height = text_h,
-        })
-        self.sample_key = sample_key
-    end
-
-    local stage = OverlapGroup:new({
-        dimen = Geom:new({ w = inner_w, h = text_h }),
-        self.sample,
-    })
-    if toolbar then
-        toolbar.overlap_offset = {
-            math_floor((inner_w - toolbar_size.w) / 2),
-            math_floor((text_h - toolbar_size.h) / 2),
-        }
-        stage[2] = toolbar
+    local stage
+    if self.mode == PREVIEW_MARKS then
+        stage = plugin:buildMarksPreview(self, inner_w, face, line_h, room)
+    else
+        stage = self:buildToolbarStage(settings_changed, inner_w, face, line_h, room)
     end
 
     -- Only layout containers: the widgets they hold are kept and freed in freeContent().
@@ -624,7 +692,7 @@ function ToolbarPreview:update(toolbar_changed)
         w = screen_w,
         h = sheet_h + SHEET_SHADOW,
     })
-    return toolbar_changed or not old_dimen or old_dimen.y ~= self.dimen.y or old_dimen.h ~= self.dimen.h
+    return settings_changed or not old_dimen or old_dimen.y ~= self.dimen.y or old_dimen.h ~= self.dimen.h
 end
 
 function ToolbarPreview:freeContent()
@@ -830,6 +898,38 @@ local function getToolbarMetrics()
     return metrics
 end
 
+-- Handle shape sizes for the chosen handle size, in screen pixels.
+local handle_metrics_cache = {}
+
+local function getHandleMetrics()
+    local size = readChoice(SETTING_HANDLE_SIZE, HANDLE_SIZES, DEFAULT_HANDLE_SIZE)
+    local m = handle_metrics_cache[size.id]
+    if m then
+        return m
+    end
+    local function px(value, min)
+        return math_max(min, Screen:scaleBySize(value * size.scale))
+    end
+    m = {
+        bar_width = px(2, 2),
+        -- An outlined knob must keep some white inside its ring.
+        knob_radius = math_max(px(7, 3), HANDLE_RING_WIDTH + 2),
+        -- Flag tab: a trapezoid grab area beyond the line.
+        tab_height = px(22, 8),
+        tab_width = px(16, 6),
+        tab_slant = px(10, 3),
+        bracket_width = px(3, 2),
+        bracket_serif = px(7, 4),
+    }
+    -- Every handle style stays within this distance beyond its line (toolbar gap and
+    -- drag refresh band rely on it).
+    m.extent = math_max(2 * m.knob_radius, m.tab_height)
+    -- How far a handle's touch area can reach beyond its line (knob plus centered touch padding).
+    m.touch_extent = math_max(m.extent + 1, math.ceil(HANDLE_TOUCH_SIZE / 2) + m.knob_radius + 1)
+    handle_metrics_cache[size.id] = m
+    return m
+end
+
 local function applyToolbarButtonMetrics(button, metrics)
     button.icon_width = metrics.icon_size
     button.icon_height = metrics.icon_size
@@ -904,15 +1004,25 @@ function SelectionToolbar:setEnabled(enabled)
     G_reader_settings:saveSetting(SETTING_ENABLED, enabled and true or false)
 end
 
-function SelectionToolbar:showToolbarShadows()
-    return G_reader_settings:nilOrTrue(SETTING_SHADOWS)
+-- Up to v1.8.0 the shadow could only be turned on or off: an unset style reads the
+-- old on/off setting.
+function SelectionToolbar:getShadowStyle()
+    local style = findChoice(SHADOW_STYLES, G_reader_settings:readSetting(SETTING_SHADOW_STYLE))
+    if style then
+        return style.id
+    end
+    return G_reader_settings:isFalse(SETTING_SHADOWS) and SHADOW_NONE or DEFAULT_SHADOW_STYLE
 end
 
-function SelectionToolbar:setToolbarShadows(enabled)
-    G_reader_settings:saveSetting(SETTING_SHADOWS, enabled and true or false)
-    if not enabled then
-        clearToolbarShadowCache()
-    end
+function SelectionToolbar:setShadowStyle(style)
+    G_reader_settings:saveSetting(SETTING_SHADOW_STYLE, style)
+    -- Free the cached shadow: it does not match the new style.
+    clearToolbarShadowCache()
+end
+
+-- The chosen shadow finish, or nil without a shadow.
+function SelectionToolbar:getShadowFinish()
+    return findChoice(SHADOW_STYLES, self:getShadowStyle()).finish
 end
 
 function SelectionToolbar:getToolbarPosition()
@@ -1014,6 +1124,44 @@ end
 
 function SelectionToolbar:canOutlineHandles()
     return OUTLINE_STYLES[self:getHandleStyle()] or false
+end
+
+function SelectionToolbar:getHandleSize()
+    return readChoice(SETTING_HANDLE_SIZE, HANDLE_SIZES, DEFAULT_HANDLE_SIZE).id
+end
+
+function SelectionToolbar:setHandleSize(size)
+    G_reader_settings:saveSetting(SETTING_HANDLE_SIZE, size)
+end
+
+function SelectionToolbar:getLineMarkerWidth()
+    return readChoice(SETTING_LINE_MARKER_WIDTH, LINE_MARKER_WIDTHS, DEFAULT_LINE_MARKER_WIDTH).id
+end
+
+function SelectionToolbar:setLineMarkerWidth(width)
+    G_reader_settings:saveSetting(SETTING_LINE_MARKER_WIDTH, width)
+end
+
+function SelectionToolbar:getLineMarkerGap()
+    return readChoice(SETTING_LINE_MARKER_GAP, LINE_MARKER_GAPS, DEFAULT_LINE_MARKER_GAP).id
+end
+
+function SelectionToolbar:setLineMarkerGap(gap)
+    G_reader_settings:saveSetting(SETTING_LINE_MARKER_GAP, gap)
+end
+
+-- Line marker width and its distance from the text, in screen pixels, for a page margin
+-- of the given width. The marker must stay in the margin: when it is too narrow, the
+-- distance is reduced first, then the width. Without any margin there is no marker (nil).
+function SelectionToolbar:getLineMarkerSize(margin)
+    margin = math_floor(margin or 0)
+    if margin <= 0 then
+        return nil
+    end
+    local width = readChoice(SETTING_LINE_MARKER_WIDTH, LINE_MARKER_WIDTHS, DEFAULT_LINE_MARKER_WIDTH).width
+    local gap = readChoice(SETTING_LINE_MARKER_GAP, LINE_MARKER_GAPS, DEFAULT_LINE_MARKER_GAP).gap
+    width = math_min(width, margin)
+    return width, math_max(0, math_min(gap, margin - width))
 end
 
 function SelectionToolbar:lineMarkerOnRight()
@@ -1143,8 +1291,8 @@ end
 -- available_width: the room for the toolbar and its shadow (default: the screen width
 -- less a margin on both sides).
 function SelectionToolbar:buildToolbarDialog(row, metrics, options, available_width)
-    local show_shadow = self:showToolbarShadows()
-    local shadow_extent = show_shadow and SHADOW_EXTENT or 0
+    local shadow = self:getShadowFinish()
+    local shadow_extent = shadow and shadow.extent or 0
     local count = #row
     local style = self:getFrameStyle(metrics)
     -- ButtonTable puts a separator line between buttons; the frame adds border and padding.
@@ -1177,7 +1325,7 @@ function SelectionToolbar:buildToolbarDialog(row, metrics, options, available_wi
     -- ButtonDialog sizes its ButtonTable for its own default border and padding.
     options.width = count * button_width + separators + 2 * Size.border.window + 2 * Size.padding.button
     options.frame_style = style
-    options.show_shadow = show_shadow
+    options.shadow = shadow
     options.shrink_unneeded_width = true
     options.shrink_min_width = button_width
     return ShadowedButtonDialog:new(options)
@@ -1203,11 +1351,12 @@ function SelectionToolbar:buildPreviewDialog(available_width)
     return self:buildToolbarDialog(row, metrics, {}, available_width)
 end
 
--- Menu pages that show the preview: entering one of them opens it, and it closes itself
--- once the menu shows any other page.
-function SelectionToolbar:trackPreviewPage(item_table)
+-- Menu pages that show the preview, and what it shows there (PREVIEW_TOOLBAR or
+-- PREVIEW_MARKS): entering one of them opens it, and it closes itself once the menu
+-- shows any other page.
+function SelectionToolbar:trackPreviewPage(item_table, mode)
     self.preview_pages = self.preview_pages or {}
-    self.preview_pages[item_table] = true
+    self.preview_pages[item_table] = mode
     return item_table
 end
 
@@ -1226,16 +1375,17 @@ function SelectionToolbar:getMenuBottom()
     return (menu_dimen.y or 0) + (menu_dimen.h or 0)
 end
 
--- "closed" when the menu left the preview pages, "hidden" when a dialog (e.g. an item's
--- help) is over the menu or the preview would cover the menu, else "visible".
+-- The preview mode of the menu page being shown, or false.
 function SelectionToolbar:isOnPreviewPage()
     local _, touch_menu = self:getReaderMenu()
     return touch_menu and touch_menu.item_table and self.preview_pages and self.preview_pages[touch_menu.item_table]
         or false
 end
 
+-- "closed" when the menu left the preview's pages, "hidden" when a dialog (e.g. an item's
+-- help) is over the menu or the preview would cover the menu, else "visible".
 function SelectionToolbar:getPreviewState(preview)
-    if not self:isOnPreviewPage() then
+    if self:isOnPreviewPage() ~= preview.mode then
         return "closed"
     end
     local menu_container = self:getReaderMenu()
@@ -1259,24 +1409,28 @@ end
 function SelectionToolbar:schedulePreview()
     UIManager:nextTick(function()
         -- Also called while the menu is searched: only show it on an actual preview page.
-        if self.preview or not self:isOnPreviewPage() then
+        local mode = self:isOnPreviewPage()
+        if not mode or (self.preview and self.preview.mode == mode) then
             return
         end
-        local preview = ToolbarPreview:new({ plugin = self })
+        if self.preview then
+            self:closePreview(self.preview)
+        end
+        local preview = ToolbarPreview:new({ plugin = self, mode = mode })
         preview:update()
         self.preview = preview
         UIManager:show(preview, "ui", preview.dimen)
     end)
 end
 
--- toolbar_changed: a setting changed (default), rather than only the room for the preview.
-function SelectionToolbar:refreshPreview(toolbar_changed)
+-- settings_changed: a setting changed (default), rather than only the room for the preview.
+function SelectionToolbar:refreshPreview(settings_changed)
     local preview = self.preview
     if not preview then
         return
     end
     local old_dimen = preview.dimen
-    if not preview:update(toolbar_changed ~= false) then
+    if not preview:update(settings_changed ~= false) then
         return
     end
     if preview.dimen.y == old_dimen.y then
@@ -1370,6 +1524,7 @@ function SelectionToolbar:addToMainMenu(menu_items)
         end,
         callback = function()
             self:setHandleStyle(self:getHandleStyle(), not self:handleOutline())
+            self:refreshPreview()
         end,
         keep_menu_open = true,
     })
@@ -1380,6 +1535,97 @@ function SelectionToolbar:addToMainMenu(menu_items)
     local shape_items = self:choiceMenuItems(SHAPES, self.getShape, self.setShape)
     local border_items = self:choiceMenuItems(BORDERS, self.getBorder, self.setBorder)
     local separator_items = self:choiceMenuItems(SEPARATOR_STYLES, self.getSeparators, self.setSeparators)
+    local shadow_items = self:choiceMenuItems(SHADOW_STYLES, self.getShadowStyle, self.setShadowStyle)
+    local handle_size_items = self:choiceMenuItems(HANDLE_SIZES, self.getHandleSize, self.setHandleSize)
+    local marker_width_items = self:choiceMenuItems(LINE_MARKER_WIDTHS, self.getLineMarkerWidth, self.setLineMarkerWidth)
+    local marker_gap_items = self:choiceMenuItems(LINE_MARKER_GAPS, self.getLineMarkerGap, self.setLineMarkerGap)
+
+    local function updateMenu(touchmenu_instance)
+        if touchmenu_instance and touchmenu_instance.updateItems then
+            touchmenu_instance:updateItems()
+        end
+        self:refreshPreview()
+    end
+
+    local marks_items = {
+        {
+            text = _("Show selection handles"),
+            help_text = _("Drag the selection handles to adjust it, or into a page corner to continue."),
+            enabled_func = function()
+                return Device:isTouchDevice()
+            end,
+            checked_func = function()
+                return self:showHandles()
+            end,
+            callback = function(touchmenu_instance)
+                self:toggleSetting(SETTING_HANDLES, true)
+                updateMenu(touchmenu_instance)
+            end,
+            keep_menu_open = true,
+        },
+        {
+            text = _("Handle style"),
+            help_text = _("Choose how the selection handles are drawn."),
+            enabled_func = function()
+                return self:showHandles()
+            end,
+            sub_item_table = handle_style_items,
+        },
+        {
+            text = _("Handle size"),
+            help_text = _("Choose how large the handles are drawn. Their touch area stays the same."),
+            enabled_func = function()
+                return self:showHandles()
+            end,
+            sub_item_table = handle_size_items,
+            separator = true,
+        },
+        {
+            text = _("Show line marker"),
+            help_text = _("Show a vertical line in the page margin beside the selected lines."),
+            checked_func = function()
+                return self:showLineMarker()
+            end,
+            callback = function(touchmenu_instance)
+                self:toggleSetting(SETTING_LINE_MARKER, true)
+                updateMenu(touchmenu_instance)
+            end,
+            keep_menu_open = true,
+        },
+        {
+            text = _("Line marker in right margin"),
+            help_text = _("Draw the line marker in the right margin. Mirrored for right-to-left languages."),
+            enabled_func = function()
+                return self:showLineMarker()
+            end,
+            checked_func = function()
+                return self:lineMarkerOnRight()
+            end,
+            callback = function()
+                self:toggleSetting(SETTING_LINE_MARKER_RIGHT, false)
+                self:refreshPreview()
+            end,
+            keep_menu_open = true,
+        },
+        {
+            text = _("Line marker thickness"),
+            help_text = _("Choose how thick the line marker is."),
+            enabled_func = function()
+                return self:showLineMarker()
+            end,
+            sub_item_table = marker_width_items,
+        },
+        {
+            text = _("Line marker distance"),
+            help_text = _(
+                "Choose how far from the text the line marker is drawn. It stays in the page margin, closer to the text when the margin is narrow."
+            ),
+            enabled_func = function()
+                return self:showLineMarker()
+            end,
+            sub_item_table = marker_gap_items,
+        },
+    }
 
     local appearance_items = {
         {
@@ -1413,19 +1659,13 @@ function SelectionToolbar:addToMainMenu(menu_items)
             sub_item_table = separator_items,
         },
         {
-            text = _("Show toolbar shadow"),
-            help_text = _("Show a small dithered shadow along the right and bottom edges of the selection toolbar."),
-            checked_func = function()
-                return self:showToolbarShadows()
-            end,
-            callback = function()
-                self:setToolbarShadows(not self:showToolbarShadows())
-                self:refreshPreview()
-            end,
-            keep_menu_open = true,
+            text = _("Toolbar shadow"),
+            help_text = _("Choose the shadow along the right and bottom edges of the toolbar."),
+            sub_item_table = shadow_items,
         },
     }
-    local preview_pages = {
+
+    local toolbar_pages = {
         appearance_items,
         position_items,
         density_items,
@@ -1433,10 +1673,14 @@ function SelectionToolbar:addToMainMenu(menu_items)
         shape_items,
         border_items,
         separator_items,
+        shadow_items,
         action_items,
     }
-    for _, page in ipairs(preview_pages) do
-        self:trackPreviewPage(page)
+    for _, page in ipairs(toolbar_pages) do
+        self:trackPreviewPage(page, PREVIEW_TOOLBAR)
+    end
+    for _, page in ipairs({ marks_items, handle_style_items, handle_size_items, marker_width_items, marker_gap_items }) do
+        self:trackPreviewPage(page, PREVIEW_MARKS)
     end
 
     menu_items.selectiontoolbar = {
@@ -1469,65 +1713,10 @@ function SelectionToolbar:addToMainMenu(menu_items)
             {
                 text = _("Selection marks"),
                 help_text = _("Handles to adjust the selection and a margin line beside the selected lines."),
-                sub_item_table = {
-                    {
-                        text = _("Show selection handles"),
-                        help_text = _(
-                            "Drag the selection handles to adjust it, or into a page corner to continue."
-                        ),
-                        enabled_func = function()
-                            return Device:isTouchDevice()
-                        end,
-                        checked_func = function()
-                            return self:showHandles()
-                        end,
-                        callback = function(touchmenu_instance)
-                            self:toggleSetting(SETTING_HANDLES, true)
-                            if touchmenu_instance and touchmenu_instance.updateItems then
-                                touchmenu_instance:updateItems()
-                            end
-                        end,
-                        keep_menu_open = true,
-                    },
-                    {
-                        text = _("Handle style"),
-                        help_text = _("Choose how the selection handles are drawn."),
-                        enabled_func = function()
-                            return self:showHandles()
-                        end,
-                        sub_item_table = handle_style_items,
-                    },
-                    {
-                        text = _("Show line marker"),
-                        help_text = _("Show a vertical line in the page margin beside the selected lines."),
-                        checked_func = function()
-                            return self:showLineMarker()
-                        end,
-                        callback = function(touchmenu_instance)
-                            self:toggleSetting(SETTING_LINE_MARKER, true)
-                            if touchmenu_instance and touchmenu_instance.updateItems then
-                                touchmenu_instance:updateItems()
-                            end
-                        end,
-                        keep_menu_open = true,
-                    },
-                    {
-                        text = _("Line marker in right margin"),
-                        help_text = _(
-                            "Draw the line marker in the right margin. Mirrored for right-to-left languages."
-                        ),
-                        enabled_func = function()
-                            return self:showLineMarker()
-                        end,
-                        checked_func = function()
-                            return self:lineMarkerOnRight()
-                        end,
-                        callback = function()
-                            self:toggleSetting(SETTING_LINE_MARKER_RIGHT, false)
-                        end,
-                        keep_menu_open = true,
-                    },
-                },
+                sub_item_table_func = function()
+                    self:schedulePreview()
+                    return marks_items
+                end,
             },
             {
                 text = _("Visible actions"),
@@ -1705,7 +1894,7 @@ function SelectionToolbar:getToolbarAnchor(reader_highlight, dialog, index)
     -- Keep the toolbar clear of the handles' touch areas above the first and below the last line.
     local vertical_gap = gap
     if self.marks_dialog == dialog and self:showHandles() then
-        vertical_gap = gap + HANDLE_TOUCH_EXTENT
+        vertical_gap = gap + getHandleMetrics().touch_extent
     end
 
     if self:getToolbarPosition() == POSITION_EDGE then
@@ -1888,35 +2077,35 @@ end
 
 -- The vertical bar along the selection edge; in outline mode it gets a white halo so it
 -- stays visible against black text.
-local function barShapes(shapes, edge_x, y, h, outline)
-    local bar_x = edge_x - HANDLE_BAR_WIDTH / 2
+local function barShapes(shapes, edge_x, y, h, outline, m)
+    local bar_x = edge_x - m.bar_width / 2
     if outline then
         shapes[#shapes + 1] =
-            rectShape(bar_x - HANDLE_OUTLINE, y, HANDLE_BAR_WIDTH + 2 * HANDLE_OUTLINE, h, Blitbuffer.COLOR_WHITE)
+            rectShape(bar_x - HANDLE_OUTLINE, y, m.bar_width + 2 * HANDLE_OUTLINE, h, Blitbuffer.COLOR_WHITE)
     end
-    shapes[#shapes + 1] = rectShape(bar_x, y, HANDLE_BAR_WIDTH, h)
+    shapes[#shapes + 1] = rectShape(bar_x, y, m.bar_width, h)
 end
 
 -- Each style returns its shapes and the knob center (the point a finger aims at, used
 -- to pick the nearest handle when touch areas overlap). Shapes must stay within
--- HANDLE_EXTENT above/below the line. With outline, the solid knob is drawn black and
+-- m.extent above/below the line (m: getHandleMetrics()). With outline, the solid knob is drawn black and
 -- its inside, inset by HANDLE_RING_WIDTH, white: a black outline over white.
 local HANDLE_STYLE_BUILDERS = {
-    lollipop = function(box, is_start, edge_x, outline)
-        local r, ring = HANDLE_KNOB_RADIUS, HANDLE_RING_WIDTH
+    lollipop = function(box, is_start, edge_x, outline, m)
+        local r, ring = m.knob_radius, HANDLE_RING_WIDTH
         local knob_y = is_start and (box.y - r) or (box.y + box.h + r)
         local shapes = {}
-        barShapes(shapes, edge_x, box.y, box.h, outline)
+        barShapes(shapes, edge_x, box.y, box.h, outline, m)
         shapes[#shapes + 1] = circleShape(edge_x, knob_y, r, Blitbuffer.COLOR_BLACK)
         if outline then
             shapes[#shapes + 1] = circleShape(edge_x, knob_y, r - ring, Blitbuffer.COLOR_WHITE)
         end
         return shapes, edge_x, knob_y
     end,
-    teardrop = function(box, is_start, edge_x, outline)
+    teardrop = function(box, is_start, edge_x, outline, m)
         -- Both drops hang below the line; a squared corner turns the disc into a drop
         -- whose point touches the selection edge.
-        local r, ring = HANDLE_KNOB_RADIUS, HANDLE_RING_WIDTH
+        local r, ring = m.knob_radius, HANDLE_RING_WIDTH
         local bottom = box.y + box.h
         local cx = is_start and (edge_x - r) or (edge_x + r)
         local cy = bottom + r
@@ -1934,8 +2123,8 @@ local HANDLE_STYLE_BUILDERS = {
         end
         return shapes, cx, cy
     end,
-    bracket = function(box, is_start, edge_x)
-        local t, serif = HANDLE_BRACKET_WIDTH, HANDLE_BRACKET_SERIF
+    bracket = function(box, is_start, edge_x, _, m)
+        local t, serif = m.bracket_width, m.bracket_serif
         local top, height = box.y - t, box.h + 2 * t
         local stem_x = is_start and (edge_x - t) or edge_x
         -- Serifs point into the selection: right for "[", left for "]".
@@ -1946,14 +2135,14 @@ local HANDLE_STYLE_BUILDERS = {
             rectShape(serif_x, top + height - t, serif, t),
         }, stem_x + math_floor(t / 2), box.y + math_floor(box.h / 2)
     end,
-    flag = function(box, is_start, edge_x, outline)
+    flag = function(box, is_start, edge_x, outline, m)
         -- A pole along the selection edge with a grab tab beyond the line: above and
         -- outward (left) at the start, below and outward (right) at the end.
-        local w, h, slant, ring = HANDLE_TAB_WIDTH, HANDLE_TAB_HEIGHT, HANDLE_TAB_SLANT, HANDLE_RING_WIDTH
+        local w, h, slant, ring = m.tab_width, m.tab_height, m.tab_slant, HANDLE_RING_WIDTH
         local pole_top = is_start and (box.y - h) or box.y
         local tab_y = is_start and (box.y - h) or (box.y + box.h)
         local shapes = {}
-        barShapes(shapes, edge_x, pole_top, box.h + h, outline)
+        barShapes(shapes, edge_x, pole_top, box.h + h, outline, m)
         -- The slanted side is the one facing the text: bottom at the start, top at the end.
         shapes[#shapes + 1] = tabShape(edge_x, tab_y, w, h, slant, is_start, not is_start)
         if outline then
@@ -1981,10 +2170,10 @@ local HANDLE_STYLE_BUILDERS = {
     end,
 }
 
-local function handleGeometry(box, is_start, style, outline)
+local function handleGeometry(box, is_start, style, outline, m)
     local edge_x = is_start and box.x or (box.x + box.w)
     local build = HANDLE_STYLE_BUILDERS[style] or HANDLE_STYLE_BUILDERS[DEFAULT_HANDLE_STYLE]
-    local shapes, knob_x, knob_y = build(box, is_start, edge_x, outline and OUTLINE_STYLES[style] or false)
+    local shapes, knob_x, knob_y = build(box, is_start, edge_x, outline and OUTLINE_STYLES[style] or false, m)
     local visual
     for _, shape in ipairs(shapes) do
         local bounds = shapeBounds(shape)
@@ -2065,6 +2254,10 @@ function SelectionToolbar:computeLineMarkers(reader_highlight, boxes)
     if BD.mirroredUILayout() then
         on_right = not on_right
     end
+    local width, gap = self:getLineMarkerSize(on_right and margins.right or margins.left)
+    if not width then
+        return {}
+    end
 
     local rects = {}
     for column = 1, 2 do
@@ -2072,21 +2265,21 @@ function SelectionToolbar:computeLineMarkers(reader_highlight, boxes)
         if range then
             local x
             if on_right then
-                x = screen_w - margins.right + LINE_MARKER_GAP
+                x = screen_w - margins.right + gap
                 if page2_x and column == 1 then
                     x = x - page2_x
                 end
             else
-                x = margins.left - LINE_MARKER_GAP - LINE_MARKER_WIDTH
+                x = margins.left - gap - width
                 if page2_x and column == 2 then
                     x = x + page2_x
                 end
             end
-            x = math_max(0, math_min(x, screen_w - LINE_MARKER_WIDTH))
+            x = math_max(0, math_min(x, screen_w - width))
             rects[#rects + 1] = Geom:new({
                 x = x,
                 y = range.top,
-                w = LINE_MARKER_WIDTH,
+                w = width,
                 h = range.bottom - range.top,
             })
         end
@@ -2112,13 +2305,13 @@ function SelectionToolbar:computeSelectionMarks(reader_highlight)
         marks.lines = self:computeLineMarkers(reader_highlight, boxes)
     end
     if self:showHandles() then
-        local style, outline = self:getHandleStyle(), self:handleOutline()
+        local style, outline, metrics = self:getHandleStyle(), self:handleOutline(), getHandleMetrics()
         local first_box, last_box = boxes[1], boxes[#boxes]
         if isBoundaryVisible(document, selected_text.pos0, first_box) then
-            marks.handles.start = handleGeometry(first_box, true, style, outline)
+            marks.handles.start = handleGeometry(first_box, true, style, outline, metrics)
         end
         if isBoundaryVisible(document, selected_text.pos1, last_box) then
-            marks.handles["end"] = handleGeometry(last_box, false, style, outline)
+            marks.handles["end"] = handleGeometry(last_box, false, style, outline, metrics)
         end
     end
 
@@ -2144,6 +2337,157 @@ function SelectionToolbar:computeSelectionMarks(reader_highlight)
     marks.boxes = boxes
     marks.view_key = self:getMarksViewKey(reader_highlight)
     return marks
+end
+
+-- Selection marks preview: sample text with a selection across two of its lines, drawn
+-- in the reader's selection style, with the handles and the line marker as on the page.
+local MarksSample = WidgetContainer:extend({})
+
+function MarksSample:getSize()
+    return Geom:new({ w = self.width, h = self.height })
+end
+
+function MarksSample:paintTo(bb, x, y)
+    self.dimen = Geom:new({ x = x, y = y, w = self.width, h = self.height })
+    self.sample:paintTo(bb, x + self.text_x, y + self.text_y)
+    for _, box in ipairs(self.boxes) do
+        self:paintSelection(bb, Geom:new({ x = x + box.x, y = y + box.y, w = box.w, h = box.h }))
+    end
+    for _, rect in ipairs(self.lines) do
+        bb:paintRect(x + rect.x, y + rect.y, rect.w, rect.h, Blitbuffer.COLOR_BLACK)
+    end
+    for _, side in ipairs(HANDLE_SIDES) do
+        local handle = self.handles[side]
+        if handle then
+            for _, shape in ipairs(handle.shapes) do
+                paintShape(bb, x, y, shape)
+            end
+        end
+    end
+end
+
+-- Paints a selection box (in screen coordinates) as ReaderView:drawTempHighlight() does
+-- for a live selection: same drawer, color and height, through the same function.
+function MarksSample:paintSelection(bb, rect)
+    local view = self.view
+    if not (view and view.drawHighlightRect and view.highlight) then
+        bb:darkenRect(rect.x, rect.y, rect.w, rect.h, 0.2)
+        return
+    end
+    -- drawHighlightRect() only uses the selection's lighten factor (rather than the saved
+    -- highlights' one) while a selection is shown: pretend there is one.
+    local highlight = view.highlight
+    local temp = highlight.temp
+    if not (temp and next(temp)) then
+        highlight.temp = { selectiontoolbar_preview = {} }
+    end
+    local ok = pcall(view.drawHighlightRect, view, bb, rect.x, rect.y, rect, highlight.temp_drawer, self.color)
+    highlight.temp = temp
+    if not ok then
+        bb:darkenRect(rect.x, rect.y, rect.w, rect.h, 0.2)
+    end
+end
+
+-- Where the sample selection starts on first_line and ends on the next one, snapped to
+-- word boundaries when the text box can tell where its characters are.
+local function sampleSelectionRange(sample, first_line, width)
+    local start_x, end_x
+    local chars = util.splitToChars(sample.text or "")
+    local line_h = sample.line_height_px
+    if sample._getXYForCharPos and line_h then
+        pcall(function()
+            for pos = 2, #chars do
+                local word_start = chars[pos - 1] == " " and chars[pos] ~= " "
+                local word_end = chars[pos] == " " and chars[pos - 1] ~= " "
+                if word_start or word_end then
+                    local x, y = sample:_getXYForCharPos(pos)
+                    local line = math_floor(y / line_h + 0.5)
+                    if line > first_line + 1 then
+                        break
+                    elseif word_start and line == first_line and not start_x and x >= width * 0.25 then
+                        start_x = x
+                    elseif word_end and line == first_line + 1 and x <= width * 0.65 then
+                        end_x = x
+                    end
+                end
+            end
+        end)
+    end
+    if not (start_x and end_x) then
+        start_x, end_x = math_floor(width * 0.3), math_floor(width * 0.6)
+    end
+    return start_x, end_x
+end
+
+-- The stage of a PREVIEW_MARKS preview: four lines with the selection on the middle two,
+-- or only those two when the menu leaves less room than that.
+function SelectionToolbar:buildMarksPreview(preview, inner_w, face, line_h, room)
+    local metrics = getHandleMetrics()
+    -- Page margins wide enough for the line marker at its farthest and thickest.
+    local margin = LINE_MARKER_GAPS[#LINE_MARKER_GAPS].gap
+        + LINE_MARKER_WIDTHS[#LINE_MARKER_WIDTHS].width
+        + Size.padding.default
+    local text_w = inner_w - 2 * margin
+
+    -- Room for the handles beyond the selected lines, where they reach past the lines
+    -- around them.
+    local lines, first_line = 4, 1
+    local text_y = math_max(0, metrics.extent - line_h)
+    if 4 * line_h + 2 * text_y > room then
+        lines, first_line, text_y = 2, 0, metrics.extent
+    end
+    local height = lines * line_h + 2 * text_y
+
+    local sample = preview:getSample(text_w, lines, face)
+    local start_x, end_x = sampleSelectionRange(sample, first_line, text_w)
+    local row = sample.vertical_string_list and sample.vertical_string_list[first_line + 1]
+    local line_end = row and row.width or text_w
+    local top = text_y + first_line * line_h
+    local first_box = Geom:new({ x = margin + start_x, y = top, w = math_max(1, line_end - start_x), h = line_h })
+    local last_box = Geom:new({ x = margin, y = top + line_h, w = math_max(1, end_x), h = line_h })
+
+    local marker = {}
+    if self:showLineMarker() then
+        local on_right = self:lineMarkerOnRight()
+        if BD.mirroredUILayout() then
+            on_right = not on_right
+        end
+        local width, gap = self:getLineMarkerSize(margin)
+        marker[1] = width and Geom:new({
+            x = on_right and (margin + text_w + gap) or (margin - gap - width),
+            y = top,
+            w = width,
+            h = 2 * line_h,
+        })
+    end
+
+    local handles = {}
+    if self:showHandles() then
+        local style, outline = self:getHandleStyle(), self:handleOutline()
+        handles.start = handleGeometry(first_box, true, style, outline, metrics)
+        handles["end"] = handleGeometry(last_box, false, style, outline, metrics)
+    end
+
+    -- The color ReaderView:drawTempHighlight() gives a live selection.
+    local view = self.ui and self.ui.view
+    local highlight = view and view.highlight
+    local color = highlight
+        and highlight.saved_drawer ~= "invert"
+        and G_reader_settings:isTrue("highlight_selection_use_highlight_color")
+        and Blitbuffer.colorFromName(highlight.saved_color)
+        or nil
+    return MarksSample:new({
+        width = inner_w,
+        height = height,
+        sample = sample,
+        text_x = margin,
+        text_y = text_y,
+        boxes = { first_box, last_box },
+        lines = marker,
+        handles = handles,
+        view = view,
+        color = color,
+    })
 end
 
 -- What the marks' screen positions depend on besides the selection itself.
@@ -2381,7 +2725,7 @@ end
 -- position: the highlight there, both handles' knobs (the anchor one too when the
 -- ends cross) and the ends of the margin line. All of it fits in a full-width band.
 local function dragRefreshBand(old_box, new_box)
-    local pad = HANDLE_EXTENT + 2
+    local pad = getHandleMetrics().extent + 2
     local top = math_max(0, math_min(old_box.y, new_box.y) - pad)
     local bottom = math_min(Screen:getHeight(), math_max(old_box.y + old_box.h, new_box.y + new_box.h) + pad)
     return Geom:new({ x = 0, y = top, w = Screen:getWidth(), h = bottom - top })

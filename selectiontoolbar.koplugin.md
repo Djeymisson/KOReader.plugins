@@ -1,4 +1,4 @@
-# Selection Toolbar ![Version](https://img.shields.io/badge/version-v1.8.0-blue)
+# Selection Toolbar ![Version](https://img.shields.io/badge/version-v1.9.0-blue)
 
 A KOReader plugin that replaces the centered text-selection menu with a compact toolbar displayed near the selected text, and adds draggable handles and a margin line marker to adjust and visualize the selection.
 
@@ -86,8 +86,11 @@ Options:
     - `Capsule`: fully rounded ends. The toolbar gets a little wider, so the buttons (and their tap feedback) stay inside the curves.
   - `Border`: `Thin`, `Medium` (default) or `Thick` toolbar outline. A thick border helps the toolbar stand out over the text, especially with the shadow turned off.
   - `Separators`: `Between all buttons` (default) draws a thin line between each pair of buttons; `None` removes them for a lighter look.
-  - `Show toolbar shadow`: shows or removes the dithered shadow along the right and bottom edges. The shadow follows the toolbar's shape.
-- `Selection marks`: controls the handles and the line marker.
+  - `Toolbar shadow`: the dithered shadow along the right and bottom edges, which follows the toolbar's shape.
+    - `No shadow`: a flat toolbar; a stronger border helps it stand out over the text.
+    - `Subtle`: a shorter, lighter shadow.
+    - `Standard` (default): the original shadow. The `Show toolbar shadow` on/off setting of earlier versions is read as `Standard` or `No shadow`.
+- `Selection marks`: controls the handles and the line marker. While this submenu (or one of its option lists) is open, the preview shows a sample text with a selection across two lines, drawn in your selection style (including the highlight color, when `Use highlight color for selection` is enabled), with the handles and the line marker as they will look on the page.
   - `Show selection handles`: shows the draggable start/end handles (touch devices only).
   - `Handle style`: how the handles are drawn.
     - `Lollipop` (default): a bar at the selection edge with a round knob above the start and below the end.
@@ -97,8 +100,11 @@ Options:
     - `High-contrast outline`: draws lollipops, teardrops and flag tabs as a black outline over white, readable over dark or highlighted text. Not available for brackets, whose strokes are too thin to outline. A `High-contrast wireframe` style saved by v1.3.0 is read as a lollipop with this outline.
 
     All styles share the same touch area around the handle, so the style changes only the look, not how easy the handles are to grab.
+  - `Handle size`: `Small`, `Normal` (default) or `Large` handles. Only the drawing changes: the touch area keeps its size, so small handles are as easy to grab.
   - `Show line marker`: shows the vertical line beside the selected lines.
   - `Line marker in right margin`: draws the line marker in the right margin instead of the left one (mirrored for right-to-left interface languages).
+  - `Line marker thickness`: `Thin`, `Medium` (default) or `Thick`.
+  - `Line marker distance`: `Close to the text`, `Normal` (default) or `Far from the text`. The marker always stays in the page margin: with a narrow margin it is drawn closer to the text, then thinner, and it is not drawn on a page without margin.
 - `Visible actions`: lets you choose which actions appear in the toolbar.
   - `Show all actions`: restores all actions.
   - Other items: enable/disable each toolbar action individually.
