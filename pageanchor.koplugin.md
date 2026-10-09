@@ -1,4 +1,4 @@
-# Page Anchor ![Version](https://img.shields.io/badge/version-v1.15.2-blue)
+# Page Anchor ![Version](https://img.shields.io/badge/version-v1.15.4-blue)
 
 Page Anchor adds a compact floating control to KOReader's reading screen.
 When you jump somewhere else in the book, it pins your reading position as
@@ -181,7 +181,22 @@ pageanchor.koplugin/
 │   ├── chevron-right.svg
 │   └── undo.svg
 └── modules/
-    └── history.lua
+    ├── actions.lua
+    ├── constants.lua
+    ├── controls.lua
+    ├── helpers.lua
+    ├── hint_toast.lua
+    ├── hints.lua
+    ├── history.lua
+    ├── icons.lua
+    ├── jumps.lua
+    ├── menu.lua
+    ├── overlay.lua
+    ├── settings.lua
+    ├── tracking.lua
+    ├── trail.lua
+    ├── undo.lua
+    └── zones.lua
 ```
 
 The final path should look like this:

@@ -35,14 +35,19 @@ local IconStub = Widget:extend({})
 function IconStub:init() end
 local ticks = {}
 local UIManager = {
-	setDirty = function() end, show = function() end, close = function() end,
-	scheduleIn = function(_, secs, fn) SCHEDULED[fn] = secs end,
+	setDirty = function(_, _w, f) if type(f) == "function" then LAST_DIRTY = f end end, show = function() end, close = function() end,
+	scheduleIn = function(_, secs, fn) SCHEDULED[fn] = secs; SCHEDULE_CALLS = (SCHEDULE_CALLS or 0) + 1 end,
 	unschedule = function(_, fn) SCHEDULED[fn] = nil; for i, f in ipairs(ticks) do if f == fn then table.remove(ticks, i) end end end,
 	nextTick = function(_, fn) ticks[#ticks + 1] = fn end,
 }
 local function runTicks() local t = ticks; ticks = {}; for _, f in ipairs(t) do f() end end
 local Geom = class()
 function Geom:contains(p) return p.x >= self.x and p.x <= self.x + self.w and p.y >= self.y and p.y <= self.y + self.h end
+function Geom:copy() return Geom:new({ x = self.x, y = self.y, w = self.w, h = self.h }) end
+function Geom:combine(b)
+	local x, y = math.min(self.x, b.x), math.min(self.y, b.y)
+	return Geom:new({ x = x, y = y, w = math.max(self.x + self.w, b.x + b.w) - x, h = math.max(self.y + self.h, b.y + b.h) - y })
+end
 local stubs = {
 	["ui/bidi"] = { mirroredUILayout = function() return false end, ltr = function(t) return t end },
 	["ffi/blitbuffer"] = { COLOR_WHITE = "W", COLOR_DARK_GRAY = "G", COLOR_GRAY = "g", COLOR_BLACK = "B" }, ["ui/widget/button"] = Widget, ["ui/widget/container/centercontainer"] = Widget,
@@ -50,7 +55,7 @@ local stubs = {
 	["ui/event"] = { new = function(_, name, a) return { name = name, args = { a } } end }, ["ui/font"] = { getFace = function() return {} end },
 	["ui/widget/container/framecontainer"] = Widget, ["ui/geometry"] = Geom, ["ui/widget/horizontalgroup"] = Widget, ["ui/widget/horizontalspan"] = Widget,
 	["ui/widget/iconwidget"] = IconStub, ["ui/widget/widget"] = Widget, ["ui/widget/infomessage"] = Widget, ["ui/widget/linewidget"] = Widget,
-	["libs/libkoreader-lfs"] = { attributes = function() return nil end },
+	["libs/libkoreader-lfs"] = { attributes = function() STAT_CALLS = (STAT_CALLS or 0) + 1; return nil end },
 	["logger"] = { warn = function(...) print("WARN", ...) end, dbg = function() end },
 	["ui/size"] = { padding = { button = 2, large = 10, default = 5, small = 2 }, border = { button = 1, default = 1 }, radius = { button = 5 }, line = { medium = 1 } },
 	["ui/widget/textboxwidget"] = TextBoxStub, ["ui/widget/textwidget"] = Widget, ["ui/uimanager"] = UIManager,
@@ -75,7 +80,13 @@ local document = {
 	-- crengine: already at the new position during PageUpdate.
 	getXPointer = function() return "x" .. doc.offset end,
 	isXPointerInCurrentPage = function(_, xp)
-		local p, cur = pageOf(tonumber(xp:sub(2))), pageOf(doc.offset)
+		local off = tonumber(xp:sub(2))
+		if VIEW_MODE_SCROLL then
+			-- Scroll mode: what's on screen is the viewport (one page tall)
+			-- starting at the current offset, not a whole page.
+			return off >= doc.offset and off < doc.offset + doc.cpp
+		end
+		local p, cur = pageOf(off), pageOf(doc.offset)
 		return p >= cur and p < cur + doc.visible
 	end,
 }
@@ -669,6 +680,103 @@ LAST_DIALOG.buttons[1][1].callback()
 pa:onPageUpdate(page())
 check("arrow entry from hidden state goes back and shows buttons", page() == 100 and not pa.controls_hidden)
 pa:setHideMode("minimize")
+pa:clearHistory()
+
+-- Performance and battery
+-- Same-page updates (scroll steps, redraws): no respec, no timer reschedule
+reset(100)
+jumpTo(50); paint()
+local spec_before = pa:getButtonSpecs()
+SCHEDULE_CALLS = 0
+for _ = 1, 10 do pa:onPosUpdate(nil, 50) end
+check("same-page updates keep the cached button spec", pa:getButtonSpecs() == spec_before)
+check("same-page updates don't reschedule timers", SCHEDULE_CALLS == 0)
+goPage(51)
+check("a real page change is still evaluated", pa:getButtonSpecs() ~= spec_before)
+pa:clearHistory()
+
+-- Hint labels built only when shown
+reset(100)
+jumpTo(50)
+local label_calls = 0
+local real_label = pa.getDestinationLabel
+pa.getDestinationLabel = function(...) label_calls = label_calls + 1; return real_label(...) end
+for p = 51, 55 do goPage(p); paint() end
+check("page turns don't build the hint label", label_calls == 0)
+pa:showButtonHint(pa:getButtonSpecs().action)
+check("holding the arrow builds it once", label_calls == 1)
+pa.getDestinationLabel = nil -- back to the class method
+pa:clearHistory()
+
+-- Refresh only the control's area
+local function dirtyRegion()
+	local f = LAST_DIRTY
+	LAST_DIRTY = nil
+	if not f then return nil end
+	paint()
+	local _, region = f()
+	return region
+end
+local function covers(r, box) return r.x <= box.x and r.y <= box.y and r.x + r.w >= box.x + box.w and r.y + r.h >= box.y + box.h end
+reset(100)
+LAST_DIRTY = nil
+jumpTo(50); paint()
+local pill_box = pa.overlay.pill_dimen:copy()
+LAST_DIRTY = nil
+pa:hideControls()
+local region = dirtyRegion()
+local tab_box = pa.overlay.pill_dimen:copy()
+check("hide: refresh covers the pill and the tab", region and covers(region, pill_box) and covers(region, tab_box))
+check("hide: refresh is not the whole band", region and region.w < 600)
+pa:showControls(); paint()
+LAST_DIRTY = nil
+pa:setVerticalPosition("top")
+region = dirtyRegion()
+check("moving the control refreshes its old and new places", region and covers(region, pill_box) and covers(region, pa.overlay.pill_dimen))
+pa:setVerticalPosition("bottom"); paint()
+pa:clearHistory(); paint()
+LAST_DIRTY = nil
+pa:clearHistory()
+check("nothing shown before or after: no repaint at all", LAST_DIRTY == nil)
+
+-- Icon patch: one stat per own icon, none for other paths
+local icons_dir = script_dir .. "../../pageanchor.koplugin/icons/"
+STAT_CALLS = 0
+IconStub:new({ icon = icons_dir .. "probe.svg" })
+IconStub:new({ icon = icons_dir .. "probe.svg" })
+check("own icon path: stat once, then cached", STAT_CALLS == 1)
+IconStub:new({ icon = "/somewhere/else/other.svg" })
+check("other paths: not looked at", STAT_CALLS == 1)
+
+-- Scroll mode: a pinned anchor leaving or re-entering the viewport within
+-- the same page number (reported regression)
+reset(2)
+ui.view.view_mode = "scroll"; VIEW_MODE_SCROLL = true
+local function scrollTo(off) doc.offset = off; pa:onPosUpdate(nil, pageOf(off)); doc.link_offset = off end
+scrollTo(1500)
+pa:pinHere()
+scrollTo(1450) -- viewport [1450, 2450): the pin at 1500 is still on screen
+check("scroll: pin still in view, nothing to offer", pa.anchor == nil)
+pa:clearHistory()
+scrollTo(1100)
+pa:pinHere()
+scrollTo(1900) -- same page 2, pin (1100) now above the viewport
+check("scroll: pin leaving the viewport on the same page offers the way back", pa.anchor ~= nil and pa:getButtonSpecs() and pa:getButtonSpecs().action == "back")
+scrollTo(1050) -- scroll back up: pin visible again, same page 2
+check("scroll: pin back in view on the same page resolves it", pa.anchor == nil)
+local spec_same = pa:getButtonSpecs()
+SCHEDULE_CALLS = 0
+scrollTo(1060); scrollTo(1070)
+check("scroll: steps that don't change pin visibility stay on the fast path", pa:getButtonSpecs() == spec_same and SCHEDULE_CALLS == 0)
+pa:clearHistory()
+-- Plain (unpinned) anchor in scroll mode: scrolling back to it within its page resolves it
+scrollTo(1100)
+link:addCurrentLocationToStack(); scrollTo(5200); runTicks()
+check("scroll: jump arms the anchor", pa.anchor ~= nil and pg(pa.anchor) == 2)
+scrollTo(1900) -- unannounced move back to page 2, anchor (1100) not in view
+scrollTo(1100)
+check("scroll: scrolling the anchor back into view on its page resolves it", pa.anchor == nil)
+ui.view.view_mode = "page"; VIEW_MODE_SCROLL = false
 pa:clearHistory()
 
 print(fails == 0 and "ALL PASSED" or (fails .. " FAILED"))

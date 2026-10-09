@@ -1,7 +1,7 @@
 # Page Anchor tools
 
 A behaviour simulation for [`pageanchor.koplugin`](../../pageanchor.koplugin.md).
-It loads the plugin's real `main.lua` and `modules/history.lua`, swaps the
+It loads the plugin's real `main.lua` and all its `modules/`, swaps the
 KOReader modules they use for small stand-ins, and runs scenarios against the
 plugin's logic. It needs no KOReader install, no window and no device.
 
@@ -31,7 +31,12 @@ remembers:
 - exact-line markers for links and scroll mode;
 - fixed-layout (PDF) view state, pan and zoom included;
 - percentages, button position, touch zone registration, gesture actions,
-  and that thumbnails are painted without the buttons.
+  and that thumbnails are painted without the buttons;
+- performance and battery guarantees: same-page updates (scroll steps,
+  redraws) skip the full evaluation and timer reschedule, hint labels are
+  only built when shown, refreshes cover just the control's old and new
+  area (and nothing when nothing is shown), and icon files are looked up
+  once.
 
 ## What it doesn't
 
@@ -53,7 +58,10 @@ as read in KOReader's source. The ones that matter most:
 
 A reflowable book is a character offset turned into a page number
 (`offset / chars per page`), so changing the characters per page simulates a
-repagination. A PDF is a page plus a pan position and a zoom.
+repagination. In page mode a location is on screen when it's on the current
+page; in scroll mode, when it's inside the viewport (one page tall, starting at
+the current offset), so the view can move within a page. A PDF is a page plus a
+pan position and a zoom.
 
 ## Adding a scenario
 
