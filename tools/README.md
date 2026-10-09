@@ -7,3 +7,4 @@ shipped or installed on a device.
 | Folder | What it is |
 |---|---|
 | [`dictionaryexplorer/`](./dictionaryexplorer/README.md) | Tests, performance budgets and benchmarks for the Dictionary Explorer plugin, run inside a real KOReader without a window |
+| [`pageanchor/`](./pageanchor/README.md) | Behaviour simulation for the Page Anchor plugin, run with plain Lua and stand-ins for KOReader (no install needed) |
