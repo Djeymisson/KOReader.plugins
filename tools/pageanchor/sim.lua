@@ -60,13 +60,16 @@ local stubs = {
 	["ui/size"] = { padding = { button = 2, large = 10, default = 5, small = 2 }, border = { button = 1, default = 1 }, radius = { button = 5 }, line = { medium = 1 } },
 	["ui/widget/textboxwidget"] = TextBoxStub, ["ui/widget/textwidget"] = Widget, ["ui/uimanager"] = UIManager,
 	["ui/widget/container/widgetcontainer"] = Widget, ["gettext"] = setmetatable({}, { __call = function(_, s) return s end }),
-	["ffi/util"] = { template = function(s) return s end },
+	["ffi/util"] = { template = function(s, ...)
+		local args = { ... }
+		return (s:gsub("%%(%d)", function(n) return tostring(args[tonumber(n)]) end))
+	end },
 	["dispatcher"] = { registerAction = function(_, name, v) _G.ACTIONS = _G.ACTIONS or {}; _G.ACTIONS[name] = v end },
 	["ui/widget/notification"] = { SOURCE_DISPATCHER = 0x20, notify = function(_, t) _G.LAST_NOTE = t end },
 }
 for k, v in pairs(stubs) do package.preload[k] = function() return v end end
 local settings = {}
-G_reader_settings = { nilOrTrue = function(_, k) return settings[k] ~= false end, readSetting = function(_, k) return settings[k] end, saveSetting = function(_, k, v) settings[k] = v end }
+G_reader_settings = { nilOrTrue = function(_, k) return settings[k] ~= false end, readSetting = function(_, k) return settings[k] end, saveSetting = function(_, k, v) settings[k] = v end, delSetting = function(_, k) settings[k] = nil end }
 
 -- Rolling document: an xpointer is a character offset; page = offset // cpp + 1.
 local doc = { cpp = 1000, offset = 99000, link_offset = 99000, visible = 1, hidden = false }
@@ -777,6 +780,47 @@ scrollTo(1900) -- unannounced move back to page 2, anchor (1100) not in view
 scrollTo(1100)
 check("scroll: scrolling the anchor back into view on its page resolves it", pa.anchor == nil)
 ui.view.view_mode = "page"; VIEW_MODE_SCROLL = false
+pa:clearHistory()
+
+-- Menu
+local menu_items = {}
+pa:addToMainMenu(menu_items)
+local top = menu_items.pageanchor.sub_item_table
+local function title(item) return item.text_func and item.text_func() or item.text end
+local function findItem(list, prefix)
+	for _, item in ipairs(list) do if title(item):sub(1, #prefix) == prefix then return item end end
+end
+check("menu: enable switch first, then grouped entries, defaults and About last",
+	#top == 7 and title(top[1]) == "Enable Page Anchor" and top[1].separator
+	and title(top[3]) == "Buttons" and title(top[4]) == "Auto-hide" and title(top[5]) == "Navigation"
+	and title(top[6]) == "Restore all defaults" and title(top[7]) == "About")
+reset(100)
+check("menu: current anchor shows None without an anchor", title(top[2]) == "Current anchor: None")
+jumpTo(50)
+check("menu: current anchor shows Active after a jump", title(top[2]) == "Current anchor: Active")
+pa:hideControls()
+check("menu: current anchor shows Hidden when hidden", title(top[2]) == "Current anchor: Hidden")
+pa:clearHistory(); pa:pinHere()
+check("menu: current anchor shows Pinned", title(top[2]) == "Current anchor: Pinned")
+pa:clearHistory()
+local buttons = top[3].sub_item_table
+local size_item = findItem(buttons, "Size")
+check("menu: settings show their current value", title(size_item) == "Size: Small" and title(findItem(buttons, "Position")) == "Position: Bottom")
+size_item.sub_item_table[3].callback()
+check("menu: picking an option updates the title", title(size_item) == "Size: Large")
+local hide_after = findItem(top[4].sub_item_table, "Hide after")
+check("menu: 0 reads as Never", (function() for _, it in ipairs(hide_after.sub_item_table) do if it.text == "Never" then return true end end end)())
+pa:setVerticalPosition("top"); pa:setRereadTurns(3)
+reset(100)
+jumpTo(50)
+check("menu: (setup) an anchor is armed before restoring", pa.anchor ~= nil)
+pa:setEnabled(false)
+check("menu: groups disabled while Page Anchor is off", top[2].enabled_func() == false and top[3].enabled_func() == false)
+pa:resetAllSettings()
+check("menu: restore defaults resets the settings", pa:getButtonSize() == "small" and pa:getVerticalPosition() == "bottom" and pa:getRereadTurns() == 1)
+check("menu: restore defaults keeps Page Anchor off and the anchor", pa:isEnabled() == false and pa.anchor ~= nil)
+check("menu: restore defaults moves the touch zones back", ui._zones.pageanchor_tap.screen_zone.ratio_y == 0.7)
+pa:setEnabled(true)
 pa:clearHistory()
 
 print(fails == 0 and "ALL PASSED" or (fails .. " FAILED"))

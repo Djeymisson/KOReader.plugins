@@ -1,4 +1,4 @@
-# Page Anchor ![Version](https://img.shields.io/badge/version-v1.15.4-blue)
+# Page Anchor ![Version](https://img.shields.io/badge/version-v1.16.0-blue)
 
 Page Anchor adds a compact floating control to KOReader's reading screen.
 When you jump somewhere else in the book, it pins your reading position as
@@ -72,7 +72,7 @@ the tab to bring the buttons back; the anchor and the return point are kept. A n
 arriving back at the anchor, also brings them back.
 
 By default hidden buttons wait until you dismiss them. You can instead set
-a time limit (**Discard when hidden for**): once the buttons have stayed
+a time limit (**Auto-hide → Discard after hidden for**): once the buttons have stayed
 hidden that long, the anchor is discarded and the current page becomes
 your reading position, as if you had tapped the anchor button.
 
@@ -109,7 +109,7 @@ back). Without a trail yet, holding the arrow shows the usual hint.
 
 ## Pinned anchor
 
-Use **Pin anchor here** (menu or gesture action) to mark your position
+Use **Current anchor → Pin anchor here** (or its gesture action) to mark your position
 before you start exploring. Any move away from it, even ordinary page
 turns, offers the way back. Unlike an anchor created by a jump, a pinned one
 is not resolved when you return to it, does not move as you read on, and is
@@ -123,7 +123,7 @@ are at it).
 Right after you discard the anchor (anchor button, downward swipe or
 gesture action), a notice with an undo arrow appears for 3 seconds where
 the buttons were. Tap it to bring the anchor and the return point back. Later,
-**Restore discarded anchor** in the menu (or its gesture action) does the
+**Current anchor → Restore discarded anchor** in the menu (or its gesture action) does the
 same, as long as no new anchor has been set since. If you've moved after
 discarding, the current position becomes the return point.
 
@@ -152,7 +152,7 @@ from 100 to 102) pins an anchor, while ordinary page turns never do.
 
 For tools that jump without recording a location, Page Anchor also keeps a
 reading reference. Reading forward advances it; one page turn back is
-tolerated (configurable up to five with **Re-reading tolerance**); moving farther back or more than two page turns ahead offers a
+tolerated (configurable up to five with **Navigation → Re-reading tolerance**); moving farther back or more than two page turns ahead offers a
 return to it. Right after you return to the anchor, or after a discard you
 haven't read past yet, up to five page turns back are tolerated instead, so
 re-reading a little never replaces the return point or voids the undo. Distances are counted in page turns, so two-page mode and
@@ -210,24 +210,37 @@ management.
 
 ## Configuration
 
-While reading, open **Page Anchor** in the navigation menu. You can:
+While reading, open **Page Anchor** in the navigation menu:
 
-- enable or disable the floating control;
-- choose the button size (small, medium, large) and position (bottom,
-  middle, top);
-- show the destination next to the arrow: off (default), the destination
-  page, or the distance in pages;
-- choose what the hold hint shows: page number or percentage, of the book or
-  of the current chapter, or the chapter title only;
-- set the inactivity timeout that hides the control (the anchor is kept),
-  whether hiding leaves an anchor tab or nothing at all, how long hidden
-  buttons wait before the anchor is discarded (or never), and after how
-  many pages read forward past the anchor the return point is dropped;
-- set how many page turns back count as re-reading;
-- pin the anchor at the current position;
-- show the floating buttons again after the timeout hid them;
-- discard the anchor and the return point and keep reading from the current
-  position, or restore the last discarded one.
+- **Enable Page Anchor**: turns the floating buttons on or off. Turning them
+  off keeps the anchor.
+- **Current anchor** (its title shows None, Active, Pinned or Hidden):
+  - **Pin anchor here**;
+  - **Show floating buttons**, after auto-hide put them away;
+  - **Discard anchor and return point**;
+  - **Restore discarded anchor**.
+- **Buttons**:
+  - **Size**: small, medium or large;
+  - **Position**: bottom, middle or top;
+  - **Destination on button**: off, the destination page, or the distance
+    in pages;
+  - **Hold hint**: what the hint says when you hold the arrow (page number
+    or percentage, of the book or the chapter, or the chapter title only).
+- **Auto-hide**:
+  - **Hide after**: how long the buttons stay up without navigating
+    (the anchor is kept);
+  - **When hidden**: leave an anchor tab, or nothing;
+  - **Discard after hidden for**: how long hidden buttons wait before the
+    anchor is discarded, or never.
+- **Navigation**:
+  - **Forget return point after**: how many pages read on past the anchor
+    drop the way back out;
+  - **Re-reading tolerance**: how many page turns back count as re-reading.
+- **Restore all defaults**: every setting back to its default; Page Anchor
+  stays on or off and the current anchor is kept.
+- **About**: version and a short description.
+
+Each setting shows its current value in its title.
 
 Navigation buttons use SVG icons bundled with Page Anchor and the same rounded
 border, icon size, base height and padding as Quick Dock's main buttons.

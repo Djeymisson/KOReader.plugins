@@ -9,7 +9,7 @@ losing your reading position, then return to it with a tap.
 local UIManager = require("ui/uimanager")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 
-local PLUGIN_VERSION = "v1.15.4"
+local PLUGIN_VERSION = "v1.16.0"
 
 local function pluginDir()
 	local source = debug.getinfo(1, "S").source or ""

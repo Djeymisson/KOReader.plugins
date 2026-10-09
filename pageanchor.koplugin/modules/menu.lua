@@ -1,4 +1,7 @@
--- The Page Anchor menu.
+-- The Page Anchor menu: the on/off switch, what to do with the current
+-- anchor, three groups of settings (buttons, auto-hide, navigation), then
+-- restoring the defaults and About -- the same layout as the other plugins
+-- in this repository.
 
 local ConfirmBox = require("ui/widget/confirmbox")
 local InfoMessage = require("ui/widget/infomessage")
@@ -12,16 +15,17 @@ local notify = lib.notify
 
 local PageAnchor = {}
 
--- Builds a set of mutually exclusive radio sub-items from a list of
--- {value, label} options, shared by the two option lists below. An optional
--- caption is inserted first as a plain, non-interactive line (no callback,
--- disabled so it reads as a label rather than a dead button) -- context
--- shown right above the options themselves, without needing help_text.
-local function buildValueRadioItems(options, get_value, set_value, caption)
-	local items = {}
-	if caption then
-		items[#items + 1] = { text = caption, enabled = false }
+local function findOption(options, value)
+	for i = 1, #options do
+		if options[i].value == value then
+			return options[i]
+		end
 	end
+end
+
+-- Radio items for a {value, label} option list.
+local function optionItems(options, get_value, set_value)
+	local items = {}
 	-- Indexed (not "for _, option"): "_" would shadow the gettext function
 	-- used as `_(option.label)` below for the rest of this loop body.
 	for i = 1, #options do
@@ -40,191 +44,215 @@ local function buildValueRadioItems(options, get_value, set_value, caption)
 	return items
 end
 
+-- A setting with a list of options: its title shows the current choice
+-- ("Size: Small"), and it opens the options.
+local function optionSetting(label, help_text, options, get_value, set_value)
+	return {
+		text_func = function()
+			local option = findOption(options, get_value())
+			return T(_("%1: %2"), label, option and _(option.label) or "")
+		end,
+		help_text = help_text,
+		sub_item_table = optionItems(options, get_value, set_value),
+	}
+end
+
+-- One word for the current anchor, for the "Current anchor" group title.
+function PageAnchor:getAnchorStatusText()
+	if not self:hasTargets() then
+		return _("None")
+	elseif self:areControlsHidden() then
+		return _("Hidden")
+	elseif self.pinned_location then
+		return _("Pinned")
+	end
+	return _("Active")
+end
+
 function PageAnchor:addToMainMenu(menu_items)
+	local function isEnabled()
+		return self:isEnabled()
+	end
+
+	local anchor_items = {
+		{
+			text = _("Pin anchor here"),
+			help_text = _("Marks this page as the anchor before you go exploring. A pinned anchor stays through any number of trips away and back, until you discard it."),
+			callback = function()
+				if self:pinHere() then
+					notify(_("Anchor pinned here"))
+				end
+			end,
+		},
+		{
+			text = _("Show floating buttons"),
+			help_text = _("Brings back the buttons after auto-hide put them away. The anchor and the way back are still there."),
+			enabled_func = function()
+				return self:areControlsHidden()
+			end,
+			callback = function()
+				self:showControls()
+			end,
+		},
+		{
+			-- Named after what it drops -- Page Anchor's own targets -- so it
+			-- isn't mistaken for clearing KOReader's location history,
+			-- which it never touches.
+			text = _("Discard anchor and return point"),
+			help_text = _("Forgets the anchor and the return point and keeps reading from this page. KOReader's own location history is not affected."),
+			enabled_func = function()
+				return self:hasTargets()
+			end,
+			callback = function()
+				UIManager:show(ConfirmBox:new({
+					text = _("Discard anchor and return point?"),
+					ok_text = _("Discard"),
+					ok_callback = function()
+						self:clearHistory()
+					end,
+				}))
+			end,
+		},
+		{
+			text = _("Restore discarded anchor"),
+			help_text = _("Brings back the anchor and return point you discarded last, as long as no new anchor has been set since."),
+			enabled_func = function()
+				return self:canRestoreDiscarded()
+			end,
+			callback = function()
+				self:restoreDiscarded()
+			end,
+		},
+	}
+
+	local button_items = {
+		optionSetting(_("Size"),
+			_("Choose how big the floating buttons are. Bigger buttons are easier to tap."),
+			C.BUTTON_SIZE_OPTIONS,
+			function() return self:getButtonSize() end,
+			function(value) self:setButtonSize(value) end),
+		optionSetting(_("Position"),
+			_("Choose where on the screen the buttons sit. They always stay on the side the arrow leads to."),
+			C.VERTICAL_POSITION_OPTIONS,
+			function() return self:getVerticalPosition() end,
+			function(value) self:setVerticalPosition(value) end),
+		optionSetting(_("Destination on button"),
+			_("Choose what is written next to the arrow: the page it leads to, how many pages away that is, or nothing."),
+			C.INLINE_LABEL_OPTIONS,
+			function() return self:getInlineLabelMode() end,
+			function(value) self:setInlineLabelMode(value) end),
+		optionSetting(_("Hold hint"),
+			_("Choose what the hint says when you hold the arrow: the chapter title with a page number or percentage, in the book or in the chapter."),
+			C.DESTINATION_FORMAT_OPTIONS,
+			function() return self:getDestinationFormat() end,
+			function(value) self:setDestinationFormat(value) end),
+	}
+
+	local auto_hide_items = {
+		optionSetting(_("Hide after"),
+			_("Choose how long the buttons stay up without navigating before they hide. Hiding never loses the anchor."),
+			C.AUTO_DISMISS_OPTIONS,
+			function() return self:getAutoDismissSeconds() end,
+			function(value) self:setAutoDismissSeconds(value) end),
+		optionSetting(_("When hidden"),
+			_("Choose what stays on screen while the buttons are hidden: a small anchor tab that brings them back with a tap, or nothing (bring them back from the menu or a gesture)."),
+			C.HIDE_MODE_OPTIONS,
+			function() return self:getHideMode() end,
+			function(value) self:setHideMode(value) end),
+		optionSetting(_("Discard after hidden for"),
+			_("Choose how long hidden buttons wait. After that the anchor is discarded and this page becomes your reading position. A pinned anchor never expires."),
+			C.HIDDEN_EXPIRY_OPTIONS,
+			function() return self:getHiddenExpirySeconds() end,
+			function(value) self:setHiddenExpirySeconds(value) end),
+	}
+
+	local navigation_items = {
+		optionSetting(_("Forget return point after"),
+			_("After going back to the anchor, the button can take you back out to where you were. Choose after how many pages of reading on that return point is forgotten."),
+			C.FORWARD_DISMISS_PAGE_OPTIONS,
+			function() return self:getForwardDismissPages() end,
+			function(value) self:setForwardDismissPages(value) end),
+		optionSetting(_("Re-reading tolerance"),
+			_("Choose how many page turns back still count as re-reading rather than a jump. Only matters for tools that move without telling KOReader: the table of contents, Go to page, links and other standard navigation always offer the way back."),
+			C.REREAD_TURNS_OPTIONS,
+			function() return self:getRereadTurns() end,
+			function(value) self:setRereadTurns(value) end),
+	}
+
 	menu_items.pageanchor = {
 		text = _("Page Anchor"),
 		sorting_hint = "navi",
 		sub_item_table = {
 			{
-				-- Static text (the checkmark alone shows current state) --
-				-- reuses KOReader's own "Enable" string (already translated
-				-- into every language it supports) instead of a
-				-- plugin-specific phrase, so only "Page Anchor" itself (a
-				-- proper noun) needs no translation at all.
+				-- KOReader's own "Enable" plus the plugin's name (a proper
+				-- noun): already translated everywhere KOReader is.
 				text = _("Enable") .. " " .. _("Page Anchor"),
-				help_text = _("Turns Page Anchor off entirely, without losing the navigation history it uses."),
-				checked_func = function()
-					return self:isEnabled()
-				end,
-				callback = function()
+				help_text = _("Shows floating buttons after a jump so you can go back to where you were reading. Turning it off keeps the anchor; the buttons come back when you turn it on again."),
+				checked_func = isEnabled,
+				callback = function(touchmenu_instance)
 					self:setEnabled(not self:isEnabled())
-				end,
-			},
-			{
-				-- Three predefined scales, same idea as Quick Dock's own
-				-- dock-size setting -- affects both segments' width and
-				-- height together, so the pill grows as one shape rather
-				-- than the icon and its box drifting apart.
-				text = _("Button size"),
-				help_text = _("Scales the floating buttons up for an easier target, without changing their shape."),
-				sub_item_table = buildValueRadioItems(
-					C.BUTTON_SIZE_OPTIONS,
-					function() return self:getButtonSize() end,
-					function(value) self:setButtonSize(value) end
-				),
-			},
-			{
-				text = _("Button position"),
-				help_text = _("Where on the screen the floating buttons sit: at the bottom (the default), in the middle, or at the top. They always stay on the side that leads to the destination."),
-				sub_item_table = buildValueRadioItems(
-					C.VERTICAL_POSITION_OPTIONS,
-					function() return self:getVerticalPosition() end,
-					function(value) self:setVerticalPosition(value) end
-				),
-			},
-			{
-				text = _("Show destination on button"),
-				help_text = _("Writes where the arrow leads next to it, so you don't have to hold the button to find out: the destination page, or how many pages away it is."),
-				sub_item_table = buildValueRadioItems(
-					C.INLINE_LABEL_OPTIONS,
-					function() return self:getInlineLabelMode() end,
-					function(value) self:setInlineLabelMode(value) end
-				),
-			},
-			{
-				-- One flat list instead of a "Format" screen plus a
-				-- separately nested, sometimes-disabled "Relative to"
-				-- screen: each option already names both what it shows and
-				-- what it's measured against, so there's nothing left to
-				-- combine in your head across two menus.
-				text = _("Position hint"),
-				help_text = _("Chooses what the text shown when you hold down a navigation button says."),
-				sub_item_table = buildValueRadioItems(
-					C.DESTINATION_FORMAT_OPTIONS,
-					function() return self:getDestinationFormat() end,
-					function(value) self:setDestinationFormat(value) end
-				),
-			},
-			{
-				-- Groups both ways the floating buttons can disappear on
-				-- their own (a shared parent screen instead of two
-				-- unrelated-looking top-level items, per touchmenu.lua's
-				-- own nesting) -- neither child repeats "Auto-dismiss" in
-				-- its own text since the parent screen's title already says
-				-- it.
-				text = _("Auto-dismiss"),
-				help_text = _("Controls when the floating buttons disappear on their own, both from inactivity and after you've returned to the anchor."),
-				sub_item_table = {
-					{
-						text = _("Timeout"),
-						help_text = _("Hides the floating buttons after this much time without navigation activity. The anchor is kept: tap the anchor tab (or use the show/hide gesture action) to bring them back."),
-						sub_item_table = buildValueRadioItems(
-							C.AUTO_DISMISS_OPTIONS,
-							function() return self:getAutoDismissSeconds() end,
-							function(value) self:setAutoDismissSeconds(value) end
-						),
-					},
-					{
-						text = _("When hiding"),
-						help_text = _("What the timeout (or the show/hide gesture action) leaves on screen: a small anchor tab that brings the buttons back with one tap, or nothing."),
-						sub_item_table = buildValueRadioItems(
-							C.HIDE_MODE_OPTIONS,
-							function() return self:getHideMode() end,
-							function(value) self:setHideMode(value) end
-						),
-					},
-					{
-						text = _("Discard when hidden for"),
-						help_text = _("If the buttons stay hidden (or parked as a tab) this long, the anchor is discarded and the current page becomes your reading position, as if you had tapped the anchor button. Never keeps them waiting until you dismiss them yourself."),
-						sub_item_table = buildValueRadioItems(
-							C.HIDDEN_EXPIRY_OPTIONS,
-							function() return self:getHiddenExpirySeconds() end,
-							function(value) self:setHiddenExpirySeconds(value) end
-						),
-					},
-					{
-						text = _("After returning to anchor"),
-						help_text = _("Auto-dismisses the floating button once you've read this many pages past the anchor. Off keeps it until you dismiss it yourself."),
-						sub_item_table = buildValueRadioItems(
-							C.FORWARD_DISMISS_PAGE_OPTIONS,
-							function() return self:getForwardDismissPages() end,
-							function(value) self:setForwardDismissPages(value) end,
-							_("Auto-dismiss after:")
-						),
-					},
-				},
-			},
-			{
-				text = _("Re-reading tolerance"),
-				help_text = _("How many page turns back still count as re-reading instead of a jump, for tools that move without telling KOReader. Standard navigation (table of contents, go to page, links...) always offers the way back."),
-				sub_item_table = buildValueRadioItems(
-					C.REREAD_TURNS_OPTIONS,
-					function() return self:getRereadTurns() end,
-					function(value) self:setRereadTurns(value) end
-				),
-			},
-			{
-				text = _("Pin anchor here"),
-				help_text = _("Marks the current position as the anchor before you go exploring. A pinned anchor stays, through any number of trips away and back, until you discard it."),
-				callback = function()
-					if self:pinHere() then
-						notify(_("Anchor pinned here"))
+					if touchmenu_instance and touchmenu_instance.updateItems then
+						touchmenu_instance:updateItems()
 					end
 				end,
+				keep_menu_open = true,
+				separator = true,
 			},
 			{
-				-- Only enabled while the inactivity timeout has hidden the
-				-- buttons and there is still somewhere to go.
-				text = _("Show floating buttons"),
-				help_text = _("Brings back floating buttons hidden by the inactivity timeout, with the anchor and the way back still in place."),
-				enabled_func = function()
-					return self:areControlsHidden()
+				text_func = function()
+					return T(_("%1: %2"), _("Current anchor"), self:getAnchorStatusText())
 				end,
-				callback = function()
-					self:showControls()
-				end,
+				help_text = _("Pin an anchor before exploring, bring back hidden buttons, or discard the anchor (and undo that)."),
+				enabled_func = isEnabled,
+				sub_item_table = anchor_items,
+				separator = true,
 			},
 			{
-				-- Named after what it actually drops -- Page Anchor's own
-				-- targets -- so it isn't mistaken for clearing KOReader's
-				-- native location history, which it never touches.
-				text = _("Discard anchor and return point"),
-				help_text = _("Forgets the anchor and the return point and keeps reading from the current position. KOReader's own location history is not affected."),
-				enabled_func = function()
-					return self:hasTargets()
-				end,
-				callback = function()
+				text = _("Buttons"),
+				help_text = _("Choose the size and position of the floating buttons and what they show."),
+				enabled_func = isEnabled,
+				sub_item_table = button_items,
+			},
+			{
+				text = _("Auto-hide"),
+				help_text = _("Choose when the buttons hide on their own, what stays on screen, and how long a hidden anchor is kept."),
+				enabled_func = isEnabled,
+				sub_item_table = auto_hide_items,
+			},
+			{
+				text = _("Navigation"),
+				help_text = _("Choose how long the way back out is kept after returning to the anchor, and what counts as a jump."),
+				enabled_func = isEnabled,
+				sub_item_table = navigation_items,
+				separator = true,
+			},
+			{
+				text = _("Restore all defaults"),
+				help_text = _("Restores every Page Anchor setting. Page Anchor stays turned on or off as it is, and the current anchor is kept."),
+				keep_menu_open = true,
+				callback = function(touchmenu_instance)
 					UIManager:show(ConfirmBox:new({
-						text = _("Discard anchor and return point?"),
-						ok_text = _("Discard"),
+						text = _("Restore all Page Anchor settings to their defaults?"),
+						ok_text = _("Restore"),
 						ok_callback = function()
-							self:clearHistory()
+							self:resetAllSettings()
+							if touchmenu_instance and touchmenu_instance.updateItems then
+								touchmenu_instance:updateItems()
+							end
 						end,
 					}))
 				end,
 			},
 			{
-				text = _("Restore discarded anchor"),
-				help_text = _("Brings back the anchor and return point you last discarded, as long as no new anchor has been set since."),
-				separator = true,
-				enabled_func = function()
-					return self:canRestoreDiscarded()
-				end,
-				callback = function()
-					self:restoreDiscarded()
-				end,
-			},
-			{
-				-- Reuses KOReader's own "Version: %1" string (see
-				-- common_info_menu_table.lua) instead of a plugin-specific
-				-- one, so this line is already translated everywhere
-				-- KOReader is.
-				text_func = function()
-					return T(_("Version: %1"), C.PLUGIN_VERSION)
-				end,
+				text = _("About"),
+				keep_menu_open = true,
 				callback = function()
 					UIManager:show(InfoMessage:new({
-						text = _("Page Anchor") .. "\n" .. T(_("Version: %1"), C.PLUGIN_VERSION),
+						text = _("Page Anchor")
+							.. "\n"
+							.. T(_("Version: %1"), C.PLUGIN_VERSION)
+							.. "\n\n"
+							.. _("Shows floating back and forward buttons so you can review another part of a book without losing either reading position."),
 					}))
 				end,
 			},

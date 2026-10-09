@@ -85,7 +85,7 @@ C.BASE_INLINE_LABEL_FONT_SIZE = 16
 -- a separate nil-vs-zero special case in the getters (settings.lua).
 C.AUTO_DISMISS_DEFAULT_SECONDS = 30
 C.AUTO_DISMISS_OPTIONS = {
-	{ value = 0, label = "Off" },
+	{ value = 0, label = "Never" },
 	{ value = 15, label = "15 seconds" },
 	{ value = 30, label = "30 seconds" },
 	{ value = 60, label = "1 minute" },
@@ -110,7 +110,7 @@ C.HIDDEN_EXPIRY_OPTIONS = {
 
 C.FORWARD_DISMISS_DEFAULT_PAGES = 1
 C.FORWARD_DISMISS_PAGE_OPTIONS = {
-	{ value = 0, label = "Off" },
+	{ value = 0, label = "Never" },
 	{ value = 1, label = "1 page" },
 	{ value = 2, label = "2 pages" },
 	{ value = 3, label = "3 pages" },
@@ -130,8 +130,8 @@ C.ACTION_SHOW = "show"
 C.HIDE_MODE_MINIMIZE = "minimize"
 C.HIDE_MODE_HIDE = "hide"
 C.HIDE_MODE_OPTIONS = {
-	{ value = C.HIDE_MODE_MINIMIZE, label = "Minimize to an anchor tab" },
-	{ value = C.HIDE_MODE_HIDE, label = "Hide completely" },
+	{ value = C.HIDE_MODE_MINIMIZE, label = "Leave an anchor tab" },
+	{ value = C.HIDE_MODE_HIDE, label = "Leave nothing" },
 }
 
 C.ICON_ANCHOR = "anchor.svg"

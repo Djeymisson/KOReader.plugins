@@ -22,6 +22,27 @@ function PageAnchor:_onDisplaySettingChanged()
 	self:refresh(nil, before)
 end
 
+-- Every setting back to its default, except whether Page Anchor is on.
+-- The current anchor and return point are kept; what depends on the
+-- settings (position and touch zones, timers, the drawn control) is
+-- brought in line right away.
+function PageAnchor:resetAllSettings()
+	for key, value in pairs(C) do
+		if type(key) == "string" and key:match("^SETTING_") and value ~= C.SETTING_ENABLED then
+			G_reader_settings:delSetting(value)
+		end
+	end
+	if self._installed then
+		self:registerOverlayZones()
+	end
+	if self.controls_hidden then
+		self:scheduleHiddenExpiry()
+	elseif self:hasNavTargets() then
+		self:scheduleAutoDismiss()
+	end
+	self:_onDisplaySettingChanged()
+end
+
 -- A saved choice among `options` ({value, label} list), or `default` when
 -- it's unset or no longer one of them.
 local function readOption(setting, options, default)
