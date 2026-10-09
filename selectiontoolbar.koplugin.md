@@ -1,4 +1,4 @@
-# Selection Toolbar ![Version](https://img.shields.io/badge/version-v1.11.0-blue)
+# Selection Toolbar ![Version](https://img.shields.io/badge/version-v1.12.0-blue)
 
 A KOReader plugin that replaces the centered text-selection menu with a compact toolbar displayed near the selected text, and adds draggable handles and a margin line marker to adjust and visualize the selection.
 
@@ -37,6 +37,7 @@ selectiontoolbar.koplugin/
     ├── copy.svg
     ├── dictionary.svg
     ├── highlight.svg
+    ├── more.svg
     ├── qr_code.svg
     ├── search.svg
     ├── select.svg
@@ -84,9 +85,9 @@ Options:
   - `Toolbar shape`: how rounded the toolbar corners are.
     - `Rectangle`: square corners, the most sober look.
     - `Rounded corners` (default): slightly rounded corners, as KOReader's own dialogs.
-    - `Capsule`: fully rounded ends. The toolbar gets a little wider, so the buttons (and their tap feedback) stay inside the curves.
+    - `Capsule`: fully rounded ends, also with the More row shown. The toolbar gets a little wider, so the buttons (and their tap feedback) stay inside the curves; with two rows the curves are larger, so the expanded toolbar is wider still.
   - `Border`: `Thin`, `Medium` (default) or `Thick` toolbar outline. A thick border helps the toolbar stand out over the text, especially with the shadow turned off.
-  - `Separators`: `Between all buttons` (default) draws a thin line between each pair of buttons; `Between groups` only between groups of actions (see `Arrange actions and groups` below); `None` removes them for a lighter look. The toolbar keeps the same width in all three.
+  - `Separators`: `Between all buttons` (default) draws a thin line between each pair of buttons; `Between groups` only between groups of actions (see `Arrange actions and groups` below); `None` removes them for a lighter look, including the line between the two rows when More is expanded. The toolbar keeps the same size in all three.
   - `Toolbar shadow`: the dithered shadow along the right and bottom edges, which follows the toolbar's shape.
     - `No shadow`: a flat toolbar; a stronger border helps it stand out over the text.
     - `Subtle`: a shorter, lighter shadow.
@@ -108,6 +109,7 @@ Options:
   - `Line marker distance`: `Close to the text`, `Normal` (default) or `Far from the text`. The marker always stays in the page margin: with a narrow margin it is drawn closer to the text, then thinner, and it is not drawn on a page without margin.
 - `Visible actions`: lets you choose which actions appear in the toolbar, and in which order.
   - `Arrange actions and groups`: reorder the actions, and move the three group separators between them. Groups show as lines with `Separators` set to `Between groups`. A separator moved to the start or the end of the list, or next to another one, is not used, so groups are added and removed just by moving separators. Hidden actions are listed dimmed and keep their place. Separators never show around hidden actions or actions KOReader leaves out.
+  - `Actions before More`: `All actions` (default) shows every visible action in one row. With `4 actions`, `5 actions` or `6 actions`, only the first actions of the order are shown, followed by a More button (`…`) that shows the others in a second row, and hides them again. More is only added when it saves room: if a single action would be left for the second row, it is shown in the first one instead. The preview shows the toolbar as it first opens, with More not expanded.
   - `Restore default order`: annotation (Select, Highlight, Add note), lookup (Dictionary, Wikipedia, Translate, Search) and tools (Copy, View HTML, Generate QR code) groups.
   - `Show all actions`: restores all actions.
   - Other items: enable/disable each toolbar action individually.
@@ -136,6 +138,7 @@ The plugin includes a few internal adjustments to reduce repeated work when open
 - the settings preview is built by the same function as the real toolbar, so both always look the same; it is a toast widget, so it never takes the menu's taps.
 - the preview keeps its sample text and title between changes, and only rebuilds the toolbar when a setting changes; the sample text is just long enough to fill its lines;
 - the preview's shadow is computed once per opening (and screen width or night mode), and changing a setting only refreshes the preview area, repainting the page under it only when the preview changes height.
+- showing or hiding the More row replaces the toolbar with a plain refresh of its old area, instead of the flashing refresh KOReader uses when a dialog closes.
 
 Selection handles and line marker:
 

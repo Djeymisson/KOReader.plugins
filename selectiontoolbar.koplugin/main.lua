@@ -4,6 +4,7 @@ local Blitbuffer = require("ffi/blitbuffer")
 local ButtonDialog = require("ui/widget/buttondialog")
 local Font = require("ui/font")
 local IconWidget = require("ui/widget/iconwidget")
+local LineWidget = require("ui/widget/linewidget")
 local UIManager = require("ui/uimanager")
 local InfoMessage = require("ui/widget/infomessage")
 local Device = require("device")
@@ -26,7 +27,7 @@ local math_max = math.max
 local math_min = math.min
 local math_sqrt = math.sqrt
 
-local PLUGIN_VERSION = "v1.11.0"
+local PLUGIN_VERSION = "v1.12.0"
 local QR_MESSAGE_MODULE = "ui/widget/qrmessage"
 
 -- Handle shapes are sized per handle size (see getHandleMetrics); these stay the same.
@@ -74,6 +75,7 @@ local SETTING_BORDER = "selectiontoolbar_border"
 local SETTING_SEPARATORS = "selectiontoolbar_separators"
 local SETTING_SHADOW_STYLE = "selectiontoolbar_shadow_style"
 local SETTING_ACTION_ORDER = "selectiontoolbar_action_order"
+local SETTING_MAIN_ACTIONS = "selectiontoolbar_main_actions"
 local SETTING_HANDLE_SIZE = "selectiontoolbar_handle_size"
 local SETTING_LINE_MARKER_WIDTH = "selectiontoolbar_line_marker_width"
 local SETTING_LINE_MARKER_GAP = "selectiontoolbar_line_marker_gap"
@@ -336,6 +338,21 @@ local ACTIONS = {
     { id = "search", key = "12_search", icon = "search", text = _("Search") },
 }
 local QR_ICON_ACTION = { icon = "qr_code" }
+local MORE_ICON_ACTION = { icon = "more" }
+
+-- How many actions the toolbar shows before a "More" button, which shows the others in a
+-- second row. Saved as strings, as setting values.
+local DEFAULT_MAIN_ACTIONS = "all"
+local MAIN_ACTION_COUNTS = {
+    {
+        id = DEFAULT_MAIN_ACTIONS,
+        text = _("All actions"),
+        help_text = _("Show every visible action in a single row."),
+    },
+    { id = "4", text = _("4 actions"), count = 4 },
+    { id = "5", text = _("5 actions"), count = 5 },
+    { id = "6", text = _("6 actions"), count = 6 },
+}
 
 local ACTIONS_BY_ID = {}
 for _, action in ipairs(ACTIONS) do
@@ -568,6 +585,15 @@ local ShadowedButtonDialog = ButtonDialog:extend({})
 
 function ShadowedButtonDialog:init()
     ButtonDialog.init(self)
+    if self.hide_row_separators then
+        -- Like a hidden vertical separator: keep the line's height, draw it in the
+        -- background color.
+        for _, widget in ipairs(self.buttontable.container) do
+            if getmetatable(widget) == LineWidget then
+                widget.background = Blitbuffer.COLOR_WHITE
+            end
+        end
+    end
     local style = self.frame_style
     if style then
         -- ButtonDialog's frame has fixed border, radius and padding: apply the chosen ones.
@@ -640,9 +666,16 @@ end
 
 function ShadowedButtonDialog:onCloseWidget()
     -- ButtonDialog flashes its area on close. A hidden toolbar left nothing there
-    -- (its area was repainted when it was hidden), so skip that flash refresh.
+    -- (its area was repainted when it was hidden), so skip that flash refresh. One
+    -- replaced by a new toolbar at about the same place (More, Fewer) needs no flash
+    -- either: a plain refresh of its area is enough, the new one refreshes its own.
     if not self.content_hidden then
-        ButtonDialog.onCloseWidget(self)
+        local dimen = self.movable and self.movable.dimen
+        if not self.replaced then
+            ButtonDialog.onCloseWidget(self)
+        elseif dimen then
+            UIManager:setDirty(nil, "ui", dimen)
+        end
     end
     if self.handle_controller then
         self.handle_controller:onToolbarClosed(self)
@@ -1196,15 +1229,18 @@ end
 
 -- Border, corner radius and side padding of the toolbar frame for the chosen shape and
 -- border. Known before the toolbar is built, as its width depends on them.
-function SelectionToolbar:getFrameStyle(metrics)
+-- row_count: the number of button rows (two with the More row shown).
+function SelectionToolbar:getFrameStyle(metrics, row_count)
     local border = readChoice(SETTING_BORDER, BORDERS, DEFAULT_BORDER).width
     local shape = self:getShape()
     local style = { border = border, radius = 0, padding_h = Size.padding.button }
     if shape == SHAPE_CAPSULE then
-        -- ButtonTable: a span above and below the row of buttons, which have their own
-        -- vertical padding; ButtonDialog's frame adds no padding at the top or bottom.
+        -- ButtonTable: a span above and below each row of buttons, which have their own
+        -- vertical padding, and a separator line between rows; ButtonDialog's frame adds
+        -- no padding at the top or bottom. The ends stay fully round with several rows.
         local span = Size.span.vertical_default
-        local height = metrics.button_height + 2 * Size.padding.buttontable + 2 * span + 2 * border
+        local row_h = metrics.button_height + 2 * Size.padding.buttontable + 2 * span
+        local height = row_count * row_h + (row_count - 1) * Size.line.medium + 2 * border
         local radius = math_floor(height / 2)
         -- Keep each button's corners inside the curve's inner edge: the buttons paint
         -- their own background (and invert it when tapped), which would cover the border.
@@ -1308,6 +1344,14 @@ function SelectionToolbar:applyStylePreset(id)
     self:setHandleStyle(look.handle_style, look.handle_outline)
     self:setHandleSize(look.handle_size)
     self:setLineMarkerWidth(look.marker_width)
+end
+
+function SelectionToolbar:getMainActions()
+    return readChoice(SETTING_MAIN_ACTIONS, MAIN_ACTION_COUNTS, DEFAULT_MAIN_ACTIONS).id
+end
+
+function SelectionToolbar:setMainActions(main_actions)
+    G_reader_settings:saveSetting(SETTING_MAIN_ACTIONS, main_actions)
 end
 
 function SelectionToolbar:getLineMarkerWidth()
@@ -1531,11 +1575,16 @@ end
 -- for both the real toolbar and its preview, so that they always look the same.
 -- available_width: the room for the toolbar and its shadow (default: the screen width
 -- less a margin on both sides).
-function SelectionToolbar:buildToolbarDialog(row, metrics, options, available_width)
+-- rows: one row of buttons, or two with the More button expanded. The toolbar is sized
+-- for the widest one.
+function SelectionToolbar:buildToolbarDialog(rows, metrics, options, available_width)
     local shadow = self:getShadowFinish()
     local shadow_extent = shadow and shadow.extent or 0
-    local count = #row
-    local style = self:getFrameStyle(metrics)
+    local count = 0
+    for _, row in ipairs(rows) do
+        count = math_max(count, #row)
+    end
+    local style = self:getFrameStyle(metrics, #rows)
     -- ButtonTable puts a separator line between buttons; the frame adds border and padding.
     local separators = (count - 1) * Size.line.medium
     local frame_extra = 2 * style.border + 2 * style.padding_h
@@ -1548,10 +1597,12 @@ function SelectionToolbar:buildToolbarDialog(row, metrics, options, available_wi
     if fit_width < button_width then
         button_width = fit_width
         local icon_size = math_min(metrics.icon_size, button_width - 2 * Size.padding.button)
-        for _, button in ipairs(row) do
-            button.width = button_width
-            button.icon_width = icon_size
-            button.icon_height = icon_size
+        for _, row in ipairs(rows) do
+            for _, button in ipairs(row) do
+                button.width = button_width
+                button.icon_width = icon_size
+                button.icon_height = icon_size
+            end
         end
     end
 
@@ -1559,12 +1610,16 @@ function SelectionToolbar:buildToolbarDialog(row, metrics, options, available_wi
     if separator_style ~= DEFAULT_SEPARATORS then
         -- ButtonTable keeps the width of a hidden separator, but draws it in the
         -- background color, so the toolbar width does not depend on this setting.
-        for _, button in ipairs(row) do
-            button.no_vertical_sep = separator_style == SEPARATORS_NONE or not button.group_end
+        for _, row in ipairs(rows) do
+            for _, button in ipairs(row) do
+                button.no_vertical_sep = separator_style == SEPARATORS_NONE or not button.group_end
+            end
         end
     end
 
-    options.buttons = { row }
+    options.buttons = rows
+    -- ButtonTable also draws a line between rows, which no_vertical_sep does not cover.
+    options.hide_row_separators = separator_style == SEPARATORS_NONE
     -- ButtonDialog sizes its ButtonTable for its own default border and padding.
     options.width = count * button_width + separators + 2 * Size.border.window + 2 * Size.padding.button
     options.frame_style = style
@@ -1577,17 +1632,20 @@ end
 -- A toolbar with every visible action, as it would show for a selection.
 function SelectionToolbar:buildPreviewDialog(available_width)
     local metrics = getToolbarMetrics()
+    local function noop() end
     local row = self:buildActionRow(function(action)
         return applyToolbarButtonMetrics({
             id = "selectiontoolbar_preview_" .. action.id,
             icon = self:getIconPath(action),
-            callback = function() end,
+            callback = noop,
         }, metrics)
     end)
     if #row == 0 then
         return nil
     end
-    return self:buildToolbarDialog(row, metrics, {}, available_width)
+    -- As it first shows for a selection: with the More button, not expanded.
+    local rows = self:splitToolbarRows(row, false, self:makeMoreButton(metrics, false, noop))
+    return self:buildToolbarDialog(rows, metrics, {}, available_width)
 end
 
 -- Menu pages that show the preview, and what it shows there (PREVIEW_TOOLBAR or
@@ -1744,6 +1802,7 @@ function SelectionToolbar:choiceMenuItems(choices, get, set)
 end
 
 function SelectionToolbar:addToMainMenu(menu_items)
+    local main_action_items = self:choiceMenuItems(MAIN_ACTION_COUNTS, self.getMainActions, self.setMainActions)
     local action_items = {
         {
             text = _("Arrange actions and groups"),
@@ -1754,6 +1813,13 @@ function SelectionToolbar:addToMainMenu(menu_items)
             callback = function()
                 self:showArrangeActions()
             end,
+        },
+        {
+            text = _("Actions before More"),
+            help_text = _(
+                "Show only the first actions of the order, and a More button for the others, which shows them in a second row. Useful with many actions enabled."
+            ),
+            sub_item_table = main_action_items,
         },
         {
             text = _("Restore default order"),
@@ -1974,6 +2040,7 @@ function SelectionToolbar:addToMainMenu(menu_items)
         separator_items,
         shadow_items,
         action_items,
+        main_action_items,
     }
     for _, page in ipairs(toolbar_pages) do
         self:trackPreviewPage(page, PREVIEW_TOOLBAR)
@@ -2880,7 +2947,7 @@ function SelectionToolbar:onToolbarClosed(dialog)
 
     -- Repaint the page under the marks, which were drawn on the page itself. Not needed
     -- when the toolbar is re-opened after a drag: the same marks stay on screen.
-    if rects and reader_highlight and reader_highlight.dialog and not self.reopening_after_drag then
+    if rects and reader_highlight and reader_highlight.dialog and not self.reopening_toolbar then
         refreshRects(reader_highlight.dialog, rects)
     end
 end
@@ -3156,14 +3223,8 @@ function SelectionToolbar:endHandleDrag(pos)
         dialog.content_hidden = nil
         UIManager:setDirty(dialog, "ui", dialog.movable and dialog.movable.dimen)
     else
-        -- Re-open the toolbar so it is anchored to the adjusted selection. The marks on
-        -- screen are already up to date, so it does not need to refresh them again.
-        self.reopening_after_drag = true
-        local ok, err = pcall(self.showToolbar, self, reader_highlight)
-        self.reopening_after_drag = nil
-        if not ok then
-            error(err, 0)
-        end
+        -- Re-open the toolbar so it is anchored to the adjusted selection.
+        self:reopenToolbar(reader_highlight, nil, dialog.toolbar_expanded)
     end
     return true
 end
@@ -3198,7 +3259,61 @@ function SelectionToolbar:onHandleSwipe(dialog, ges)
     return false
 end
 
-function SelectionToolbar:showToolbar(reader_highlight, index)
+-- Shows the toolbar again for the same selection, e.g. anchored to an adjusted selection
+-- or with the More row expanded or collapsed. The marks on screen are already up to
+-- date, so they are not refreshed again.
+function SelectionToolbar:reopenToolbar(reader_highlight, index, expanded)
+    if reader_highlight.highlight_dialog then
+        reader_highlight.highlight_dialog.replaced = true
+    end
+    self.reopening_toolbar = true
+    local ok, err = pcall(self.showToolbar, self, reader_highlight, index, expanded)
+    self.reopening_toolbar = nil
+    if not ok then
+        error(err, 0)
+    end
+end
+
+-- The More button: shows the actions of the second row, or hides them when expanded.
+function SelectionToolbar:makeMoreButton(metrics, expanded, callback)
+    local label = expanded and _("Fewer actions") or _("More actions")
+    return applyToolbarButtonMetrics({
+        id = "selectiontoolbar_more",
+        icon = self:getIconPath(MORE_ICON_ACTION),
+        callback = callback,
+        hold_callback = function()
+            UIManager:show(InfoMessage:new({ text = label }))
+        end,
+    }, metrics)
+end
+
+-- The toolbar rows for a row of action buttons: all of them, or the main actions then the
+-- More button, plus the other actions in a second row when expanded. More only shows
+-- when it saves room: with a single action left, that action takes its place.
+function SelectionToolbar:splitToolbarRows(row, expanded, more_button)
+    local count = readChoice(SETTING_MAIN_ACTIONS, MAIN_ACTION_COUNTS, DEFAULT_MAIN_ACTIONS).count
+    if not count or #row <= count + 1 then
+        return { row }
+    end
+    local main, rest = {}, {}
+    for i, button in ipairs(row) do
+        if i <= count then
+            main[#main + 1] = button
+        else
+            rest[#rest + 1] = button
+        end
+    end
+    -- More is a group of its own.
+    main[#main].group_end = true
+    main[#main + 1] = more_button
+    if expanded then
+        return { main, rest }
+    end
+    return { main }
+end
+
+-- expanded: show the actions after the More button in a second row.
+function SelectionToolbar:showToolbar(reader_highlight, index, expanded)
     local metrics = getToolbarMetrics()
     local row = self:buildActionRow(function(action)
         return self:makeButton(reader_highlight, action, index, metrics)
@@ -3212,8 +3327,13 @@ function SelectionToolbar:showToolbar(reader_highlight, index)
     self:closeHighlightDialog(reader_highlight)
 
     local with_marks = self:canShowMarks(reader_highlight, index)
+    local more_button = self:makeMoreButton(metrics, expanded, function()
+        self:reopenToolbar(reader_highlight, index, not expanded)
+    end)
+    local rows = self:splitToolbarRows(row, expanded, more_button)
 
-    reader_highlight.highlight_dialog = self:buildToolbarDialog(row, metrics, {
+    reader_highlight.highlight_dialog = self:buildToolbarDialog(rows, metrics, {
+        toolbar_expanded = expanded,
         dismissable = true,
         handle_controller = with_marks and self or nil,
         handle_pan_rate = with_marks and self:getHandlePanRate() or nil,
@@ -3233,7 +3353,7 @@ function SelectionToolbar:showToolbar(reader_highlight, index)
         local marks = self:computeSelectionMarks(reader_highlight)
         -- Current handle positions, for the toolbar anchor computed at its first paint.
         self.marks = marks
-        if marks and not self.reopening_after_drag then
+        if marks and not self.reopening_toolbar then
             refreshRects(reader_highlight.dialog, marks.rects)
         end
     end
