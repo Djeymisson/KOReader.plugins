@@ -26,7 +26,7 @@ local math_max = math.max
 local math_min = math.min
 local math_sqrt = math.sqrt
 
-local PLUGIN_VERSION = "v1.9.0"
+local PLUGIN_VERSION = "v1.11.0"
 local QR_MESSAGE_MODULE = "ui/widget/qrmessage"
 
 -- Handle shapes are sized per handle size (see getHandleMetrics); these stay the same.
@@ -73,6 +73,7 @@ local SETTING_SHAPE = "selectiontoolbar_shape"
 local SETTING_BORDER = "selectiontoolbar_border"
 local SETTING_SEPARATORS = "selectiontoolbar_separators"
 local SETTING_SHADOW_STYLE = "selectiontoolbar_shadow_style"
+local SETTING_ACTION_ORDER = "selectiontoolbar_action_order"
 local SETTING_HANDLE_SIZE = "selectiontoolbar_handle_size"
 local SETTING_LINE_MARKER_WIDTH = "selectiontoolbar_line_marker_width"
 local SETTING_LINE_MARKER_GAP = "selectiontoolbar_line_marker_gap"
@@ -173,12 +174,20 @@ local BORDERS = {
 }
 
 local DEFAULT_SEPARATORS = "all"
+local SEPARATORS_GROUPS = "groups"
 local SEPARATORS_NONE = "none"
 local SEPARATOR_STYLES = {
     {
         id = "all",
         text = _("Between all buttons"),
         help_text = _("A thin line between each pair of buttons."),
+    },
+    {
+        id = SEPARATORS_GROUPS,
+        text = _("Between groups"),
+        help_text = _(
+            "A line only between groups of actions, such as annotation, lookup and tools. Arrange the groups in Visible actions."
+        ),
     },
     {
         id = SEPARATORS_NONE,
@@ -225,11 +234,93 @@ local LINE_MARKER_WIDTHS = {
 }
 
 -- Distance between the line marker and the text. It never leaves the page margin.
+local DEFAULT_HANDLE_STYLE = "lollipop"
 local DEFAULT_LINE_MARKER_GAP = "normal"
 local LINE_MARKER_GAPS = {
     { id = "near", text = _("Close to the text"), gap = Screen:scaleBySize(2) },
     { id = DEFAULT_LINE_MARKER_GAP, text = _("Normal"), gap = Screen:scaleBySize(6) },
     { id = "far", text = _("Far from the text"), gap = Screen:scaleBySize(14) },
+}
+
+-- Ready-made combinations of the look settings. Applying one sets all of these; it is
+-- shown as chosen while the current settings match it (no preset is stored, so any later
+-- change simply makes the look custom). Position, visible actions and whether handles
+-- and line marker are shown are left as they are.
+local STYLE_PRESETS = {
+    {
+        id = "default",
+        text = _("Default"),
+        help_text = _("The plugin's original look."),
+        look = {
+            density = DEFAULT_DENSITY,
+            icon_size = DEFAULT_ICON_SIZE,
+            shape = DEFAULT_SHAPE,
+            border = DEFAULT_BORDER,
+            separators = DEFAULT_SEPARATORS,
+            shadow = DEFAULT_SHADOW_STYLE,
+            handle_style = DEFAULT_HANDLE_STYLE,
+            handle_outline = false,
+            handle_size = DEFAULT_HANDLE_SIZE,
+            marker_width = DEFAULT_LINE_MARKER_WIDTH,
+        },
+    },
+    {
+        id = "discreet",
+        text = _("Discreet"),
+        help_text = _(
+            "A light toolbar: thin border, rounded corners, no shadow and lines only between groups of actions. Bracket handles and a thin line marker."
+        ),
+        look = {
+            density = "normal",
+            icon_size = "normal",
+            shape = "rounded",
+            border = "thin",
+            separators = SEPARATORS_GROUPS,
+            shadow = SHADOW_NONE,
+            handle_style = "bracket",
+            handle_outline = false,
+            handle_size = "normal",
+            marker_width = "thin",
+        },
+    },
+    {
+        id = "classic",
+        text = _("Classic"),
+        help_text = _(
+            "A rectangular toolbar with a medium border, a shadow and separators between the buttons. Round (lollipop) handles."
+        ),
+        look = {
+            density = "normal",
+            icon_size = "normal",
+            shape = "rectangle",
+            border = "medium",
+            separators = "all",
+            shadow = "standard",
+            handle_style = "lollipop",
+            handle_outline = false,
+            handle_size = "normal",
+            marker_width = "medium",
+        },
+    },
+    {
+        id = "comfortable",
+        text = _("Comfortable"),
+        help_text = _(
+            "More spaced buttons with larger icons and a thick border. Lollipop handles with the high-contrast outline."
+        ),
+        look = {
+            density = "comfortable",
+            icon_size = "large",
+            shape = "rounded",
+            border = "thick",
+            separators = "all",
+            shadow = "standard",
+            handle_style = "lollipop",
+            handle_outline = true,
+            handle_size = "normal",
+            marker_width = "medium",
+        },
+    },
 }
 
 local ACTIONS = {
@@ -246,7 +337,35 @@ local ACTIONS = {
 }
 local QR_ICON_ACTION = { icon = "qr_code" }
 
-local DEFAULT_HANDLE_STYLE = "lollipop"
+local ACTIONS_BY_ID = {}
+for _, action in ipairs(ACTIONS) do
+    ACTIONS_BY_ID[action.id] = action
+end
+
+-- The toolbar order is a list of action ids and group separators. There are always
+-- GROUP_SEPARATOR_COUNT separators: one at the start or the end of the list, or next
+-- to another one, simply draws nothing, so groups are made and removed by moving them.
+local GROUP_SEPARATOR = "|"
+local GROUP_SEPARATOR_COUNT = 3
+local DEFAULT_ACTION_ORDER = {
+    -- Annotation
+    "select",
+    "highlight",
+    "add_note",
+    GROUP_SEPARATOR,
+    -- Lookup
+    "dictionary",
+    "wikipedia",
+    "translate",
+    "search",
+    GROUP_SEPARATOR,
+    -- Tools
+    "copy",
+    "view_html",
+    "qr_code",
+    GROUP_SEPARATOR,
+}
+
 -- Styles drawn with solid shapes large enough to get a high-contrast outline.
 local OUTLINE_STYLES = { lollipop = true, teardrop = true, flag = true }
 local HANDLE_STYLES = {
@@ -570,10 +689,12 @@ local SHEET_GRIP_WIDTH = Screen:scaleBySize(36)
 local SHEET_GRIP_HEIGHT = math_max(2, Screen:scaleBySize(4))
 local SHEET_GRIP_MARGIN = Size.padding.default
 
--- What the preview shows: the toolbar (Appearance, Visible actions) or the selection
--- marks over a selected sample text (Selection marks).
+-- What the preview shows: the toolbar (Appearance, Visible actions), the selection
+-- marks over a selected sample text (Selection marks), or both (Style presets).
 local PREVIEW_TOOLBAR = "toolbar"
 local PREVIEW_MARKS = "marks"
+-- Both: the selection marks with the toolbar below them (Style presets).
+local PREVIEW_FULL = "full"
 
 -- Sample text of the given width and number of lines, kept while they do not change:
 -- it is laid out and rendered when created, which is the costly part.
@@ -600,7 +721,8 @@ end
 
 -- The toolbar over the sample text, with up to PREVIEW_MAX_EXTRA_LINES lines above and
 -- below it when there is room.
-function ToolbarPreview:buildToolbarStage(settings_changed, inner_w, face, line_h, room)
+-- The toolbar frame (nil without visible actions), rebuilt only when settings changed.
+function ToolbarPreview:getToolbar(settings_changed, inner_w)
     if settings_changed or not self.toolbar_built then
         if self.toolbar then
             self.toolbar:free()
@@ -609,7 +731,11 @@ function ToolbarPreview:buildToolbarStage(settings_changed, inner_w, face, line_
         self.toolbar = dialog and dialog.movable[1]
         self.toolbar_built = true
     end
-    local toolbar = self.toolbar
+    return self.toolbar
+end
+
+function ToolbarPreview:buildToolbarStage(settings_changed, inner_w, face, line_h, room)
+    local toolbar = self:getToolbar(settings_changed, inner_w)
     local toolbar_size = toolbar and toolbar:getSize() or Geom:new({ w = 0, h = 0 })
 
     local toolbar_lines = math.ceil(toolbar_size.h / line_h)
@@ -668,6 +794,9 @@ function ToolbarPreview:update(settings_changed)
     local stage
     if self.mode == PREVIEW_MARKS then
         stage = plugin:buildMarksPreview(self, inner_w, face, line_h, room)
+    elseif self.mode == PREVIEW_FULL then
+        local toolbar = self:getToolbar(settings_changed, inner_w)
+        stage = plugin:buildMarksPreview(self, inner_w, face, line_h, room, toolbar)
     else
         stage = self:buildToolbarStage(settings_changed, inner_w, face, line_h, room)
     end
@@ -1134,6 +1263,53 @@ function SelectionToolbar:setHandleSize(size)
     G_reader_settings:saveSetting(SETTING_HANDLE_SIZE, size)
 end
 
+-- The current look, in the form of a preset's look. The outline counts only where the
+-- handle style can have one.
+function SelectionToolbar:getLook()
+    return {
+        density = self:getDensity(),
+        icon_size = self:getIconSize(),
+        shape = self:getShape(),
+        border = self:getBorder(),
+        separators = self:getSeparators(),
+        shadow = self:getShadowStyle(),
+        handle_style = self:getHandleStyle(),
+        handle_outline = self:canOutlineHandles() and self:handleOutline() or false,
+        handle_size = self:getHandleSize(),
+        marker_width = self:getLineMarkerWidth(),
+    }
+end
+
+-- The id of the preset matching the current look, or nil for a custom look.
+function SelectionToolbar:getStylePreset()
+    local look = self:getLook()
+    for _, preset in ipairs(STYLE_PRESETS) do
+        local matches = true
+        for key, value in pairs(preset.look) do
+            if look[key] ~= value then
+                matches = false
+                break
+            end
+        end
+        if matches then
+            return preset.id
+        end
+    end
+end
+
+function SelectionToolbar:applyStylePreset(id)
+    local look = findChoice(STYLE_PRESETS, id).look
+    self:setDensity(look.density)
+    self:setIconSize(look.icon_size)
+    self:setShape(look.shape)
+    self:setBorder(look.border)
+    self:setSeparators(look.separators)
+    self:setShadowStyle(look.shadow)
+    self:setHandleStyle(look.handle_style, look.handle_outline)
+    self:setHandleSize(look.handle_size)
+    self:setLineMarkerWidth(look.marker_width)
+end
+
 function SelectionToolbar:getLineMarkerWidth()
     return readChoice(SETTING_LINE_MARKER_WIDTH, LINE_MARKER_WIDTHS, DEFAULT_LINE_MARKER_WIDTH).id
 end
@@ -1197,12 +1373,77 @@ function SelectionToolbar:setActionEnabled(action_id, enabled)
     G_reader_settings:saveSetting(SETTING_ACTIONS, settings)
 end
 
-function SelectionToolbar:resetActions()
+local function deleteSetting(setting, empty_value)
     if G_reader_settings.delSetting then
-        G_reader_settings:delSetting(SETTING_ACTIONS)
+        G_reader_settings:delSetting(setting)
     else
-        G_reader_settings:saveSetting(SETTING_ACTIONS, {})
+        G_reader_settings:saveSetting(setting, empty_value)
     end
+end
+
+function SelectionToolbar:resetActions()
+    deleteSetting(SETTING_ACTIONS, {})
+end
+
+-- The saved toolbar order, made valid: each known action once (actions added in a later
+-- version go at the end) and exactly GROUP_SEPARATOR_COUNT group separators.
+function SelectionToolbar:getActionOrder()
+    local saved = G_reader_settings:readSetting(SETTING_ACTION_ORDER)
+    local order, seen, separators = {}, {}, 0
+    for _, id in ipairs(type(saved) == "table" and saved or DEFAULT_ACTION_ORDER) do
+        if id == GROUP_SEPARATOR then
+            if separators < GROUP_SEPARATOR_COUNT then
+                separators = separators + 1
+                order[#order + 1] = id
+            end
+        elseif ACTIONS_BY_ID[id] and not seen[id] then
+            seen[id] = true
+            order[#order + 1] = id
+        end
+    end
+    for _, action in ipairs(ACTIONS) do
+        if not seen[action.id] then
+            order[#order + 1] = action.id
+        end
+    end
+    for _ = separators + 1, GROUP_SEPARATOR_COUNT do
+        order[#order + 1] = GROUP_SEPARATOR
+    end
+    return order
+end
+
+function SelectionToolbar:setActionOrder(order)
+    G_reader_settings:saveSetting(SETTING_ACTION_ORDER, order)
+end
+
+function SelectionToolbar:resetActionOrder()
+    -- An empty list would read as an order without any action: delete it instead.
+    deleteSetting(SETTING_ACTION_ORDER, DEFAULT_ACTION_ORDER)
+end
+
+-- The toolbar buttons of the visible actions, in the chosen order. make(action) returns
+-- the button of an action, or nil to leave it out. A button followed by a group
+-- separator gets group_end, unless no other button follows: separators around hidden
+-- or left out actions collapse, so groups never show an empty slot.
+function SelectionToolbar:buildActionRow(make)
+    local action_settings = self:getActionSettings()
+    local row = {}
+    local group_ended = false
+    for _, id in ipairs(self:getActionOrder()) do
+        if id == GROUP_SEPARATOR then
+            group_ended = #row > 0
+        elseif action_settings[id] ~= false then
+            local button = make(ACTIONS_BY_ID[id])
+            if button then
+                if group_ended then
+                    row[#row].group_end = true
+                    group_ended = false
+                end
+                row[#row + 1] = button
+            end
+        end
+    end
+    return row
 end
 
 function SelectionToolbar:patchIconWidget()
@@ -1314,10 +1555,12 @@ function SelectionToolbar:buildToolbarDialog(row, metrics, options, available_wi
         end
     end
 
-    if self:getSeparators() == SEPARATORS_NONE then
-        -- ButtonTable still keeps the separator's width, but draws it in the background color.
+    local separator_style = self:getSeparators()
+    if separator_style ~= DEFAULT_SEPARATORS then
+        -- ButtonTable keeps the width of a hidden separator, but draws it in the
+        -- background color, so the toolbar width does not depend on this setting.
         for _, button in ipairs(row) do
-            button.no_vertical_sep = true
+            button.no_vertical_sep = separator_style == SEPARATORS_NONE or not button.group_end
         end
     end
 
@@ -1334,17 +1577,13 @@ end
 -- A toolbar with every visible action, as it would show for a selection.
 function SelectionToolbar:buildPreviewDialog(available_width)
     local metrics = getToolbarMetrics()
-    local action_settings = self:getActionSettings()
-    local row = {}
-    for _, action in ipairs(ACTIONS) do
-        if action_settings[action.id] ~= false then
-            row[#row + 1] = applyToolbarButtonMetrics({
-                id = "selectiontoolbar_preview_" .. action.id,
-                icon = self:getIconPath(action),
-                callback = function() end,
-            }, metrics)
-        end
-    end
+    local row = self:buildActionRow(function(action)
+        return applyToolbarButtonMetrics({
+            id = "selectiontoolbar_preview_" .. action.id,
+            icon = self:getIconPath(action),
+            callback = function() end,
+        }, metrics)
+    end)
     if #row == 0 then
         return nil
     end
@@ -1452,6 +1691,33 @@ function SelectionToolbar:closePreview(preview)
     UIManager:close(preview, "ui", preview.dimen)
 end
 
+-- Reorders the actions and group separators. Hidden actions are listed dimmed, so they
+-- keep their place for when they are shown again.
+function SelectionToolbar:showArrangeActions()
+    local separator_text = "—— " .. _("Group separator") .. " ——"
+    local items = {}
+    for _, id in ipairs(self:getActionOrder()) do
+        if id == GROUP_SEPARATOR then
+            items[#items + 1] = { text = separator_text, id = id }
+        else
+            items[#items + 1] = { text = ACTIONS_BY_ID[id].text, id = id, dim = not self:isActionEnabled(id) }
+        end
+    end
+    local SortWidget = require("ui/widget/sortwidget")
+    UIManager:show(SortWidget:new({
+        title = _("Arrange actions"),
+        item_table = items,
+        callback = function()
+            local order = {}
+            for i, item in ipairs(items) do
+                order[i] = item.id
+            end
+            self:setActionOrder(order)
+            self:refreshPreview()
+        end,
+    }))
+end
+
 -- Radio items for a multiple-choice setting. get and set are methods of the plugin.
 -- Other items may depend on the choice, so the menu is updated after each change.
 function SelectionToolbar:choiceMenuItems(choices, get, set)
@@ -1479,6 +1745,26 @@ end
 
 function SelectionToolbar:addToMainMenu(menu_items)
     local action_items = {
+        {
+            text = _("Arrange actions and groups"),
+            help_text = _(
+                "Change the order of the actions and move the group separators between them. Groups are shown with Separators set to Between groups. A separator moved to the start or the end of the list is not used."
+            ),
+            keep_menu_open = true,
+            callback = function()
+                self:showArrangeActions()
+            end,
+        },
+        {
+            text = _("Restore default order"),
+            help_text = _("Annotation, lookup and tools groups, in the plugin's original order."),
+            keep_menu_open = true,
+            callback = function()
+                self:resetActionOrder()
+                self:refreshPreview()
+                UIManager:show(InfoMessage:new({ text = _("The default order of the actions is restored."), timeout = 2 }))
+            end,
+        },
         {
             text = _("Show all actions"),
             help_text = _("Re-enables every selection toolbar action at once."),
@@ -1536,6 +1822,19 @@ function SelectionToolbar:addToMainMenu(menu_items)
     local border_items = self:choiceMenuItems(BORDERS, self.getBorder, self.setBorder)
     local separator_items = self:choiceMenuItems(SEPARATOR_STYLES, self.getSeparators, self.setSeparators)
     local shadow_items = self:choiceMenuItems(SHADOW_STYLES, self.getShadowStyle, self.setShadowStyle)
+    local preset_items = self:choiceMenuItems(STYLE_PRESETS, self.getStylePreset, self.applyStylePreset)
+    preset_items[#preset_items].separator = true
+    table.insert(preset_items, {
+        text = _("Custom"),
+        help_text = _("Your own combination: shown when the current look matches none of the styles above."),
+        radio = true,
+        enabled_func = function()
+            return false
+        end,
+        checked_func = function()
+            return self:getStylePreset() == nil
+        end,
+    })
     local handle_size_items = self:choiceMenuItems(HANDLE_SIZES, self.getHandleSize, self.setHandleSize)
     local marker_width_items = self:choiceMenuItems(LINE_MARKER_WIDTHS, self.getLineMarkerWidth, self.setLineMarkerWidth)
     local marker_gap_items = self:choiceMenuItems(LINE_MARKER_GAPS, self.getLineMarkerGap, self.setLineMarkerGap)
@@ -1682,6 +1981,7 @@ function SelectionToolbar:addToMainMenu(menu_items)
     for _, page in ipairs({ marks_items, handle_style_items, handle_size_items, marker_width_items, marker_gap_items }) do
         self:trackPreviewPage(page, PREVIEW_MARKS)
     end
+    self:trackPreviewPage(preset_items, PREVIEW_FULL)
 
     menu_items.selectiontoolbar = {
         text = _("Selection toolbar"),
@@ -1701,6 +2001,16 @@ function SelectionToolbar:addToMainMenu(menu_items)
                 end,
                 keep_menu_open = true,
                 separator = true,
+            },
+            {
+                text = _("Style presets"),
+                help_text = _(
+                    "Ready-made looks for the toolbar and the selection marks. You can still adjust each setting afterwards."
+                ),
+                sub_item_table_func = function()
+                    self:schedulePreview()
+                    return preset_items
+                end,
             },
             {
                 text = _("Appearance"),
@@ -2364,6 +2674,9 @@ function MarksSample:paintTo(bb, x, y)
             end
         end
     end
+    if self.toolbar then
+        self.toolbar:paintTo(bb, x + self.toolbar_x, y + self.toolbar_y)
+    end
 end
 
 -- Paints a selection box (in screen coordinates) as ReaderView:drawTempHighlight() does
@@ -2420,8 +2733,10 @@ local function sampleSelectionRange(sample, first_line, width)
 end
 
 -- The stage of a PREVIEW_MARKS preview: four lines with the selection on the middle two,
--- or only those two when the menu leaves less room than that.
-function SelectionToolbar:buildMarksPreview(preview, inner_w, face, line_h, room)
+-- or only those two when the menu leaves less room than that. With a toolbar (frame from
+-- ToolbarPreview:getToolbar(), PREVIEW_FULL), the selection is on the first two lines and
+-- the toolbar lies over the next ones, below it as on the page.
+function SelectionToolbar:buildMarksPreview(preview, inner_w, face, line_h, room, toolbar)
     local metrics = getHandleMetrics()
     -- Page margins wide enough for the line marker at its farthest and thickest.
     local margin = LINE_MARKER_GAPS[#LINE_MARKER_GAPS].gap
@@ -2433,10 +2748,17 @@ function SelectionToolbar:buildMarksPreview(preview, inner_w, face, line_h, room
     -- around them.
     local lines, first_line = 4, 1
     local text_y = math_max(0, metrics.extent - line_h)
-    if 4 * line_h + 2 * text_y > room then
+    local toolbar_size, toolbar_gap
+    if toolbar then
+        toolbar_size = toolbar:getSize()
+        -- Clear of the end handle. (On the page the gap also covers its touch area, which
+        -- would only take room here.)
+        toolbar_gap = metrics.extent + Size.padding.large
+        lines, first_line, text_y = 2 + math.ceil((toolbar_gap + toolbar_size.h) / line_h), 0, metrics.extent
+    elseif 4 * line_h + 2 * text_y > room then
         lines, first_line, text_y = 2, 0, metrics.extent
     end
-    local height = lines * line_h + 2 * text_y
+    local height = lines * line_h + (toolbar and text_y or 2 * text_y)
 
     local sample = preview:getSample(text_w, lines, face)
     local start_x, end_x = sampleSelectionRange(sample, first_line, text_w)
@@ -2487,6 +2809,9 @@ function SelectionToolbar:buildMarksPreview(preview, inner_w, face, line_h, room
         handles = handles,
         view = view,
         color = color,
+        toolbar = toolbar,
+        toolbar_x = toolbar and math_floor((inner_w - toolbar_size.w) / 2),
+        toolbar_y = toolbar and (top + 2 * line_h + toolbar_gap),
     })
 end
 
@@ -2874,18 +3199,10 @@ function SelectionToolbar:onHandleSwipe(dialog, ges)
 end
 
 function SelectionToolbar:showToolbar(reader_highlight, index)
-    local row = {}
     local metrics = getToolbarMetrics()
-
-    local action_settings = self:getActionSettings()
-    for _, action in ipairs(ACTIONS) do
-        if action_settings[action.id] ~= false then
-            local button = self:makeButton(reader_highlight, action, index, metrics)
-            if button then
-                row[#row + 1] = button
-            end
-        end
-    end
+    local row = self:buildActionRow(function(action)
+        return self:makeButton(reader_highlight, action, index, metrics)
+    end)
 
     if #row == 0 then
         UIManager:show(InfoMessage:new({ text = _("No selection toolbar actions are enabled.") }))

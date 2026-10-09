@@ -1,4 +1,4 @@
-# Selection Toolbar ![Version](https://img.shields.io/badge/version-v1.9.0-blue)
+# Selection Toolbar ![Version](https://img.shields.io/badge/version-v1.11.0-blue)
 
 A KOReader plugin that replaces the centered text-selection menu with a compact toolbar displayed near the selected text, and adds draggable handles and a margin line marker to adjust and visualize the selection.
 
@@ -16,18 +16,11 @@ The plugin is developed for **EPUB** documents only (KOReader's crengine engine)
 - Line marker: a vertical line in the page margin beside the selected lines, one per visible page in two-page mode.
 - Reversible: disabling the plugin restores the original menu immediately.
 
-Available actions:
+Available actions, in their default order and groups (both can be changed):
 
-- Select
-- Highlight
-- Copy
-- Add note
-- Wikipedia
-- Dictionary
-- Translate
-- View HTML
-- Generate QR code
-- Search
+- Annotation: Select, Highlight, Add note
+- Lookup: Dictionary, Wikipedia, Translate, Search
+- Tools: Copy, View HTML, Generate QR code
 
 The `Generate QR code` action uses the native `ui/widget/qrmessage` widget when it is available in the installed KOReader version.
 
@@ -69,6 +62,14 @@ In the reader, open:
 Options:
 
 - `Use compact selection toolbar`: enables/disables replacement of the default menu.
+- `Style presets`: ready-made looks for the toolbar and the selection marks, applied in one tap. While this submenu is open, the preview shows a selection with its handles and line marker, and the toolbar below it.
+  - `Default`: the plugin's original look.
+  - `Discreet`: thin border, rounded corners, no shadow and lines only between groups of actions; bracket handles and a thin line marker.
+  - `Classic`: rectangular toolbar with a medium border, the standard shadow and separators between the buttons; lollipop handles.
+  - `Comfortable`: comfortable density, large icons and a thick border; lollipop handles with the high-contrast outline.
+  - `Custom` (not selectable): checked when the current look matches none of the presets.
+
+  A preset sets the button density, icon size, shape, border, separators, shadow, handle style, outline and size, and the line marker thickness. The toolbar position, the visible actions, whether handles and line marker are shown, and the line marker side and distance are left as they are. No preset is stored: changing any of these settings afterwards simply makes the look custom.
 - `Appearance`: controls the toolbar's visual presentation. While this submenu (or `Visible actions`) is open, a live preview follows each change: a sheet titled `Preview`, docked across the bottom of the screen with rounded top corners, a thick border and a dithered shadow cast upwards over the page, where the toolbar lies over a few lines of sample text, as it would over the book, so borders, shadow and separators can be judged against text. When the menu leaves little room, fewer sample lines are shown. The preview is hidden while a dialog (such as an option's help) is shown, or when the menu is too tall to leave room for it, and it closes when you leave these submenus.
   - `Toolbar position`: where the toolbar is shown.
     - `Near the selection` (default): right below the selection, or above it when there is no room.
@@ -85,7 +86,7 @@ Options:
     - `Rounded corners` (default): slightly rounded corners, as KOReader's own dialogs.
     - `Capsule`: fully rounded ends. The toolbar gets a little wider, so the buttons (and their tap feedback) stay inside the curves.
   - `Border`: `Thin`, `Medium` (default) or `Thick` toolbar outline. A thick border helps the toolbar stand out over the text, especially with the shadow turned off.
-  - `Separators`: `Between all buttons` (default) draws a thin line between each pair of buttons; `None` removes them for a lighter look.
+  - `Separators`: `Between all buttons` (default) draws a thin line between each pair of buttons; `Between groups` only between groups of actions (see `Arrange actions and groups` below); `None` removes them for a lighter look. The toolbar keeps the same width in all three.
   - `Toolbar shadow`: the dithered shadow along the right and bottom edges, which follows the toolbar's shape.
     - `No shadow`: a flat toolbar; a stronger border helps it stand out over the text.
     - `Subtle`: a shorter, lighter shadow.
@@ -105,7 +106,9 @@ Options:
   - `Line marker in right margin`: draws the line marker in the right margin instead of the left one (mirrored for right-to-left interface languages).
   - `Line marker thickness`: `Thin`, `Medium` (default) or `Thick`.
   - `Line marker distance`: `Close to the text`, `Normal` (default) or `Far from the text`. The marker always stays in the page margin: with a narrow margin it is drawn closer to the text, then thinner, and it is not drawn on a page without margin.
-- `Visible actions`: lets you choose which actions appear in the toolbar.
+- `Visible actions`: lets you choose which actions appear in the toolbar, and in which order.
+  - `Arrange actions and groups`: reorder the actions, and move the three group separators between them. Groups show as lines with `Separators` set to `Between groups`. A separator moved to the start or the end of the list, or next to another one, is not used, so groups are added and removed just by moving separators. Hidden actions are listed dimmed and keep their place. Separators never show around hidden actions or actions KOReader leaves out.
+  - `Restore default order`: annotation (Select, Highlight, Add note), lookup (Dictionary, Wikipedia, Translate, Search) and tools (Copy, View HTML, Generate QR code) groups.
   - `Show all actions`: restores all actions.
   - Other items: enable/disable each toolbar action individually.
 - `Version: vX.Y.Z`: shows the installed plugin version.
