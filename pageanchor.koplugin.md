@@ -1,4 +1,4 @@
-# Page Anchor ![Version](https://img.shields.io/badge/version-v1.13.1-blue)
+# Page Anchor ![Version](https://img.shields.io/badge/version-v1.14.2-blue)
 
 Page Anchor adds a compact floating control to KOReader's reading screen.
 When you jump somewhere else in the book, it pins your reading position as
@@ -48,8 +48,8 @@ replace your reading position.
    reviewing through page 55.
 4. Tap the arrow to return to page 100.
 5. Page Anchor remembers where you were, so the control now points the
-   other way, to page 55, with the anchor button highlighted to show you
-   are at the anchor. Tap the arrow to continue the review from page 55, or
+   other way, to page 55, and the anchor button shows the anchor in a
+   filled circle to show you are at the anchor. Tap the arrow to continue the review from page 55, or
    just keep reading: after reading forward past the anchor (1 page by
    default) the control goes away on its own. Stepping back a page to
    re-read keeps it.
@@ -99,7 +99,9 @@ before you start exploring. Any move away from it, even ordinary page
 turns, offers the way back. Unlike an anchor created by a jump, a pinned one
 is not resolved when you return to it, does not move as you read on, and is
 never discarded by the hidden-buttons time limit: it stays until you
-discard it.
+discard it. A pinned anchor shows as an underlined anchor icon, on the
+anchor button and on the minimized tab (underlined and circled while you
+are at it).
 
 ## Undoing a discard
 
@@ -136,7 +138,9 @@ from 100 to 102) pins an anchor, while ordinary page turns never do.
 For tools that jump without recording a location, Page Anchor also keeps a
 reading reference. Reading forward advances it; one page turn back is
 tolerated; moving farther back or more than two page turns ahead offers a
-return to it. Distances are counted in page turns, so two-page mode and
+return to it. Right after you return to the anchor, or after a discard you
+haven't read past yet, up to five page turns back are tolerated instead, so
+re-reading a little never replaces the return point or voids the undo. Distances are counted in page turns, so two-page mode and
 hidden non-linear flows behave like single-page reading.
 
 Page Anchor keeps its own anchor and return point and does not modify
@@ -155,6 +159,9 @@ pageanchor.koplugin/
 ├── pageanchor_l10n.lua
 ├── icons/
 │   ├── anchor.svg
+│   ├── anchor-here.svg
+│   ├── anchor-here-pinned.svg
+│   ├── anchor-pinned.svg
 │   ├── chevron-left.svg
 │   ├── chevron-right.svg
 │   └── undo.svg

@@ -42,7 +42,7 @@ local Screen = Device.screen
 -- Constants
 -- ============================================================================
 
-local PLUGIN_VERSION = "v1.13.1"
+local PLUGIN_VERSION = "v1.14.2"
 
 local SETTING_ENABLED = "pageanchor_enabled"
 local SETTING_DESTINATION_FORMAT = "pageanchor_destination_format"
@@ -141,6 +141,23 @@ local HIDE_MODE_OPTIONS = {
 }
 
 local ICON_ANCHOR = "anchor.svg"
+-- The same anchor, lifted and underlined: marks a pinned anchor, on the
+-- pill's anchor segment and on the minimized tab alike.
+local ICON_ANCHOR_PINNED = "anchor-pinned.svg"
+-- White anchor in a filled circle: you're at the anchor right now. Drawn
+-- into the icon instead of inverting the segment (Button's preselect),
+-- which left the pill's border and corners white and made the segment
+-- look pressed rather than tappable. Plus its pinned (underlined) variant.
+local ICON_ANCHOR_HERE = "anchor-here.svg"
+local ICON_ANCHOR_HERE_PINNED = "anchor-here-pinned.svg"
+
+-- The anchor segment's icon for a spec: at the anchor or not, pinned or not.
+local function anchorIcon(spec)
+	if spec.dismiss_marked then
+		return spec.pinned and ICON_ANCHOR_HERE_PINNED or ICON_ANCHOR_HERE
+	end
+	return spec.pinned and ICON_ANCHOR_PINNED or ICON_ANCHOR
+end
 local ICON_CHEVRON_LEFT = "chevron-left.svg"
 local ICON_CHEVRON_RIGHT = "chevron-right.svg"
 local ICON_UNDO = "undo.svg"
@@ -200,6 +217,12 @@ local HINT_FONT_SIZE = 18
 -- not raw page numbers (see History.countPageTurns).
 local READING_TURNS_BEHIND = 1
 local READING_TURNS_AHEAD = 2
+-- Wider backward tolerance while there's a way back to protect: a pending
+-- return point (just came back to the anchor), or a discard you can still
+-- undo and haven't read past. Stepping back a few turns to re-read then
+-- doesn't make a new anchor that would silently replace the return point
+-- or void the undo. Announced jumps still arm an anchor at any distance.
+local READING_TURNS_BEHIND_PROTECTED = 5
 
 local function pluginDir()
 	local source = debug.getinfo(1, "S").source or ""
@@ -254,10 +277,10 @@ function FloatingHistoryOverlay:_makeDock(spec)
 			padding = 0,
 		})
 	end
-	-- Marked (you're back at the anchor) uses Button's own preselect/invert
-	-- treatment, covering this whole square instead of just the icon.
+	-- Marked (you're back at the anchor) shows through the icon itself; see
+	-- ICON_ANCHOR_HERE.
 	local dismiss_button = Button:new({
-		icon = ICONS_DIR .. ICON_ANCHOR,
+		icon = ICONS_DIR .. anchorIcon(spec),
 		icon_width = metrics.icon_size,
 		icon_height = metrics.icon_size,
 		width = metrics.segment_width,
@@ -265,7 +288,6 @@ function FloatingHistoryOverlay:_makeDock(spec)
 		bordersize = 0,
 		margin = 0,
 		padding = 0,
-		preselect = spec.dismiss_marked,
 	})
 	local dismiss_size = dismiss_button:getSize()
 
@@ -400,7 +422,7 @@ function FloatingHistoryOverlay:_makeTab(spec, metrics)
 		radius = Size.radius.button,
 		bordersize = border,
 		icon_widget = IconWidget:new({
-			icon = ICONS_DIR .. ICON_ANCHOR,
+			icon = ICONS_DIR .. (spec.pinned and ICON_ANCHOR_PINNED or ICON_ANCHOR),
 			width = metrics.icon_size,
 			height = metrics.icon_size,
 		}),
@@ -426,6 +448,7 @@ function FloatingHistoryOverlay:_getDock(spec)
 		spec.dismiss_marked and "marked" or "plain",
 		spec.minimized and "minimized" or "full",
 		spec.inline_text or "",
+		spec.pinned and "pinned" or "free",
 		self.owner:getButtonSize(),
 	}, ":")
 	if key ~= self.dock_key then
@@ -636,6 +659,7 @@ function PageAnchor:init()
 	self.hidden_expiry_fn = nil
 	self.pinned_location = nil
 	self.last_discarded = nil
+	self.discard_location = nil
 	self.button_specs = nil
 	self.button_specs_computed = false
 	self.hint_widget = nil
@@ -1149,6 +1173,7 @@ function PageAnchor:computeButtonSpecs()
 			side = side,
 			icon = ICON_ANCHOR,
 			minimized = true,
+			pinned = self.pinned_location ~= nil,
 		}
 	end
 
@@ -1878,8 +1903,10 @@ function PageAnchor:trackPage(page)
 
 	-- No announced jump: fall back to distance, for tools that move without
 	-- going through ReaderLink's history (some third-party plugins).
-	local turns = History.countPageTurns(self.ui, self:getReferencePage(), page, READING_TURNS_AHEAD)
-	if turns and turns >= -READING_TURNS_BEHIND then
+	local turns_behind = self:isWayBackProtected(page) and READING_TURNS_BEHIND_PROTECTED or READING_TURNS_BEHIND
+	local turns = History.countPageTurns(self.ui, self:getReferencePage(), page,
+		math.max(READING_TURNS_AHEAD, turns_behind))
+	if turns and turns >= -turns_behind and turns <= READING_TURNS_AHEAD then
 		-- Forward reading advances the reference. Going back a single turn
 		-- is tolerated without moving it, so a second backward turn can
 		-- still offer the last confirmed reading position.
@@ -1906,6 +1933,28 @@ function PageAnchor:trackPage(page)
 	else
 		self:armAnchor(self.reference_location, current_location)
 	end
+end
+
+-- Whether a way back is at stake (see READING_TURNS_BEHIND_PROTECTED): a
+-- pending return point, or an undoable discard you haven't read past yet.
+function PageAnchor:isWayBackProtected(page)
+	if self.forward_target then
+		return true
+	end
+	if not self:canRestoreDiscarded() then
+		return false
+	end
+	local discard_page = History.getLocationPage(self.ui, self.discard_location)
+	if not discard_page then
+		return false
+	end
+	if page > discard_page then
+		-- Read on past it: from here on the undo is left to the menu and
+		-- the gesture action, and coming back no longer re-protects it.
+		self.discard_location = nil
+		return false
+	end
+	return true
 end
 
 -- A pinned anchor doesn't care how you leave it: any move away, a jump or
@@ -2097,6 +2146,9 @@ function PageAnchor:clearHistory()
 	self:cancelHiddenExpiry()
 	if self:hasTargets() then
 		self.last_discarded = self:snapshotTargets()
+		-- Where the discard happened, so the undo stays protected only
+		-- until you read on past it (see isWayBackProtected).
+		self.discard_location = History.getCurrentLocation(self.ui)
 	end
 	self.anchor = nil
 	self.forward_target = nil
