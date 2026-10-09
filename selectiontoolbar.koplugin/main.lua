@@ -26,7 +26,7 @@ local math_max = math.max
 local math_min = math.min
 local math_sqrt = math.sqrt
 
-local PLUGIN_VERSION = "v1.7.0"
+local PLUGIN_VERSION = "v1.8.0"
 local QR_MESSAGE_MODULE = "ui/widget/qrmessage"
 
 local HANDLE_BAR_WIDTH = math_max(2, Screen:scaleBySize(2))
@@ -78,6 +78,9 @@ local SETTING_HANDLE_OUTLINE = "selectiontoolbar_handle_outline"
 local SETTING_POSITION = "selectiontoolbar_position"
 local SETTING_DENSITY = "selectiontoolbar_density"
 local SETTING_ICON_SIZE = "selectiontoolbar_icon_size"
+local SETTING_SHAPE = "selectiontoolbar_shape"
+local SETTING_BORDER = "selectiontoolbar_border"
+local SETTING_SEPARATORS = "selectiontoolbar_separators"
 -- v1.3.0 had the outline as a separate "wireframe" style: read it as lollipop + outline.
 local LEGACY_WIREFRAME_STYLE = "wireframe"
 
@@ -130,6 +133,63 @@ local ICON_SIZES = {
     { id = "small", text = _("Small"), size = 18 },
     { id = "normal", text = _("Normal"), size = 22 },
     { id = "large", text = _("Large"), size = 28 },
+}
+
+local DEFAULT_SHAPE = "rounded"
+local SHAPE_CAPSULE = "capsule"
+local SHAPES = {
+    {
+        id = "rectangle",
+        text = _("Rectangle"),
+        help_text = _("Square corners: the most sober look."),
+    },
+    {
+        id = "rounded",
+        text = _("Rounded corners"),
+        help_text = _("Slightly rounded corners, as KOReader's own dialogs."),
+    },
+    {
+        id = SHAPE_CAPSULE,
+        text = _("Capsule"),
+        help_text = _("Fully rounded ends. The toolbar gets a little wider, to keep the buttons inside the curves."),
+    },
+}
+
+local DEFAULT_BORDER = "medium"
+local BORDERS = {
+    {
+        id = "thin",
+        text = _("Thin"),
+        help_text = _("A discreet outline."),
+        width = math_max(1, Size.border.thin),
+    },
+    {
+        id = "medium",
+        text = _("Medium"),
+        help_text = _("The default outline, as KOReader's own dialogs."),
+        width = Size.border.window,
+    },
+    {
+        id = "thick",
+        text = _("Thick"),
+        help_text = _("A strong outline that stands out over the text, useful without the shadow."),
+        width = Screen:scaleBySize(2.5),
+    },
+}
+
+local DEFAULT_SEPARATORS = "all"
+local SEPARATORS_NONE = "none"
+local SEPARATOR_STYLES = {
+    {
+        id = "all",
+        text = _("Between all buttons"),
+        help_text = _("A thin line between each pair of buttons."),
+    },
+    {
+        id = SEPARATORS_NONE,
+        text = _("None"),
+        help_text = _("No lines between buttons, for a lighter look."),
+    },
 }
 
 local ACTIONS = {
@@ -345,6 +405,17 @@ local ShadowedButtonDialog = ButtonDialog:extend({})
 
 function ShadowedButtonDialog:init()
     ButtonDialog.init(self)
+    local style = self.frame_style
+    if style then
+        -- ButtonDialog's frame has fixed border, radius and padding: apply the chosen ones.
+        local frame = self.movable[1]
+        frame.bordersize = style.border
+        frame.padding_left = style.padding_h
+        frame.padding_right = style.padding_h
+        -- Corners are not drawn at all with a radius over half the height, so the
+        -- predicted capsule radius is checked against the actual height.
+        frame.radius = math_min(style.radius, math_floor(frame:getSize().h / 2))
+    end
     if self.show_shadow then
         local frame = self.movable[1]
         self.movable[1] = ShadowedPopup:new({
@@ -860,6 +931,55 @@ function SelectionToolbar:setDensity(density)
     G_reader_settings:saveSetting(SETTING_DENSITY, density)
 end
 
+function SelectionToolbar:getShape()
+    return readChoice(SETTING_SHAPE, SHAPES, DEFAULT_SHAPE).id
+end
+
+function SelectionToolbar:setShape(shape)
+    G_reader_settings:saveSetting(SETTING_SHAPE, shape)
+end
+
+function SelectionToolbar:getBorder()
+    return readChoice(SETTING_BORDER, BORDERS, DEFAULT_BORDER).id
+end
+
+function SelectionToolbar:setBorder(border)
+    G_reader_settings:saveSetting(SETTING_BORDER, border)
+end
+
+function SelectionToolbar:getSeparators()
+    return readChoice(SETTING_SEPARATORS, SEPARATOR_STYLES, DEFAULT_SEPARATORS).id
+end
+
+function SelectionToolbar:setSeparators(separators)
+    G_reader_settings:saveSetting(SETTING_SEPARATORS, separators)
+end
+
+-- Border, corner radius and side padding of the toolbar frame for the chosen shape and
+-- border. Known before the toolbar is built, as its width depends on them.
+function SelectionToolbar:getFrameStyle(metrics)
+    local border = readChoice(SETTING_BORDER, BORDERS, DEFAULT_BORDER).width
+    local shape = self:getShape()
+    local style = { border = border, radius = 0, padding_h = Size.padding.button }
+    if shape == SHAPE_CAPSULE then
+        -- ButtonTable: a span above and below the row of buttons, which have their own
+        -- vertical padding; ButtonDialog's frame adds no padding at the top or bottom.
+        local span = Size.span.vertical_default
+        local height = metrics.button_height + 2 * Size.padding.buttontable + 2 * span + 2 * border
+        local radius = math_floor(height / 2)
+        -- Keep each button's corners inside the curve's inner edge: the buttons paint
+        -- their own background (and invert it when tapped), which would cover the border.
+        local inner_r = radius - border
+        local dy = radius - (border + span)
+        local inset = radius - math_sqrt(math_max(0, inner_r * inner_r - dy * dy))
+        style.radius = radius
+        style.padding_h = math_max(Size.padding.button, math.ceil(inset))
+    elseif shape == DEFAULT_SHAPE then
+        style.radius = Size.radius.window
+    end
+    return style
+end
+
 function SelectionToolbar:getIconSize()
     return readChoice(SETTING_ICON_SIZE, ICON_SIZES, DEFAULT_ICON_SIZE).id
 end
@@ -1026,9 +1146,10 @@ function SelectionToolbar:buildToolbarDialog(row, metrics, options, available_wi
     local show_shadow = self:showToolbarShadows()
     local shadow_extent = show_shadow and SHADOW_EXTENT or 0
     local count = #row
+    local style = self:getFrameStyle(metrics)
     -- ButtonTable puts a separator line between buttons; the frame adds border and padding.
     local separators = (count - 1) * Size.line.medium
-    local frame_extra = 2 * Size.border.window + 2 * Size.padding.button
+    local frame_extra = 2 * style.border + 2 * style.padding_h
     local max_width = (available_width or (Screen:getWidth() - 2 * Size.padding.large)) - shadow_extent
 
     -- ButtonTable never shrinks buttons with a given width, so a row wider than the
@@ -1045,8 +1166,17 @@ function SelectionToolbar:buildToolbarDialog(row, metrics, options, available_wi
         end
     end
 
+    if self:getSeparators() == SEPARATORS_NONE then
+        -- ButtonTable still keeps the separator's width, but draws it in the background color.
+        for _, button in ipairs(row) do
+            button.no_vertical_sep = true
+        end
+    end
+
     options.buttons = { row }
-    options.width = count * button_width + separators + frame_extra
+    -- ButtonDialog sizes its ButtonTable for its own default border and padding.
+    options.width = count * button_width + separators + 2 * Size.border.window + 2 * Size.padding.button
+    options.frame_style = style
     options.show_shadow = show_shadow
     options.shrink_unneeded_width = true
     options.shrink_min_width = button_width
@@ -1247,6 +1377,9 @@ function SelectionToolbar:addToMainMenu(menu_items)
     local position_items = self:choiceMenuItems(POSITIONS, self.getToolbarPosition, self.setToolbarPosition)
     local density_items = self:choiceMenuItems(DENSITIES, self.getDensity, self.setDensity)
     local icon_size_items = self:choiceMenuItems(ICON_SIZES, self.getIconSize, self.setIconSize)
+    local shape_items = self:choiceMenuItems(SHAPES, self.getShape, self.setShape)
+    local border_items = self:choiceMenuItems(BORDERS, self.getBorder, self.setBorder)
+    local separator_items = self:choiceMenuItems(SEPARATOR_STYLES, self.getSeparators, self.setSeparators)
 
     local appearance_items = {
         {
@@ -1265,6 +1398,21 @@ function SelectionToolbar:addToMainMenu(menu_items)
             sub_item_table = icon_size_items,
         },
         {
+            text = _("Toolbar shape"),
+            help_text = _("Choose how rounded the toolbar corners are."),
+            sub_item_table = shape_items,
+        },
+        {
+            text = _("Border"),
+            help_text = _("Choose how strong the toolbar outline is."),
+            sub_item_table = border_items,
+        },
+        {
+            text = _("Separators"),
+            help_text = _("Choose whether lines are drawn between the buttons."),
+            sub_item_table = separator_items,
+        },
+        {
             text = _("Show toolbar shadow"),
             help_text = _("Show a small dithered shadow along the right and bottom edges of the selection toolbar."),
             checked_func = function()
@@ -1277,7 +1425,17 @@ function SelectionToolbar:addToMainMenu(menu_items)
             keep_menu_open = true,
         },
     }
-    for _, page in ipairs({ appearance_items, position_items, density_items, icon_size_items, action_items }) do
+    local preview_pages = {
+        appearance_items,
+        position_items,
+        density_items,
+        icon_size_items,
+        shape_items,
+        border_items,
+        separator_items,
+        action_items,
+    }
+    for _, page in ipairs(preview_pages) do
         self:trackPreviewPage(page)
     end
 
@@ -1302,7 +1460,7 @@ function SelectionToolbar:addToMainMenu(menu_items)
             },
             {
                 text = _("Appearance"),
-                help_text = _("Choose where the toolbar is shown, its button and icon sizes, and whether it has a drop shadow."),
+                help_text = _("Choose where the toolbar is shown, its size, shape, border, separators and shadow."),
                 sub_item_table_func = function()
                     self:schedulePreview()
                     return appearance_items

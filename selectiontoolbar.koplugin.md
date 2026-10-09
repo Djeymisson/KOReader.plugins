@@ -1,4 +1,4 @@
-# Selection Toolbar ![Version](https://img.shields.io/badge/version-v1.7.0-blue)
+# Selection Toolbar ![Version](https://img.shields.io/badge/version-v1.8.0-blue)
 
 A KOReader plugin that replaces the centered text-selection menu with a compact toolbar displayed near the selected text, and adds draggable handles and a margin line marker to adjust and visualize the selection.
 
@@ -80,7 +80,13 @@ Options:
 
     If the enabled actions do not fit across the screen at the chosen density, the buttons (and, if needed, the icons) are narrowed so the toolbar always stays on screen.
   - `Icon size`: `Small`, `Normal` (default) or `Large` icons, independently of the button density. An icon never grows beyond its button.
-  - `Show toolbar shadow`: shows or removes the dithered shadow along the right and bottom edges. The shadow follows the toolbar's rounded corners.
+  - `Toolbar shape`: how rounded the toolbar corners are.
+    - `Rectangle`: square corners, the most sober look.
+    - `Rounded corners` (default): slightly rounded corners, as KOReader's own dialogs.
+    - `Capsule`: fully rounded ends. The toolbar gets a little wider, so the buttons (and their tap feedback) stay inside the curves.
+  - `Border`: `Thin`, `Medium` (default) or `Thick` toolbar outline. A thick border helps the toolbar stand out over the text, especially with the shadow turned off.
+  - `Separators`: `Between all buttons` (default) draws a thin line between each pair of buttons; `None` removes them for a lighter look.
+  - `Show toolbar shadow`: shows or removes the dithered shadow along the right and bottom edges. The shadow follows the toolbar's shape.
 - `Selection marks`: controls the handles and the line marker.
   - `Show selection handles`: shows the draggable start/end handles (touch devices only).
   - `Handle style`: how the handles are drawn.
