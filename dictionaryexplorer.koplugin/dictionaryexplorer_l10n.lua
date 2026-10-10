@@ -46,6 +46,7 @@ local pt = {
 	["Preparing the dictionary index…\nThis is only needed once."] = "Preparando o índice do dicionário…\nIsso só é necessário na primeira vez.",
 	["This dictionary can't be opened as a book."] = "Este dicionário não pode ser aberto como livro.",
 	["Could not open the dictionary."] = "Não foi possível abrir o dicionário.",
+	["Could not open the dictionary: its files look incomplete. Copying it again may help."] = "Não foi possível abrir o dicionário: os arquivos parecem incompletos. Copiá-lo de novo pode resolver.",
 	["Could not read this entry."] = "Não foi possível ler este verbete.",
 	["No entry for “%1”. Showing the closest one."] = "Não há verbete para “%1”. Mostrando o mais próximo.",
 }

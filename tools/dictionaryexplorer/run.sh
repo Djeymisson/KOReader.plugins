@@ -7,10 +7,13 @@
 #
 # SUITE is the name of a file in suites/ (without .lua), "unit" for the tests
 # that need no KOReader, or "check" for everything that passes or fails
-# (unit, contract, regression, budgets). See README.md for what each does.
+# (unit, integrity, contract, regression, refresh, budgets). See README.md for
+# what each does. The synthetic dictionaries of fixtures/ are always there, so
+# every suite runs even with no dictionary of your own.
 #
 # Options:
-#   --koreader DIR   KOReader install to run (default: $KOREADER_DIR, or /usr/lib/koreader)
+#   --koreader DIR   KOReader install to run (default: $KOREADER_DIR, or /usr/lib/koreader;
+#                    on macOS, the Contents/koreader folder of KOReader.app)
 #   --dicts DIR      StarDict dictionaries to use (default: $DICT_DIR, or ~/.config/koreader/data/dict)
 #   --keep           keep the temporary profile (it is printed) to look at its screenshots and log
 #   --timeout SECS   give up on a suite after this long (default: 240)
@@ -41,14 +44,37 @@ while [ $# -gt 0 ]; do
 done
 
 [ -n "$SUITES" ] || { echo "usage: $0 [options] SUITE...  (try --help)" >&2; exit 2; }
-[ -x "$KOREADER_DIR/reader.lua" ] || { echo "no KOREADER at $KOREADER_DIR (use --koreader)" >&2; exit 2; }
+[ -f "$KOREADER_DIR/reader.lua" ] || { echo "no KOREADER at $KOREADER_DIR (use --koreader)" >&2; exit 2; }
 [ -d "$PLUGIN" ] || { echo "plugin not found at $PLUGIN" >&2; exit 2; }
 
 # "check" stands for every suite that passes or fails.
-case " $SUITES " in *" check "*) SUITES=$(echo "$SUITES" | sed 's/\bcheck\b/unit contract regression budgets/') ;; esac
+expanded=""
+for suite in $SUITES; do
+	if [ "$suite" = check ]; then
+		expanded="$expanded unit integrity contract regression refresh budgets"
+	else
+		expanded="$expanded $suite"
+	fi
+done
+SUITES=$expanded
 
 LUAJIT="$KOREADER_DIR/luajit"
 [ -x "$LUAJIT" ] || LUAJIT=$(command -v luajit || true)
+
+# How to start KOReader: reader.lua is its own script on Linux (#!./luajit),
+# but not in the macOS app, where it has to be handed to luajit.
+if [ -x "$KOREADER_DIR/reader.lua" ]; then
+	START_READER="./reader.lua"
+else
+	START_READER="./luajit reader.lua"
+fi
+# GNU timeout is not part of macOS (Homebrew's coreutils has it).
+TIMEOUT_CMD=""
+if command -v timeout > /dev/null 2>&1; then
+	TIMEOUT_CMD="timeout $TIMEOUT"
+elif command -v gtimeout > /dev/null 2>&1; then
+	TIMEOUT_CMD="gtimeout $TIMEOUT"
+fi
 
 overall=0
 
@@ -69,9 +95,14 @@ run_suite() {
 	[ -f "$file" ] || { echo "no such suite: $name (see suites/)" >&2; return 1; }
 
 	work=$(mktemp -d "${TMPDIR:-/tmp}/dictionaryexplorer-tools.XXXXXX")
-	mkdir -p "$work/home/plugins/zzharness.koplugin" "$work/home/data" "$work/out"
+	mkdir -p "$work/home/plugins/zzharness.koplugin" "$work/home/data/dict" "$work/out"
 	ln -s "$PLUGIN" "$work/home/plugins/dictionaryexplorer.koplugin"
-	ln -s "$DICT_DIR" "$work/home/data/dict"
+	# The dictionaries: the synthetic fixtures, always, and yours when there are
+	# any. The broken fixtures and the cache twins go outside the dictionary
+	# folder, so only the integrity suite ever opens them.
+	[ -d "$DICT_DIR" ] && ln -s "$DICT_DIR" "$work/home/data/dict/user"
+	"$LUAJIT" "$TOOLS/fixtures/make.lua" "$work/home/data/dict/fixtures" "$work/integrity" \
+		|| { echo "!! could not make the fixtures" >&2; rm -rf "$work"; return 1; }
 	cp "$TOOLS/lib/launcher.lua" "$work/home/plugins/zzharness.koplugin/main.lua"
 	echo 'return { fullname = "Dictionary Explorer test harness", description = "Runs a suite, then quits." }' > "$work/home/plugins/zzharness.koplugin/_meta.lua"
 	# A book to open, since the plugin's features live in the reader; the
@@ -81,9 +112,9 @@ run_suite() {
 
 	echo "== $name"
 	( cd "$KOREADER_DIR" && \
-		DE_TOOLS="$TOOLS" DE_SUITE="$file" DE_OUT="$work/out" \
+		DE_TOOLS="$TOOLS" DE_SUITE="$file" DE_OUT="$work/out" DE_INTEGRITY="$work/integrity" \
 		KO_HOME="$work/home" KO_MULTIUSER=1 SDL_VIDEODRIVER=dummy LC_ALL=en_US.UTF-8 \
-		timeout "$TIMEOUT" ./reader.lua "$work/book.txt" > "$work/out/koreader.log" 2>&1 )
+		$TIMEOUT_CMD $START_READER "$work/book.txt" > "$work/out/koreader.log" 2>&1 )
 	status=$?
 
 	[ -f "$work/out/report.txt" ] && cat "$work/out/report.txt"

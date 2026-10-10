@@ -11,7 +11,9 @@ Functional regression: the behaviour of the viewer, checked with real gestures
   the action     "open at a word" through KOReader's Dispatcher, and the
                  caches being released when the viewer closes
 
-A check whose dictionary is not installed is reported as SKIP.
+A check whose dictionary is not installed is reported as SKIP. Without the
+author's Portuguese dictionary, paging, walking and selection run on the
+"Fixture Text" fixture instead, and the fixtures add their own format checks.
 ]]
 
 local Dispatcher = require("dispatcher")
@@ -19,13 +21,17 @@ local Device = require("device")
 
 return function(H, ui)
 	local dictionaries = H.dictionaries().by
-	local pt, en, ox = dictionaries.pt, dictionaries.en, dictionaries.ox
+	local en, ox = dictionaries.en, dictionaries.ox
+	local pt, pt_profile = dictionaries.pt, H.profiles.pt
+	if not pt then
+		pt, pt_profile = dictionaries.fx, H.profiles.fx
+	end
 	local viewer
 	local selected_word -- { select = fn, word = string } once the selection step has found a word
 
 	-- ---- opening ----------------------------------------------------------
 	H.step(1, function()
-		for _index, spec in ipairs({ { pt, "pt" }, { en, "en" }, { ox, "ox" } }) do
+		for _index, spec in ipairs({ { dictionaries.pt, "pt" }, { en, "en" }, { ox, "ox" }, { dictionaries.fx, "fx" }, { dictionaries.fh, "fh" }, { dictionaries.fb, "fb" } }) do
 			local dictionary, key = spec[1], spec[2]
 			local word = H.profiles[key].open
 			if dictionary then
@@ -49,7 +55,7 @@ return function(H, ui)
 	-- ---- paging ------------------------------------------------------------
 	H.step(1, function()
 		if not pt then
-			H.skip("paging, walking and selection", "the Portuguese dictionary is not installed")
+			H.skip("paging, walking and selection", "neither the Portuguese dictionary nor the Fixture Text one was found")
 			return
 		end
 		viewer = H.newViewer(pt, "casa")
@@ -97,7 +103,7 @@ return function(H, ui)
 			#footer == 4 and footer[1].icon == "chevron.left" and footer[1].enabled and footer[2].text == "Go to word"
 				and footer[3].icon == "chevron.right" and not footer[3].enabled and footer[4].icon == "close"
 		)
-		for _index, word in ipairs(H.profiles.pt.walk) do
+		for _index, word in ipairs(pt_profile.walk) do
 			viewer:goToWord(word)
 		end
 		H.check("the latest word is bold and the page fits", H.boldWord(viewer) == viewer.trail[#viewer.trail].word and H.fits(viewer))
@@ -293,7 +299,7 @@ return function(H, ui)
 
 	-- ---- the other formats -------------------------------------------------
 	H.step(1, function()
-		for _index, spec in ipairs({ { ox, "ox", "love" }, { en, "en", "apple" }, { dictionaries.da, "da", "sol" }, { dictionaries.pe, "pe", "disco" }, { dictionaries.wk, "wk", "apple" } }) do
+		for _index, spec in ipairs({ { ox, "ox", "love" }, { en, "en", "apple" }, { dictionaries.da, "da", "sol" }, { dictionaries.pe, "pe", "disco" }, { dictionaries.wk, "wk", "apple" }, { dictionaries.fh, "fh", "apple" }, { dictionaries.fd, "fd", "sol" }, { dictionaries.fb, "fb", "abacate" } }) do
 			local dictionary, key, goto_word = spec[1], spec[2], spec[3]
 			if dictionary then
 				local opened = H.newViewer(dictionary, H.profiles[key].open)
@@ -315,7 +321,7 @@ return function(H, ui)
 
 	-- ---- the "x" text ---------------------------------------------------------
 	H.step(1, function()
-		for _index, key in ipairs({ "da", "pe" }) do
+		for _index, key in ipairs({ "da", "pe", "fd" }) do
 			local dictionary = dictionaries[key]
 			if dictionary then
 				local word = H.profiles[key].open

@@ -1,4 +1,4 @@
-# Dictionary Explorer ![Version](https://img.shields.io/badge/version-v1.0.0-blue)
+# Dictionary Explorer ![Version](https://img.shields.io/badge/version-v1.0.1-blue)
 
 **Dictionary Explorer** adds a **Go to dictionary** button to KOReader's dictionary popup. It opens the dictionary at the word you looked up, in a full-screen viewer where you can keep paging through the neighbouring entries like a book, similar to the Kindle's "go to dictionary".
 
@@ -8,6 +8,7 @@ The viewer is a plain widget, not a document. Nothing is loaded through the read
 
 - KOReader **v2026.07 or newer**. The button is added through the dictionary button API introduced in that release ([koreader#15184](https://github.com/koreader/koreader/pull/15184)), which older versions don't have. There, the plugin loads, logs a warning and adds nothing.
 - StarDict dictionaries with 32-bit offsets and a `sametypesequence` of `m` (plain text), `h` (HTML) or `x` (XDXF-lite text, as in the Dicionário Aberto), stored as `.dict` or dictzip `.dict.dz`. Other dictionaries simply don't get the button.
+- Complete files. A dictionary whose files were cut short (for example by an interrupted copy to the device) doesn't get the button either, or, when that only shows while its index is prepared, says that its files look incomplete and stops offering the button for the rest of the session. Copying it again fixes it.
 
 ## Installation
 
@@ -118,6 +119,8 @@ Open the top menu and go to **Tools > Dictionary Explorer**:
 `sdcv`, which KOReader uses for lookups, can only answer "what does this word mean?", not "what is the entry after this one?". Dictionary Explorer therefore reads the dictionary's `.idx` itself.
 
 - The first time a dictionary is opened, the `.idx` is scanned once (a notice is shown) and the offset and key of every 64th entry are cached in `cache/dictionaryexplorer/` inside KOReader's data folder. Only those keys and a handful of recently read pages are kept in memory, so dictionaries with hundreds of thousands of entries are fine. The cache is rebuilt automatically if the `.idx` changes.
+- Each cache file is named after the dictionary's file and a short hash of its full path, so two dictionaries with the same file name in different folders never share one. It is written to a temporary file and then renamed, so an interrupted write can't leave half a cache, and a cache that doesn't add up is ignored and rebuilt.
+- The files are checked before they are used: the `.idx` must be the size the `.ifo` says, hold the number of entries it says, and end on a whole record, and the `.dict` or `.dict.dz` must hold everything the `.idx` points into (for a `.dict.dz`, by its real uncompressed size, from a chunk table that is checked before it is read). The last check is repeated each time the cache is loaded, so a dictionary whose definitions are later replaced by a shorter copy is caught too.
 - Lookups binary-search those keys and read a single 64-entry page. Some dictionaries are not sorted the way the StarDict specification says (the Priberam Portuguese one is in plain byte order), so both orders are tried.
 - Definitions are read straight from `.dict`, or from `.dict.dz` by decompressing only the chunks an entry spans.
 - Some dictionaries index inflected forms under their own key (Priberam Portuguese has an entry `livro` whose text is the entry for `livrar`). The viewer shows the dictionary's real order, so the title is the index key and the text is whatever the dictionary stores for it.

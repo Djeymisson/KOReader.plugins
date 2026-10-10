@@ -26,7 +26,7 @@ local PAGE_SIZE = 64
 local PAGES_KEPT_IN_MEMORY = 8
 local CHUNKS_KEPT_IN_MEMORY = 2 -- inflated dictzip chunks, about 58 KB each
 local INDEX_READ_CHUNK = 256 * 1024
-local INDEX_CACHE_VERSION = 2
+local INDEX_CACHE_VERSION = 3 -- 3: definitions_end, so a cut .dict is caught on load too
 local MAX_HOMOGRAPHS = 64
 local MAX_SCAN_ENTRIES = PAGE_SIZE * 2
 
@@ -93,13 +93,24 @@ local function readUInt32BE(b1, b2, b3, b4)
 	return ((b1 * 256 + b2) * 256 + b3) * 256 + b4
 end
 
+-- A short hash of a path (djb2), so that dictionaries with the same file name
+-- in different folders get different cache files.
+local function pathHash(path)
+	local hash = 5381
+	for index = 1, #path do
+		hash = (hash * 33 + path:byte(index)) % 4294967296
+	end
+	return string.format("%08x", hash)
+end
+
 local StarDict = {}
 StarDict.__index = StarDict
 
 local instances = {}
 
 --- Returns the (shared) dictionary object for an .ifo file.
--- @treturn StarDict dictionary, or nil and a reason ("unreadable"/"unsupported")
+-- @treturn StarDict dictionary, or nil and a reason ("unreadable",
+-- "unsupported", or "incomplete" when the .idx is not the size the .ifo says)
 function StarDict.get(ifo_path)
 	if instances[ifo_path] then
 		return instances[ifo_path]
@@ -127,17 +138,26 @@ function StarDict.get(ifo_path)
 	if lfs.attributes(idx_path, "mode") ~= "file" or lfs.attributes(dict_path, "mode") ~= "file" then
 		return nil, "unreadable"
 	end
+	-- A copy cut short (an interrupted transfer) would page through garbage.
+	if info.idxfilesize and tonumber(info.idxfilesize) ~= lfs.attributes(idx_path, "size") then
+		logger.warn("DictionaryExplorer: the .idx is not the size its .ifo says:", idx_path)
+		return nil, "incomplete"
+	end
 
+	local cache_dir = DataStorage:getDataDir() .. "/cache/dictionaryexplorer/"
 	local cache_name = base:match("[^/]+$"):gsub("[^%w_%-]", "_")
 	local self = setmetatable({
 		ifo_path = ifo_path,
 		name = info.bookname,
 		is_html = info.sametypesequence == "h",
 		text_type = info.sametypesequence, -- "m", "h" or "x": how the viewer prepares the text
+		wordcount = tonumber(info.wordcount), -- what the .ifo says, checked against the .idx
 		idx_path = idx_path,
 		dict_path = dict_path,
 		compressed = compressed,
-		cache_path = DataStorage:getDataDir() .. "/cache/dictionaryexplorer/" .. cache_name .. ".lua",
+		cache_path = cache_dir .. cache_name .. "-" .. pathHash(ifo_path) .. ".lua",
+		legacy_cache_path = cache_dir .. cache_name .. ".lua", -- before v1.0.1, shared by same-named files
+		index_error = nil, -- why buildIndex() failed, if it did
 		offsets = nil, -- file offset of every PAGE_SIZE-th .idx entry
 		first_keys = nil, -- the key found at each of those offsets
 		count = nil,
@@ -191,8 +211,18 @@ function StarDict:_loadIndexCache()
 		or data.page_size ~= PAGE_SIZE
 		or data.idx_size ~= attributes.size
 		or data.idx_mtime ~= attributes.modification
+		or type(data.count) ~= "number"
+		or data.count <= 0
+		or (self.wordcount and data.count ~= self.wordcount)
 		or type(data.offsets) ~= "table"
-		or type(data.first_keys) ~= "table" then
+		or type(data.first_keys) ~= "table"
+		or #data.offsets ~= math.ceil(data.count / PAGE_SIZE)
+		or #data.first_keys ~= #data.offsets
+		or type(data.definitions_end) ~= "number" then
+		return false
+	end
+	-- The definitions file may have been replaced by a shorter copy since.
+	if not self:_checkDefinitions(data.definitions_end) then
 		return false
 	end
 	self.offsets = data.offsets
@@ -210,15 +240,53 @@ function StarDict:isIndexed()
 	return self:_loadIndexCache()
 end
 
+-- Whether the definitions file holds everything the .idx points into: a copy
+-- cut short is refused here rather than failing entry by entry.
+-- @treturn bool true, or false and why ("truncated definitions", "invalid dictzip header")
+function StarDict:_checkDefinitions(definitions_end)
+	local available
+	if self.compressed then
+		local file = io.open(self.dict_path, "rb")
+		if not file then
+			return false, "truncated definitions"
+		end
+		local header, problem = self:_loadDictzipHeader(file)
+		file:close()
+		if not header then
+			return false, problem == "truncated" and "truncated definitions" or "invalid dictzip header"
+		end
+		available = header.uncompressed_size
+	else
+		available = lfs.attributes(self.dict_path, "size") or 0
+	end
+	if available < definitions_end then
+		return false, "truncated definitions"
+	end
+	return true
+end
+
 --- Scans the whole .idx and stores the page index. Takes a while on big
 -- dictionaries, so callers should show progress first. Only needed once.
+-- @treturn bool true, or false and why ("unreadable", "empty", "truncated
+-- index", "incomplete index", "truncated definitions", "invalid dictzip
+-- header"), also kept in index_error
 function StarDict:buildIndex()
+	local ok, err = self:_buildIndex()
+	self.index_error = not ok and err or nil
+	if not ok then
+		logger.warn("DictionaryExplorer: not indexing", self.ifo_path, err)
+	end
+	return ok, err
+end
+
+function StarDict:_buildIndex()
 	local file = io.open(self.idx_path, "rb")
 	if not file then
 		return false, "unreadable"
 	end
 
 	local offsets, first_keys, count = {}, {}, 0
+	local definitions_end = 0 -- where the last definition ends in the .dict
 	local buffer_start = 0 -- file offset of the first byte of `buffer`
 	local buffer = ""
 	while true do
@@ -238,6 +306,11 @@ function StarDict:buildIndex()
 				offsets[#offsets + 1] = buffer_start + position - 1
 				first_keys[#first_keys + 1] = buffer:sub(position, terminator - 1)
 			end
+			local b1, b2, b3, b4, b5, b6, b7, b8 = buffer:byte(terminator + 1, terminator + 8)
+			local entry_end = readUInt32BE(b1, b2, b3, b4) + readUInt32BE(b5, b6, b7, b8)
+			if entry_end > definitions_end then
+				definitions_end = entry_end
+			end
 			count = count + 1
 			position = terminator + 9
 		end
@@ -246,8 +319,18 @@ function StarDict:buildIndex()
 	end
 	file:close()
 
+	if buffer ~= "" then
+		return false, "truncated index" -- a record cut in the middle
+	end
 	if count == 0 then
 		return false, "empty"
+	end
+	if self.wordcount and count ~= self.wordcount then
+		return false, "incomplete index"
+	end
+	local complete, problem = self:_checkDefinitions(definitions_end)
+	if not complete then
+		return false, problem
 	end
 
 	local attributes = lfs.attributes(self.idx_path)
@@ -257,16 +340,24 @@ function StarDict:buildIndex()
 	self.idx_size = attributes.size
 	self._pages, self._page_order = {}, {}
 
+	-- Written aside and then renamed, so that an interrupted write never leaves
+	-- a half cache behind. The cache of older versions goes: it is not read.
 	util.makePath(self.cache_path:match("^(.*)/[^/]+$"))
-	util.writeToFile(dump({
+	local temporary = self.cache_path .. ".tmp"
+	local written = util.writeToFile(dump({
 		version = INDEX_CACHE_VERSION,
 		page_size = PAGE_SIZE,
 		idx_size = attributes.size,
 		idx_mtime = attributes.modification,
 		count = count,
+		definitions_end = definitions_end,
 		offsets = offsets,
 		first_keys = first_keys,
-	}), self.cache_path, true, true)
+	}), temporary, true, true)
+	if not (written and os.rename(temporary, self.cache_path)) then
+		os.remove(temporary)
+	end
+	os.remove(self.legacy_cache_path)
 	return true
 end
 
@@ -443,46 +534,67 @@ end
 -- Definitions
 -- ---------------------------------------------------------------------------
 
+local function readUInt16LE(text, position)
+	local low, high = text:byte(position, position + 1)
+	return low + high * 256
+end
+
 -- Reads the dictzip header once: where the compressed data starts, the
--- uncompressed chunk length, and where each compressed chunk begins.
+-- uncompressed chunk length, where each compressed chunk begins, and the
+-- uncompressed size. Every length is checked before it is used, so a damaged
+-- file gives nil instead of an error.
+-- @treturn table header, or nil and "truncated" (the file ends before its
+-- chunks do) or "invalid" (it is not a dictzip file it says it is)
 function StarDict:_loadDictzipHeader(file)
 	if self._dictzip then
 		return self._dictzip
 	end
+	local file_size = file:seek("end")
 	file:seek("set", 0)
 	local header = file:read(12)
 	if not header or #header < 12 or header:byte(1) ~= 0x1f or header:byte(2) ~= 0x8b then
-		return nil
+		return nil, "invalid"
 	end
 	local flags = header:byte(4)
 	if flags % 8 < 4 then -- FEXTRA bit: dictzip keeps its chunk table there
-		return nil
+		return nil, "invalid"
 	end
-	local extra_length = header:byte(11) + header:byte(12) * 256
+	local extra_length = readUInt16LE(header, 11)
 	local extra = file:read(extra_length)
 	if not extra or #extra < extra_length then
-		return nil
+		return nil, "truncated"
 	end
 
+	-- The RA subfield: version, chunk length, chunk count, then one 16-bit
+	-- compressed size per chunk.
 	local chunk_length, chunk_sizes
 	local position = 1
 	while position + 3 <= #extra do
 		local id = extra:sub(position, position + 1)
-		local length = extra:byte(position + 2) + extra:byte(position + 3) * 256
+		local length = readUInt16LE(extra, position + 2)
+		if position + 3 + length > #extra then
+			return nil, "invalid"
+		end
 		if id == "RA" then
+			if length < 6 then
+				return nil, "invalid"
+			end
 			local data = extra:sub(position + 4, position + 3 + length)
-			chunk_length = data:byte(3) + data:byte(4) * 256
-			local chunk_count = data:byte(5) + data:byte(6) * 256
+			chunk_length = readUInt16LE(data, 3)
+			local chunk_count = readUInt16LE(data, 5)
+			if chunk_length == 0 or chunk_count == 0 or length < 6 + 2 * chunk_count then
+				return nil, "invalid"
+			end
 			chunk_sizes = {}
 			for index = 1, chunk_count do
-				chunk_sizes[index] = data:byte(5 + index * 2) + data:byte(6 + index * 2) * 256
+				chunk_sizes[index] = readUInt16LE(data, 5 + index * 2)
 			end
 			break
 		end
 		position = position + 4 + length
 	end
 	if not chunk_length then
-		return nil
+		return nil, "invalid"
 	end
 
 	-- The optional file name / comment / header CRC sit between the extra
@@ -495,7 +607,7 @@ function StarDict:_loadDictzipHeader(file)
 		while skipped < strings_to_skip do
 			local byte = file:read(1)
 			if not byte then
-				return nil
+				return nil, "truncated"
 			end
 			data_start = data_start + 1
 			if byte == "\0" then
@@ -512,10 +624,33 @@ function StarDict:_loadDictzipHeader(file)
 		chunk_starts[index] = running
 		running = running + compressed_size
 	end
+	-- The chunks and the 8-byte gzip trailer must all be there.
+	if running + 8 > file_size then
+		return nil, "truncated"
+	end
+
+	-- The trailer's ISIZE is the uncompressed size modulo 2^32. Every chunk
+	-- but the last is full, which says which multiple of 2^32 to add (for a
+	-- file over 4 GB), and whether it is plausible at all.
+	file:seek("set", file_size - 4)
+	local trailer = file:read(4)
+	if not trailer or #trailer < 4 then
+		return nil, "truncated"
+	end
+	local uncompressed_size = readUInt16LE(trailer, 1) + readUInt16LE(trailer, 3) * 65536
+	local lowest = (#chunk_sizes - 1) * chunk_length + 1
+	while uncompressed_size < lowest do
+		uncompressed_size = uncompressed_size + 4294967296
+	end
+	if uncompressed_size > #chunk_sizes * chunk_length then
+		return nil, "invalid"
+	end
+
 	self._dictzip = {
 		chunk_length = chunk_length,
 		chunk_sizes = chunk_sizes,
 		chunk_starts = chunk_starts,
+		uncompressed_size = uncompressed_size,
 	}
 	return self._dictzip
 end
@@ -620,6 +755,9 @@ function StarDict:readDefinition(entry)
 	end
 	if opened_here then
 		file:close()
+	end
+	if definition and #definition < entry.size then
+		definition, err = nil, "truncated"
 	end
 	if not definition then
 		logger.warn("DictionaryExplorer: could not read entry", entry.word, err)

@@ -33,6 +33,13 @@ H.profiles = {
 	pe = { match = "Portuguese-English", open = "casa", walk = { "disco", "casaco", "casado" } },
 	-- type "h" (HTML), dictzip
 	wk = { match = "WikDict", open = "house", walk = { "apple", "cat", "dog" } },
+	-- The synthetic fixtures (fixtures/make.lua), always there. The suites use
+	-- them in place of the author's dictionaries when those are missing: fx for
+	-- pt, fh for the dictzip and HTML paths, fd for the "x" text.
+	fx = { match = "Fixture Text", open = "livro", walk = { "livro", "amor", "correr", "constitucionalmente", "responsabilidade", "gato", "mesa", "extraordinariamente" } },
+	fh = { match = "Fixture HTML", open = "house", walk = { "apple", "cat", "dog" } },
+	fd = { match = "Fixture XDXF", open = "casa", walk = { "sol", "mesa", "luz" } },
+	fb = { match = "Fixture Bytes", open = "casa", walk = { "Zulu", "abacate", "Abacaxi" } },
 }
 
 function H.init(ui)

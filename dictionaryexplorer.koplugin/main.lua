@@ -26,7 +26,7 @@ local Dock = require("modules/dock")
 local StarDict = require("modules/stardict")
 local Viewer = require("modules/viewer")
 
-local PLUGIN_VERSION = "v1.0.0"
+local PLUGIN_VERSION = "v1.0.1"
 
 local SETTING_START_DICTIONARY = "dictionaryexplorer_start_dictionary" -- a dictionary name; unset means automatic
 local ACTION_OPEN_AT_WORD = "dictionaryexplorer_open_at_word"
@@ -267,7 +267,8 @@ function DictionaryExplorer:getIfoFiles()
 end
 
 --- Returns the StarDict object for a dictionary name, or nil when the
--- dictionary isn't installed as StarDict or has a format we can't page through.
+-- dictionary isn't installed as StarDict, has a format we can't page through,
+-- or turned out to be incomplete when it was indexed.
 function DictionaryExplorer:getDictionary(name)
 	if not name then
 		return nil
@@ -278,7 +279,11 @@ function DictionaryExplorer:getDictionary(name)
 		local dictionary = ifo_file and StarDict.get(ifo_file)
 		self.resolved[name] = dictionary or false
 	end
-	return self.resolved[name] or nil
+	local dictionary = self.resolved[name]
+	if not dictionary or dictionary.index_error then
+		return nil
+	end
+	return dictionary
 end
 
 --- Whether the dictionary called `name` (as KOReader shows it in a lookup
@@ -347,8 +352,12 @@ function DictionaryExplorer:withIndex(dictionary, callback)
 		if ok then
 			callback()
 		else
+			-- buildIndex() logged why; from now on the dictionary has no button.
 			logger.warn("DictionaryExplorer: could not index", dictionary.name, err)
-			UIManager:show(InfoMessage:new({ text = _("Could not open the dictionary.") }))
+			UIManager:show(InfoMessage:new({
+				text = err == "unreadable" and _("Could not open the dictionary.")
+					or _("Could not open the dictionary: its files look incomplete. Copying it again may help."),
+			}))
 		end
 	end)
 end

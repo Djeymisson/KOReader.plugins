@@ -17,11 +17,19 @@ local EXPECTED = {
 	["Go to word (again)"] = 1,
 	["scrolling the breadcrumb"] = 1,
 	["closing the viewer"] = 2,
+	-- Nothing changes, so nothing may be redrawn.
+	["swiping past the last page"] = 0,
+	["swiping back from the first page"] = 0,
+	["scrolling down on the last page"] = 0,
 }
 
 return function(H, ui)
 	local UIManager = require("ui/uimanager")
-	local dictionary = H.dictionaries().by.pt or H.dictionaries().list[1]
+	local by = H.dictionaries().by
+	local dictionary, profile = by.pt, H.profiles.pt
+	if not dictionary then
+		dictionary, profile = by.fx, H.profiles.fx
+	end
 	if not dictionary then
 		H.skip("refresh counts", "no dictionary the plugin can open was found")
 		H.finish()
@@ -49,22 +57,45 @@ return function(H, ui)
 	H.step(1, function()
 		local viewer
 		measure("opening the viewer", function()
-			viewer = H.newViewer(dictionary, H.profiles.pt.open)
+			viewer = H.newViewer(dictionary, profile.open)
 			UIManager:show(viewer)
 		end)
 		measure("turning a page", function()
 			viewer:showNext()
 		end)
 		measure("Go to word (the breadcrumb appears)", function()
-			viewer:goToWord(H.profiles.pt.walk[2])
+			viewer:goToWord(profile.walk[2])
 		end)
 		measure("Go to word (again)", function()
-			viewer:goToWord(H.profiles.pt.walk[3])
+			viewer:goToWord(profile.walk[3])
 		end)
 		measure("scrolling the breadcrumb", function()
 			viewer.crumb_end = 1
 			viewer:_refreshBreadcrumb()
 		end)
+
+		-- At the ends of the dictionary, through the real gesture and key paths.
+		local area = viewer.html_widget.dimen
+		local x, y = area.x + area.w / 2, area.y + area.h / 2
+		viewer:goToPosition(dictionary:getCount() - 1)
+		measure("swiping past the last page", function()
+			H.gesture("swipe", x, y, { direction = "west" })
+		end)
+		-- What the page-turn keys and side taps do. A last page that scrolls
+		-- would rightly scroll first, so start from its bottom.
+		for _scroll = 1, 100 do
+			if not viewer.html_widget:onScrollDown() then
+				break
+			end
+		end
+		measure("scrolling down on the last page", function()
+			viewer:onScrollDown()
+		end)
+		viewer:goToPosition(0)
+		measure("swiping back from the first page", function()
+			H.gesture("swipe", x, y, { direction = "east" })
+		end)
+
 		measure("closing the viewer", function()
 			viewer:onClose()
 		end)

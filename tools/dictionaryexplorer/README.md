@@ -19,14 +19,21 @@ did not finish, so it can gate a commit or a CI job.
 
 - A KOReader install, **v2026.07 or newer** (the plugin needs its dictionary
   button API): `/usr/lib/koreader` by default, or `--koreader DIR` /
-  `KOREADER_DIR`. It must be able to run on this machine (an x86 desktop build).
-- StarDict dictionaries: `~/.config/koreader/data/dict` by default, or
-  `--dicts DIR` / `DICT_DIR`. The suites look for the author's six by a part
-  of their name (Priberam Portuguese, Priberam English–Portuguese, Oxford English
-  Dictionary 2nd Ed., Dicionário Aberto, Portuguese–English dictionary, WikDict
-  English–Portuguese); what is missing is reported as `SKIP`, and the run says
-  how many checks were skipped. Any other dictionary the plugin can open is
-  covered by the contract and budget suites under general limits.
+  `KOREADER_DIR`. It must be able to run on this machine: a Linux desktop
+  build, or on macOS the `Contents/koreader` folder of `KOReader.app` (GNU
+  `timeout`, from Homebrew's coreutils, is used when it is there).
+- Nothing else. Every run makes a set of synthetic dictionaries
+  (`fixtures/make.lua`, see below), so all the suites have something to run on.
+- Optionally, your StarDict dictionaries: `~/.config/koreader/data/dict` by
+  default, or `--dicts DIR` / `DICT_DIR`. The suites look for the author's six
+  by a part of their name (Priberam Portuguese, Priberam English–Portuguese,
+  Oxford English Dictionary 2nd Ed., Dicionário Aberto, Portuguese–English
+  dictionary, WikDict English–Portuguese); what is missing is reported as
+  `SKIP`, and the run says how many checks were skipped. Where one of them is
+  needed for a whole part of a suite (paging, walking and selection need the
+  Portuguese one), the fixture of the same shape is used instead. Any other
+  dictionary the plugin can open is covered by the contract and budget suites
+  under general limits.
 
 ## The suites
 
@@ -35,10 +42,11 @@ Pass or fail (`check` runs all of them):
 | Suite | What it checks |
 |---|---|
 | `unit` | Plain Lua, no KOReader needed. `fitmodel_test`: the fit model (`modules/fitmodel.lua`) on synthetic data: it converges from a bad start, stays finite on degenerate data, ignores nonsense. `text_test`: the text preparation (`modules/text.lua`): type `m` gives exactly the HTML it always did (checked against a reference on real entries and 500 random mixes), and type `x` is tidied as intended. |
+| `integrity` | Files that are not what they should be, on fixtures only it sees: an `.idx` cut short (with and without `idxfilesize`), a `wordcount` that does not match, a `.dict` or `.dict.dz` cut short, a `.dict.dz` shorter than the `.idx` needs though its last chunk has room, a `.dict.dz` with a malformed chunk table. Each is refused with its reason and without an error, no cache is written, and the plugin stops offering it; a read past the end gives nil, not fewer bytes. A dictionary indexed while whole whose definitions are then cut is refused when its cache is loaded. Also the index cache: two dictionaries with the same file name, size and date get a cache each, a cache that does not add up or was cut short is rebuilt, writing one leaves no temporary file, and the file of older versions goes. |
 | `contract` | The interface a dictionary object must honour for the viewer to work with it (entries with a word and a size known without reading, exact `locate`, `readDefinition` returning `size` bytes, nesting reading sessions, safe `releaseCaches`), on every dictionary found. **This is what a new dictionary format has to pass.** |
 | `regression` | The viewer's behaviour with real gestures: opening centred and highlighted, paging by swipe / key / tap, contiguity in both directions, the breadcrumb and the `‹` `›` buttons, the selection dock with Go to word and Copy, the dictzip and plain formats, the three text types (`m`, `h`, `x`), the Dispatcher action, and the caches being released. |
 | `budgets` | 150 page turns per dictionary against limits on counts that do not depend on the machine: layouts per turn, files opened, definitions read, how full pages are, and no entry skipped or repeated. See below. |
-| `refresh` | Screen refreshes per action: one for a page turn, Go to word or scrolling the breadcrumb. On e-ink that is what costs the most battery. |
+| `refresh` | Screen refreshes per action, with the mode and area of each: one for a page turn, Go to word or scrolling the breadcrumb, and none for an action that changes nothing (swiping or scrolling past either end of the dictionary). On e-ink that is what costs the most battery. Whether partial refreshes leave ghosting can only be judged on a device. |
 
 Diagnostics (they measure and explain, and never fail):
 
@@ -89,6 +97,8 @@ tools/dictionaryexplorer/
   lib/
     launcher.lua      the throwaway plugin: starts the suite once the book is ready
     harness.lua       reporting, stepping, gestures, dictionaries, measuring
+  fixtures/
+    make.lua          writes the synthetic dictionaries (run.sh calls it)
   suites/             one file per suite (see above)
   unit/
     fitmodel_test.lua tests that need no KOReader
@@ -105,6 +115,26 @@ tools/dictionaryexplorer/
   `run.sh check`. If `contract` and `budgets` pass, the viewer and its
   performance work will do the rest. Fixtures for the dictionaries the suites
   look for by name are in `H.profiles`.
+
+## The fixtures
+
+`fixtures/make.lua` writes them into each run's temporary profile; nothing is
+kept in the repository. It is plain Lua 5.1 (it runs on KOReader's luajit) and
+deterministic, so every run sees the same files.
+
+| Fixture | Shape | What it is for |
+|---|---|---|
+| Fixture Text | `m`, `.dict`, StarDict order, `.syn` | stands in for the Portuguese dictionary: the words the suites walk through, homographs (`banco`), words that differ only in case, also with accented capitals (`árvore` / `Árvore`, `ética` / `Ética`), and entries longer than a screen |
+| Fixture HTML | `h`, `.dict.dz` | the dictzip path (small 2 KB chunks, so entries span chunks) and links between entries |
+| Fixture XDXF | `x`, `.dict` | the XDXF-lite text of the Dicionário Aberto |
+| Fixture Bytes | `m`, `.dict`, byte order | capitalized words before all the lowercase ones, like Priberam's |
+
+The integrity suite's files (the broken dictionaries and the two twins) go
+outside the dictionary folder, so no other suite and not the plugin's own
+dictionary list ever sees them. To add a case, add it to `make.lua` and check
+it in the suite that needs it. The dictzip chunks are stored (uncompressed)
+deflate blocks and the gzip CRC is zero: the plugin reads the first like any
+other and never checks the second.
 
 ## Things to know
 

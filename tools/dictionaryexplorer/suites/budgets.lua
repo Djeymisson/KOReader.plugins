@@ -46,7 +46,7 @@ return function(H, ui)
 
 	local function budgetFor(dictionary)
 		for key, candidate in pairs(dictionaries.by) do
-			if candidate == dictionary then
+			if candidate == dictionary and BUDGETS[key] then
 				return BUDGETS[key], key
 			end
 		end
@@ -67,9 +67,13 @@ return function(H, ui)
 				})
 				for _turn = 1, TURNS do
 					local previous_last = viewer.last
+					local moved
 					local seconds, _, delta = H.measure(function()
-						viewer:showNext()
+						moved = viewer:showNext()
 					end)
+					if not moved then
+						break -- the end of a small dictionary (the fixtures), not a break
+					end
 					turns, cpu = turns + 1, cpu + seconds
 					layouts, reads, opens = layouts + delta.layouts, reads + delta.reads, opens + delta.opens
 					if viewer.first ~= previous_last + 1 then
