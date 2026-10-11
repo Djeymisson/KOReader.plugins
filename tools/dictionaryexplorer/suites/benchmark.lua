@@ -126,9 +126,9 @@ return function(H, ui)
 				(lfs.attributes(fresh.cache_path, "size") or 0) / 1024, fresh.offsets and #fresh.offsets or 0
 			))
 			started = os.clock()
-			fresh.offsets = nil
+			fresh.idx, fresh.syn = nil, nil
 			fresh:buildIndex()
-			H.say(string.format("S5 rebuild    %-34s cpu %6.1f ms (scanning the .idx and writing the cache)", dictionary.name:sub(1, 34), (os.clock() - started) * 1000))
+			H.say(string.format("S5 rebuild    %-34s cpu %6.1f ms (scanning the .idx and .syn and writing the cache)", dictionary.name:sub(1, 34), (os.clock() - started) * 1000))
 		end
 	end)
 

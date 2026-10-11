@@ -5,6 +5,11 @@ Finding the entry for a word: what the user types, selects or taps.
                   for any letter, not only A-Z: "ÁRVORE" or a sentence-initial
                   "Pêssego" find "árvore" / "pêssego", "óbidos" finds "Óbidos",
                   "onu" finds "ONU"; the text as given wins when it is a key
+  synonyms        a word that is not a headword but is in the .syn leads to its
+                  entry (also in another case); a headword wins over a word
+                  of the .syn; every word of the fixture's .syn, across its
+                  pages, leads where it says; the trail keeps the word asked
+                  for; on the Oxford dictionary when installed
   no entry        the viewer opens on the closest entry and says so on the
                   page itself, above the entries, with no notification on top;
                   the next page, word or crumb takes the line away; a long
@@ -61,6 +66,61 @@ return function(H, ui)
 			end
 		else
 			H.skip("case in the Portuguese dictionary", "dictionary not installed")
+		end
+	end)
+
+	-- ---- synonyms -----------------------------------------------------------------
+	H.step(0.5, function()
+		for _index, case in ipairs({
+			{ "casas", "casa", "casas", "an inflected form leads to its entry" },
+			{ "CASAS", "casa", "casas", "in another case too" },
+			{ "arvore", "árvore", "arvore", "an accentless spelling the .syn lists" },
+			{ "lisboa", "Óbidos", "Lisboa", "a capitalized word of the .syn, typed in lowercase" },
+			{ "mesa", "mesa", nil, "a headword wins over the same word in the .syn" },
+			{ "casas grandes", "casa", "casas", "a phrase falls back to its first word, through the .syn" },
+		}) do
+			local text, expected, expected_synonym, description = case[1], case[2], case[3], case[4]
+			local position, exact, synonym = fixture:locateText(text)
+			local word = fixture:getEntry(position).word
+			H.check(string.format("%s: %q finds %q", description, text, expected), exact and word == expected and synonym == expected_synonym, string.format("%s via %s", word, tostring(synonym)))
+		end
+
+		-- Every "...zs" word of the .syn leads to the entry it was made from.
+		local content = io.open(fixture.syn_path, "rb"):read("*a")
+		local checked, wrong, first_wrong = 0, 0, nil
+		local position = 1
+		while position <= #content do
+			local terminator = content:find("\0", position, true)
+			local key = content:sub(position, terminator - 1)
+			position = terminator + 5
+			if key:sub(-2) == "zs" then
+				checked = checked + 1
+				local target, exact, synonym = fixture:locate(key)
+				if not (exact and synonym == key and fixture:getEntry(target).word == key:sub(1, -3)) then
+					wrong = wrong + 1
+					first_wrong = first_wrong or key
+				end
+			end
+		end
+		H.check(string.format("every one of the %d generated words of the .syn leads to its entry", checked), checked > 300 and wrong == 0, first_wrong)
+
+		local trail_viewer = H.newViewer(fixture, "livro")
+		trail_viewer:goToWord("casas")
+		H.check(
+			"Go to word through the .syn: the entry is highlighted, the trail keeps the word asked for, no notice",
+			fixture:getEntry(trail_viewer.highlighted).word == "casa" and trail_viewer.trail[#trail_viewer.trail].word == "casas" and trail_viewer.miss_notice == nil
+		)
+		trail_viewer:onCloseWidget()
+
+		local ox = by.ox
+		if ox and ox.syn then
+			for _index, case in ipairs({ { "abomining", "abomine", "abomining" }, { "went", "went", nil } }) do
+				local target, exact, synonym = ox:locate(case[1])
+				local word = ox:getEntry(target).word
+				H.check(string.format("%s: %q finds %q", ox.name:sub(1, 22), case[1], case[2]), exact and word == case[2] and synonym == case[3], string.format("%s via %s", word, tostring(synonym)))
+			end
+		else
+			H.skip("synonyms in the Oxford dictionary", "not installed, or without a .syn")
 		end
 	end)
 
@@ -134,6 +194,23 @@ return function(H, ui)
 		plugin:openWord(fixture.name, "livro")
 		viewer = H.findViewer()
 		H.check("and not when the word has an entry", viewer ~= nil and viewer.miss_notice == nil)
+		if viewer then
+			viewer:onClose()
+		end
+
+		-- Opening at a word of the .syn: the trail starts with it, as Go to word's does.
+		plugin:openAt(fixture, "casas")
+		viewer = H.findViewer()
+		if viewer then
+			viewer:goToWord("livro")
+		end
+		H.check("opening from the menu at a word of the .syn starts the trail with it", viewer ~= nil and H.trailText(viewer) == "casas>livro" and fixture:getEntry(viewer.trail[1].position).word == "casa", viewer and H.trailText(viewer))
+		if viewer then
+			viewer:onClose()
+		end
+		plugin:openWord(fixture.name, "casas")
+		viewer = H.findViewer()
+		H.check("so does opening from another plugin or the popup", viewer ~= nil and viewer.trail[1].word == "casas", viewer and viewer.trail[1].word)
 		if viewer then
 			viewer:onClose()
 		end

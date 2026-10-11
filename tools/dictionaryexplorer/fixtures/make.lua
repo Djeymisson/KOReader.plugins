@@ -6,10 +6,10 @@ run anywhere, with or without the author's dictionaries.
 
 DICT_DIR gets dictionaries the plugin can open, one of each shape it supports:
 
-  Fixture Text    "m", plain .dict, StarDict order, with a .syn; every word the
-                  Portuguese profile of the suites walks through, homographs,
-                  words that differ only in case (also accented capitals), and
-                  some entries longer than a screen
+  Fixture Text    "m", plain .dict, StarDict order, with a .syn (several pages
+                  of it); every word the Portuguese profile of the suites walks
+                  through, homographs, words that differ only in case (also
+                  accented capitals), and some entries longer than a screen
   Fixture HTML    "h", dictzip .dict.dz, with links between entries
   Fixture XDXF    "x", plain .dict, the XDXF-lite of the Dicionário Aberto
   Fixture Bytes   "m", plain .dict, sorted in plain byte order (capitalized
@@ -30,6 +30,11 @@ INTEGRITY_DIR gets what only the integrity suite opens:
                                  a chunk table
   cut_after_index/               valid; the suite indexes it, then cuts its
   cut_after_index_dz/            .dict / .dict.dz, as a later bad copy would
+  syn_ok/                        valid, with a .syn; the suite changes the .syn
+                                 after indexing it
+  syn_truncated/                 .syn cut in the middle of a record
+  syn_wrong_count/               .ifo synwordcount that does not match the .syn
+  syn_out_of_range/              a .syn word leading past the last entry
 
 Everything is deterministic: the same files every run. Plain Lua 5.1 (it runs
 on the luajit KOReader ships), no library needed: the dictzip chunks are
@@ -271,17 +276,28 @@ local function textDictionary()
 	-- Homographs: the same key twice, told apart by their text.
 	entries[#entries + 1] = { "banco", "banco\n1. (seat) " .. sentences(next_random, 2) }
 	entries[#entries + 1] = { "banco", "banco\n1. (money) " .. sentences(next_random, 2) }
+	-- Words of the .syn: inflected forms, an accentless spelling, a word that
+	-- is a headword too (the headword wins), a capitalized form.
+	local synonyms = {
+		{ "casas", "casa" }, { "livros", "livro" }, { "gatos", "gato" }, { "arvore", "árvore" },
+		{ "bancos", "banco" }, { "mesa", "gato" }, { "Lisboa", "Óbidos" },
+	}
 	for index, word in ipairs(fillerWords(7, 1200)) do
 		-- Every 97th entry is longer than a screen, so it gets a scrolling page.
 		local count = index % 97 == 0 and 80 or next_random(1, 4)
 		entries[#entries + 1] = { word, word .. "\n1. " .. sentences(next_random, count) }
+		-- Enough synonyms for several pages of the .syn. No filler ends in
+		-- "zs", so none of them is a headword.
+		if index % 3 == 0 then
+			synonyms[#synonyms + 1] = { word .. "zs", word }
+		end
 	end
 	return writeDictionary(dict_dir .. "/text", "fixture_text", {
 		bookname = "Fixture Text (m)",
 		type = "m",
 		less = stardictLess,
 		entries = numbered(entries),
-		synonyms = { { "casas", "casa" }, { "livros", "livro" }, { "gatos", "gato" }, { "arvore", "árvore" } },
+		synonyms = synonyms,
 	})
 end
 
@@ -380,6 +396,13 @@ local function broken(name, spec, cut)
 	spec.type, spec.less = "m", stardictLess
 	spec.bookname = "Fixture Broken " .. name
 	spec.entries = smallEntries(#name * 31)
+	if spec.with_synonyms then
+		spec.synonyms = {}
+		for index = 1, 100 do
+			local word = spec.entries[index][1]
+			spec.synonyms[index] = { word .. "zs", word }
+		end
+	end
 	local files = writeDictionary(integrity_dir .. "/" .. name, name, spec)
 	if cut then
 		cut(files)
@@ -425,3 +448,11 @@ broken("malformed_ra", { compressed = true }, function(files)
 end)
 broken("cut_after_index", {})
 broken("cut_after_index_dz", { compressed = true })
+broken("syn_ok", { with_synonyms = true })
+broken("syn_truncated", { with_synonyms = true }, function(files)
+	writeFile(files.path .. ".syn", files.syn:sub(1, #files.syn - 2))
+end)
+broken("syn_wrong_count", { with_synonyms = true, ifo_overrides = { synwordcount = "103" } })
+broken("syn_out_of_range", { with_synonyms = true }, function(files)
+	writeFile(files.path .. ".syn", files.syn:sub(1, #files.syn - 4) .. uint32BE(999999))
+end)

@@ -25,7 +25,7 @@ local Dock = require("modules/dock")
 local StarDict = require("modules/stardict")
 local Viewer = require("modules/viewer")
 
-local PLUGIN_VERSION = "v1.1.0"
+local PLUGIN_VERSION = "v1.2.0"
 
 local SETTING_START_DICTIONARY = "dictionaryexplorer_start_dictionary" -- a dictionary name; unset means automatic
 local ACTION_OPEN_AT_WORD = "dictionaryexplorer_open_at_word"
@@ -233,19 +233,22 @@ end
 
 function DictionaryExplorer:openAt(dictionary, word)
 	self:withIndex(dictionary, function()
-		local position, exact = dictionary:locateText(word)
-		self:showViewer(dictionary, position, not exact and word or nil)
+		local position, exact, synonym = dictionary:locateText(word)
+		self:showViewer(dictionary, position, not exact and word or nil, synonym)
 	end)
 end
 
 --- Opens the viewer at entry `position`. `missed_word`, when given, is the word
 -- that was asked for and has no entry: the viewer says so above the entries.
-function DictionaryExplorer:showViewer(dictionary, position, missed_word)
+-- `synonym`, when given, is the word asked for when it only leads to the entry
+-- (through the .syn): the trail starts with it, as Go to word would.
+function DictionaryExplorer:showViewer(dictionary, position, missed_word, synonym)
 	UIManager:show(Viewer:new({
 		ui = self.ui, -- for the vocabulary builder
 		dictionary = dictionary,
 		position = position,
 		missed_word = missed_word,
+		start_word = synonym,
 		side_margins = self:getSideMargins(),
 	}))
 end
@@ -303,8 +306,8 @@ function DictionaryExplorer:openWord(name, word, hint)
 		return false
 	end
 	self:withIndex(dictionary, function()
-		local position, exact = dictionary:locate(word, hint)
-		self:showViewer(dictionary, position, not exact and word or nil)
+		local position, exact, synonym = dictionary:locate(word, hint)
+		self:showViewer(dictionary, position, not exact and word or nil, synonym)
 	end)
 	return true
 end

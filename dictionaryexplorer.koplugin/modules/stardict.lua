@@ -13,6 +13,12 @@ Large dictionaries (hundreds of thousands of entries) can't be held in memory
 on an e-reader, so the .idx is scanned once and only the file offset and key
 of every PAGE_SIZE-th entry are kept, cached on disk. Entries are then
 fetched a page at a time, and lookups binary-search the page keys.
+
+The .syn, when there is one, is read the same way. It holds other words that
+lead to an entry (inflected forms, variant spellings: "abomined" leads to
+"abomine"), each with the number of that entry, and is used when a word is not
+a headword itself. It is optional: when it is damaged it is left aside and the
+dictionary works without it.
 ]]
 
 local DataStorage = require("datastorage")
@@ -26,7 +32,7 @@ local PAGE_SIZE = 64
 local PAGES_KEPT_IN_MEMORY = 8
 local CHUNKS_KEPT_IN_MEMORY = 2 -- inflated dictzip chunks, about 58 KB each
 local INDEX_READ_CHUNK = 256 * 1024
-local INDEX_CACHE_VERSION = 3 -- 3: definitions_end, so a cut .dict is caught on load too
+local INDEX_CACHE_VERSION = 4 -- 3: definitions_end, so a cut .dict is caught on load too; 4: the .syn
 local MAX_HOMOGRAPHS = 64
 local MAX_SCAN_ENTRIES = PAGE_SIZE * 2
 
@@ -188,17 +194,22 @@ function StarDict.get(ifo_path)
 		is_html = info.sametypesequence == "h",
 		text_type = info.sametypesequence, -- "m", "h" or "x": how the viewer prepares the text
 		wordcount = tonumber(info.wordcount), -- what the .ifo says, checked against the .idx
+		synwordcount = tonumber(info.synwordcount), -- the same for the .syn
 		idx_path = idx_path,
+		syn_path = base .. ".syn",
 		dict_path = dict_path,
 		compressed = compressed,
 		cache_path = cache_dir .. cache_name .. "-" .. pathHash(ifo_path) .. ".lua",
 		legacy_cache_path = cache_dir .. cache_name .. ".lua", -- before v1.0.1, shared by same-named files
 		index_error = nil, -- why buildIndex() failed, if it did
-		offsets = nil, -- file offset of every PAGE_SIZE-th .idx entry
-		first_keys = nil, -- the key found at each of those offsets
-		count = nil,
-		_pages = {},
-		_page_order = {},
+		syn_error = nil, -- why the .syn was left aside, if it was
+		-- The .idx records (see newRecords): offsets and first_keys are the file
+		-- offset and the key of every PAGE_SIZE-th entry.
+		idx = nil,
+		offsets = nil, -- idx.offsets
+		first_keys = nil, -- idx.first_keys
+		count = nil, -- idx.count
+		syn = nil, -- the .syn records, when there is a usable .syn
 	}, StarDict)
 	instances[ifo_path] = self
 	return self
@@ -237,6 +248,191 @@ end
 -- Index
 -- ---------------------------------------------------------------------------
 
+-- The .idx and the .syn are both runs of records: a key ended by "\0", then
+-- TRAILER bytes (offset and size of the definition in the .idx, the number of
+-- an entry in the .syn). They are paged through the same way.
+local IDX_TRAILER, SYN_TRAILER = 8, 4
+
+local function newRecords(path, trailer, size, count, offsets, first_keys)
+	return {
+		path = path,
+		trailer = trailer,
+		size = size, -- of the file
+		count = count,
+		offsets = offsets,
+		first_keys = first_keys,
+		pages = {},
+		page_order = {},
+	}
+end
+
+-- Whether a cached run of records adds up.
+local function recordsAddUp(data)
+	return type(data) == "table"
+		and type(data.count) == "number"
+		and data.count > 0
+		and type(data.offsets) == "table"
+		and type(data.first_keys) == "table"
+		and #data.offsets == math.ceil(data.count / PAGE_SIZE)
+		and #data.first_keys == #data.offsets
+end
+
+--- Scans a whole .idx or .syn once.
+-- @treturn table { offsets, first_keys, count, highest }, where `highest` is
+-- the end of the last definition (.idx) or the highest entry number (.syn);
+-- or nil and "unreadable" / "truncated" (a record cut in the middle)
+local function scanRecords(path, trailer)
+	local file = io.open(path, "rb")
+	if not file then
+		return nil, "unreadable"
+	end
+	local offsets, first_keys, count, highest = {}, {}, 0, -1
+	local buffer_start = 0 -- file offset of the first byte of `buffer`
+	local buffer = ""
+	while true do
+		local chunk = file:read(INDEX_READ_CHUNK)
+		if not chunk then
+			break
+		end
+		buffer = buffer .. chunk
+
+		local position, length = 1, #buffer
+		while true do
+			local terminator = buffer:find("\0", position, true)
+			if not terminator or terminator + trailer > length then
+				break -- the rest is a record split across two chunks
+			end
+			if count % PAGE_SIZE == 0 then
+				offsets[#offsets + 1] = buffer_start + position - 1
+				first_keys[#first_keys + 1] = buffer:sub(position, terminator - 1)
+			end
+			local value
+			if trailer == IDX_TRAILER then
+				local b1, b2, b3, b4, b5, b6, b7, b8 = buffer:byte(terminator + 1, terminator + 8)
+				value = readUInt32BE(b1, b2, b3, b4) + readUInt32BE(b5, b6, b7, b8)
+			else
+				value = readUInt32BE(buffer:byte(terminator + 1, terminator + 4))
+			end
+			if value > highest then
+				highest = value
+			end
+			count = count + 1
+			position = terminator + trailer + 1
+		end
+		buffer_start = buffer_start + position - 1
+		buffer = buffer:sub(position)
+	end
+	file:close()
+	if buffer ~= "" then
+		return nil, "truncated"
+	end
+	return { offsets = offsets, first_keys = first_keys, count = count, highest = highest }
+end
+
+-- Returns the records of one page: { word, offset, size } from the .idx,
+-- { word, index } from the .syn.
+local function getPage(records, page)
+	local cached = records.pages[page]
+	if cached then
+		return cached
+	end
+
+	local start = records.offsets[page + 1]
+	local stop = records.offsets[page + 2] or records.size
+	local file = io.open(records.path, "rb")
+	if not file then
+		return nil
+	end
+	file:seek("set", start)
+	local block = file:read(stop - start)
+	file:close()
+	if not block then
+		return nil
+	end
+
+	local trailer = records.trailer
+	local entries, position = {}, 1
+	while true do
+		local terminator = block:find("\0", position, true)
+		if not terminator or terminator + trailer > #block then
+			break
+		end
+		if trailer == IDX_TRAILER then
+			local b1, b2, b3, b4, b5, b6, b7, b8 = block:byte(terminator + 1, terminator + 8)
+			entries[#entries + 1] = {
+				word = block:sub(position, terminator - 1),
+				offset = readUInt32BE(b1, b2, b3, b4),
+				size = readUInt32BE(b5, b6, b7, b8),
+			}
+		else
+			entries[#entries + 1] = {
+				word = block:sub(position, terminator - 1),
+				index = readUInt32BE(block:byte(terminator + 1, terminator + 4)),
+			}
+		end
+		position = terminator + trailer + 1
+	end
+
+	records.pages[page] = entries
+	table.insert(records.page_order, page)
+	if #records.page_order > PAGES_KEPT_IN_MEMORY then
+		records.pages[table.remove(records.page_order, 1)] = nil
+	end
+	return entries
+end
+
+local function getRecord(records, position)
+	if position < 0 or position >= records.count then
+		return nil
+	end
+	local page = getPage(records, math.floor(position / PAGE_SIZE))
+	return page and page[position % PAGE_SIZE + 1]
+end
+
+-- Position of the first record whose key sorts at or after `word` under the
+-- given comparator.
+local function lowerBound(records, word, compare)
+	-- Last page whose first key sorts before the word.
+	local first_keys = records.first_keys
+	local low, high, page = 0, #first_keys - 1, 0
+	while low <= high do
+		local middle = math.floor((low + high) / 2)
+		if compare(first_keys[middle + 1], word) < 0 then
+			page = middle
+			low = middle + 1
+		else
+			high = middle - 1
+		end
+	end
+
+	local first = page * PAGE_SIZE
+	local position = first
+	while position < records.count and position - first < MAX_SCAN_ENTRIES do
+		local record = getRecord(records, position)
+		if not record or compare(record.word, word) >= 0 then
+			break
+		end
+		position = position + 1
+	end
+	return math.min(position, records.count - 1)
+end
+
+-- Position of the first record keyed exactly `key`, trying every sort order.
+local function findExact(records, key)
+	for index = 1, #COMPARATORS do
+		local position = lowerBound(records, key, COMPARATORS[index])
+		local record = getRecord(records, position)
+		if record and record.word == key then
+			return position, record
+		end
+	end
+end
+
+function StarDict:_useIndex(idx, syn)
+	self.idx, self.syn = idx, syn
+	self.offsets, self.first_keys, self.count = idx.offsets, idx.first_keys, idx.count
+end
+
 function StarDict:_loadIndexCache()
 	local ok, data = pcall(dofile, self.cache_path)
 	if not ok or type(data) ~= "table" then
@@ -247,30 +443,32 @@ function StarDict:_loadIndexCache()
 		or data.page_size ~= PAGE_SIZE
 		or data.idx_size ~= attributes.size
 		or data.idx_mtime ~= attributes.modification
-		or type(data.count) ~= "number"
-		or data.count <= 0
+		or not recordsAddUp(data)
 		or (self.wordcount and data.count ~= self.wordcount)
-		or type(data.offsets) ~= "table"
-		or type(data.first_keys) ~= "table"
-		or #data.offsets ~= math.ceil(data.count / PAGE_SIZE)
-		or #data.first_keys ~= #data.offsets
 		or type(data.definitions_end) ~= "number" then
+		return false
+	end
+	-- The .syn, as it was when the cache was written: none, or the same file.
+	local syn_attributes = lfs.attributes(self.syn_path)
+	local syn_file = data.syn_file
+	if (syn_attributes == nil) ~= (syn_file == nil)
+		or (syn_file and (syn_file.size ~= syn_attributes.size or syn_file.mtime ~= syn_attributes.modification))
+		or (data.syn and not recordsAddUp(data.syn)) then
 		return false
 	end
 	-- The definitions file may have been replaced by a shorter copy since.
 	if not self:_checkDefinitions(data.definitions_end) then
 		return false
 	end
-	self.offsets = data.offsets
-	self.first_keys = data.first_keys
-	self.count = data.count
-	self.idx_size = data.idx_size
+	local syn = data.syn and newRecords(self.syn_path, SYN_TRAILER, syn_file.size, data.syn.count, data.syn.offsets, data.syn.first_keys)
+	self.syn_error = data.syn_error
+	self:_useIndex(newRecords(self.idx_path, IDX_TRAILER, data.idx_size, data.count, data.offsets, data.first_keys), syn)
 	return true
 end
 
 --- Whether the page index is ready to use (loading the cached copy if any).
 function StarDict:isIndexed()
-	if self.offsets then
+	if self.idx then
 		return true
 	end
 	return self:_loadIndexCache()
@@ -301,8 +499,8 @@ function StarDict:_checkDefinitions(definitions_end)
 	return true
 end
 
---- Scans the whole .idx and stores the page index. Takes a while on big
--- dictionaries, so callers should show progress first. Only needed once.
+--- Scans the whole .idx (and .syn) and stores the page index. Takes a while
+-- on big dictionaries, so callers should show progress first. Only needed once.
 -- @treturn bool true, or false and why ("unreadable", "empty", "truncated
 -- index", "incomplete index", "truncated definitions", "invalid dictzip
 -- header"), also kept in index_error
@@ -315,66 +513,59 @@ function StarDict:buildIndex()
 	return ok, err
 end
 
+-- Scans the .syn, if there is one. One that doesn't add up is left aside:
+-- the dictionary works without it.
+-- @treturn table scan, or nil and why it was left aside (nil when there is no .syn)
+function StarDict:_scanSynonyms(count)
+	if lfs.attributes(self.syn_path, "mode") ~= "file" then
+		return nil
+	end
+	local scan, err = scanRecords(self.syn_path, SYN_TRAILER)
+	if not scan then
+		return nil, err == "truncated" and "truncated synonyms" or "unreadable synonyms"
+	end
+	if scan.count == 0 then
+		return nil, "empty synonyms"
+	end
+	if self.synwordcount and scan.count ~= self.synwordcount then
+		return nil, "incomplete synonyms"
+	end
+	if scan.highest >= count then
+		return nil, "synonyms out of range" -- they lead past the last entry
+	end
+	return scan
+end
+
 function StarDict:_buildIndex()
-	local file = io.open(self.idx_path, "rb")
-	if not file then
-		return false, "unreadable"
+	local scan, err = scanRecords(self.idx_path, IDX_TRAILER)
+	if not scan then
+		return false, err == "truncated" and "truncated index" or err
 	end
-
-	local offsets, first_keys, count = {}, {}, 0
-	local definitions_end = 0 -- where the last definition ends in the .dict
-	local buffer_start = 0 -- file offset of the first byte of `buffer`
-	local buffer = ""
-	while true do
-		local chunk = file:read(INDEX_READ_CHUNK)
-		if not chunk then
-			break
-		end
-		buffer = buffer .. chunk
-
-		local position, length = 1, #buffer
-		while true do
-			local terminator = buffer:find("\0", position, true)
-			if not terminator or terminator + 8 > length then
-				break -- the rest is a record split across two chunks
-			end
-			if count % PAGE_SIZE == 0 then
-				offsets[#offsets + 1] = buffer_start + position - 1
-				first_keys[#first_keys + 1] = buffer:sub(position, terminator - 1)
-			end
-			local b1, b2, b3, b4, b5, b6, b7, b8 = buffer:byte(terminator + 1, terminator + 8)
-			local entry_end = readUInt32BE(b1, b2, b3, b4) + readUInt32BE(b5, b6, b7, b8)
-			if entry_end > definitions_end then
-				definitions_end = entry_end
-			end
-			count = count + 1
-			position = terminator + 9
-		end
-		buffer_start = buffer_start + position - 1
-		buffer = buffer:sub(position)
-	end
-	file:close()
-
-	if buffer ~= "" then
-		return false, "truncated index" -- a record cut in the middle
-	end
+	local count = scan.count
 	if count == 0 then
 		return false, "empty"
 	end
 	if self.wordcount and count ~= self.wordcount then
 		return false, "incomplete index"
 	end
+	local definitions_end = math.max(scan.highest, 0) -- where the last definition ends in the .dict
 	local complete, problem = self:_checkDefinitions(definitions_end)
 	if not complete then
 		return false, problem
 	end
 
+	local syn_scan, syn_error = self:_scanSynonyms(count)
+	if syn_error then
+		logger.warn("DictionaryExplorer: leaving the .syn aside:", self.syn_path, syn_error)
+	end
 	local attributes = lfs.attributes(self.idx_path)
-	self.offsets = offsets
-	self.first_keys = first_keys
-	self.count = count
-	self.idx_size = attributes.size
-	self._pages, self._page_order = {}, {}
+	local syn_attributes = lfs.attributes(self.syn_path)
+	local syn
+	if syn_scan then
+		syn = newRecords(self.syn_path, SYN_TRAILER, syn_attributes.size, syn_scan.count, syn_scan.offsets, syn_scan.first_keys)
+	end
+	self.syn_error = syn_error
+	self:_useIndex(newRecords(self.idx_path, IDX_TRAILER, attributes.size, count, scan.offsets, scan.first_keys), syn)
 
 	-- Written aside and then renamed, so that an interrupted write never leaves
 	-- a half cache behind. The cache of older versions goes: it is not read.
@@ -387,8 +578,11 @@ function StarDict:_buildIndex()
 		idx_mtime = attributes.modification,
 		count = count,
 		definitions_end = definitions_end,
-		offsets = offsets,
-		first_keys = first_keys,
+		offsets = scan.offsets,
+		first_keys = scan.first_keys,
+		syn_file = syn_attributes and { size = syn_attributes.size, mtime = syn_attributes.modification } or nil,
+		syn = syn_scan and { count = syn_scan.count, offsets = syn_scan.offsets, first_keys = syn_scan.first_keys } or nil,
+		syn_error = syn_error,
 	}), temporary, true, true)
 	if not (written and os.rename(temporary, self.cache_path)) then
 		os.remove(temporary)
@@ -401,93 +595,27 @@ function StarDict:getCount()
 	return self.count
 end
 
--- Returns the entries of one page ({ word, offset, size } records).
-function StarDict:_getPage(page)
-	local cached = self._pages[page]
-	if cached then
-		return cached
-	end
-
-	local start = self.offsets[page + 1]
-	local stop = self.offsets[page + 2] or self.idx_size
-	local file = io.open(self.idx_path, "rb")
-	if not file then
-		return nil
-	end
-	file:seek("set", start)
-	local block = file:read(stop - start)
-	file:close()
-	if not block then
-		return nil
-	end
-
-	local entries, position = {}, 1
-	while true do
-		local terminator = block:find("\0", position, true)
-		if not terminator or terminator + 8 > #block then
-			break
-		end
-		local b1, b2, b3, b4, b5, b6, b7, b8 = block:byte(terminator + 1, terminator + 8)
-		entries[#entries + 1] = {
-			word = block:sub(position, terminator - 1),
-			offset = readUInt32BE(b1, b2, b3, b4),
-			size = readUInt32BE(b5, b6, b7, b8),
-		}
-		position = terminator + 9
-	end
-
-	self._pages[page] = entries
-	table.insert(self._page_order, page)
-	if #self._page_order > PAGES_KEPT_IN_MEMORY then
-		self._pages[table.remove(self._page_order, 1)] = nil
-	end
-	return entries
-end
-
 --- Returns entry number `position` (0-based), or nil when out of range.
 function StarDict:getEntry(position)
-	if position < 0 or position >= self.count then
-		return nil
-	end
-	local page = self:_getPage(math.floor(position / PAGE_SIZE))
-	return page and page[position % PAGE_SIZE + 1]
+	return getRecord(self.idx, position)
 end
 
 -- Position of the first entry whose key sorts at or after `word` under the
 -- given comparator.
 function StarDict:_lowerBound(word, compare)
-	-- Last page whose first key sorts before the word.
-	local low, high, page = 0, #self.first_keys - 1, 0
-	while low <= high do
-		local middle = math.floor((low + high) / 2)
-		if compare(self.first_keys[middle + 1], word) < 0 then
-			page = middle
-			low = middle + 1
-		else
-			high = middle - 1
-		end
-	end
-
-	local first = page * PAGE_SIZE
-	local position = first
-	while position < self.count and position - first < MAX_SCAN_ENTRIES do
-		local entry = self:getEntry(position)
-		if not entry or compare(entry.word, word) >= 0 then
-			break
-		end
-		position = position + 1
-	end
-	return math.min(position, self.count - 1)
+	return lowerBound(self.idx, word, compare)
 end
 
--- Position of the first entry keyed exactly `key`, trying every sort order.
-function StarDict:_findExact(key)
-	for index = 1, #COMPARATORS do
-		local position = self:_lowerBound(key, COMPARATORS[index])
-		local entry = self:getEntry(position)
-		if entry and entry.word == key then
-			return position, entry
-		end
+-- The entry a word of the .syn leads to, if it is one.
+-- @treturn int position of the entry, or nil
+-- @treturn string the key as the .syn has it
+function StarDict:_findSynonym(key)
+	if not self.syn then
+		return nil
+	end
+	local record = select(2, findExact(self.syn, key))
+	if record and record.index < self.count then
+		return record.index, record.word
 	end
 end
 
@@ -495,18 +623,26 @@ end
 -- `hint` is optional definition text used to pick between entries that share
 -- the same key (Priberam, for one, indexes inflected forms under the base word).
 -- @treturn int position of the entry, or of the closest one when there is none
--- @treturn bool true when an entry with exactly that key exists
+-- @treturn bool true when an entry was found for the word
+-- @treturn string the word as the .syn has it, when the entry was found through
+-- the .syn (the word is not a headword itself, but leads to this one)
 function StarDict:locate(word, hint)
 	-- Typed or selected text may differ in case from the key ("Casa" or
-	-- "CASA" for "casa", "Árvore" for "árvore", "óbidos" for "Óbidos"). The
-	-- text as given wins when it is a key itself.
-	local position, entry = self:_findExact(word)
-	if not entry then
-		for _index, variant in ipairs(caseVariants(word)) do
-			position, entry = self:_findExact(variant)
-			if entry then
-				break
-			end
+	-- "CASA" for "casa", "Árvore" for "árvore", "óbidos" for "Óbidos"), and
+	-- may be an inflected form only the .syn knows. The text as given wins over
+	-- other casings, and a headword over a word of the .syn.
+	local candidates = caseVariants(word)
+	table.insert(candidates, 1, word)
+	local position, entry, synonym
+	for _index, candidate in ipairs(candidates) do
+		position, entry = findExact(self.idx, candidate)
+		if entry then
+			break
+		end
+		local target, key = self:_findSynonym(candidate)
+		if target then
+			position, entry, synonym = target, self:getEntry(target), key
+			break
 		end
 	end
 	if not entry then
@@ -538,29 +674,30 @@ function StarDict:locate(word, hint)
 			end
 			local definition = self:readDefinition(other)
 			if definition and self.normalizeForMatch(definition) == wanted then
-				return candidate, true
+				return candidate, true, synonym
 			end
 		end
 	end
-	return position, true
+	return position, true, synonym
 end
 
 --- Like locate(), for text that may be several words (a selection, or what the
 -- user typed): when it isn't an entry as a whole, its first word is tried.
 -- @treturn int position of the entry, or of the closest one when there is none
 -- @treturn bool true when an entry was found
+-- @treturn string the word as the .syn has it, when found through the .syn
 function StarDict:locateText(text)
-	local position, exact = self:locate(text)
+	local position, exact, synonym = self:locate(text)
 	if not exact then
 		local first_word = text:match("^(%S+)%s")
 		if first_word then
-			local first_position, first_exact = self:locate(first_word)
+			local first_position, first_exact, first_synonym = self:locate(first_word)
 			if first_exact then
-				return first_position, true
+				return first_position, true, first_synonym
 			end
 		end
 	end
-	return position, exact
+	return position, exact, synonym
 end
 
 --- Reduces a definition to its first letters and digits, so text that went

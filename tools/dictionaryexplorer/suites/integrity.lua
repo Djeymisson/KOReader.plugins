@@ -13,6 +13,10 @@ folder (DE_INTEGRITY), so the other suites never see these files.
   cut later          a dictionary indexed while whole, whose .dict or .dict.dz
                      is then replaced by a shorter copy, is refused when its
                      cache is loaded
+  synonyms           a damaged .syn (cut, wrong synwordcount, leading past the
+                     last entry) is left aside with its reason, also when the
+                     cache is loaded, and the dictionary still opens; a .syn
+                     changed after indexing makes the cache be rebuilt
   short reads        readDefinition() of an entry past the end returns nil, not
                      fewer bytes
   cache names        two dictionaries with the same file name, .idx size and
@@ -125,6 +129,43 @@ return function(H, ui)
 			local ok, err = fresh:buildIndex()
 			H.check(name .. ": and indexing again refuses it", not ok and err == "truncated definitions", err)
 		end
+	end)
+
+	-- ---- synonyms ----------------------------------------------------------------
+	local function firstSynonym(name)
+		local content = readFile(string.format("%s/%s/%s.syn", root, name, name))
+		return content:sub(1, content:find("\0", 1, true) - 1)
+	end
+
+	H.step(0.5, function()
+		for _index, case in ipairs({
+			{ "syn_truncated", "truncated synonyms", "a .syn cut in the middle of a record" },
+			{ "syn_wrong_count", "incomplete synonyms", "a .syn with another number of words than the .ifo's synwordcount" },
+			{ "syn_out_of_range", "synonyms out of range", "a .syn leading past the last entry" },
+		}) do
+			local name, expected, description = case[1], case[2], case[3]
+			local path = ifo(name)
+			local dictionary = StarDict.get(path)
+			local ok = dictionary:buildIndex()
+			local synonym = select(3, dictionary:locate(firstSynonym(name)))
+			H.check(description .. " is left aside, and the dictionary still opens", ok and dictionary.syn == nil and dictionary.syn_error == expected and synonym == nil, dictionary.syn_error)
+			local fresh = dofile(module_path).get(path)
+			H.check(description .. ": also when the cache is loaded", fresh:isIndexed() and fresh.syn == nil and fresh.syn_error == expected)
+		end
+
+		local path = ifo("syn_ok")
+		local dictionary = StarDict.get(path)
+		local key = firstSynonym("syn_ok")
+		H.check("a whole .syn is used", dictionary:buildIndex() and dictionary.syn ~= nil and dictionary.syn_error == nil)
+		local cached = dofile(module_path).get(path)
+		local loaded = cached:isIndexed()
+		local position, exact, synonym = cached:locate(key)
+		H.check("and from the cache: its words lead to their entries", loaded and cached.syn ~= nil and exact and synonym == key and cached:getEntry(position).word .. "zs" == key, tostring(synonym))
+		local syn_path = path:gsub("%.ifo$", ".syn")
+		local later = lfs.attributes(syn_path, "modification") + 10
+		lfs.touch(syn_path, later, later)
+		local fresh = dofile(module_path).get(path)
+		H.check("a .syn changed after indexing makes the cache be rebuilt", not fresh:isIndexed() and fresh:buildIndex() and fresh.syn ~= nil)
 	end)
 
 	-- ---- cache names -----------------------------------------------------------

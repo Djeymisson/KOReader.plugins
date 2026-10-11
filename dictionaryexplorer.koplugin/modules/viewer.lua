@@ -130,6 +130,7 @@ local DictionaryExplorerViewer = InputContainer:extend({
 	side_margins = nil, -- { left =, right = } in pixels; defaults to a small margin
 	ui = nil, -- the ReaderUI (or FileManager) the viewer was opened from; only used to reach the vocabulary builder
 	missed_word = nil, -- the word asked for, when `position` is only the closest entry to it
+	start_word = nil, -- the first word of the trail, when not the entry's own (a word of the .syn leading to it)
 	covers_fullscreen = true,
 })
 
@@ -167,7 +168,7 @@ function DictionaryExplorerViewer:init()
 	end
 	-- The words walked through with "Go to word", starting with the one the
 	-- viewer opened on; the breadcrumb only shows once there are two.
-	self.trail = { { word = self.dictionary:getEntry(self.position).word, position = self.position } }
+	self.trail = { { word = self.start_word or self.dictionary:getEntry(self.position).word, position = self.position } }
 	self.trail_index = 1
 	self.miss = self.missed_word
 	self:showAround(self.position)
@@ -989,9 +990,11 @@ function DictionaryExplorerViewer:goToWord(word)
 	if word == "" then
 		return
 	end
-	local position, exact = self.dictionary:locateText(word)
+	local position, exact, synonym = self.dictionary:locateText(word)
 	self.miss = not exact and word or nil -- said on the page itself, see _getMissNotice
-	self:_pushTrail(exact and self.dictionary:getEntry(position).word or word, position)
+	-- The trail keeps the word that was asked for when it only leads to the
+	-- entry ("abomined", through the .syn, to "abomine").
+	self:_pushTrail(synonym or (exact and self.dictionary:getEntry(position).word) or word, position)
 	self:showAround(position)
 end
 
