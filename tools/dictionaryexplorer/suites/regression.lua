@@ -357,13 +357,18 @@ return function(H, ui)
 		if dialog then
 			local word = pt and "livro" or H.profiles.en.open
 			dialog:setInputText(word)
-			dialog.buttons[1][2].callback()
+			-- By its label: the row also has Cancel and Continue.
+			for _index, button in ipairs(dialog.buttons[1]) do
+				if button.text == "Open" then
+					button.callback()
+				end
+			end
 		end
 	end)
 	H.step(2, function()
 		local opened = H.findViewer()
-		if not H.findInputDialog() and not opened then
-			return
+		if not ui.dictionaryexplorer then
+			return -- skipped above
 		end
 		H.check("the action opens the viewer", opened ~= nil)
 		if opened then

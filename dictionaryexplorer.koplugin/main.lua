@@ -7,7 +7,8 @@ neighbouring entries, like the Kindle's "go to dictionary". The viewer is
 not a document, so the dictionary never appears in the reading history.
 
 It can also be opened from a starting word without a lookup: from its menu, or
-from a gesture, profile or Quick Dock button, through a Dispatcher action.
+from a gesture, profile or Quick Dock button, through a Dispatcher action. And
+the last exploration can be continued where it was left, the same ways.
 ]]
 
 local Dispatcher = require("dispatcher")
@@ -25,10 +26,14 @@ local Dock = require("modules/dock")
 local StarDict = require("modules/stardict")
 local Viewer = require("modules/viewer")
 
-local PLUGIN_VERSION = "v1.3.0"
+local PLUGIN_VERSION = "v1.4.0"
 
 local SETTING_START_DICTIONARY = "dictionaryexplorer_start_dictionary" -- a dictionary name; unset means automatic
+-- Where each dictionary was left: { last = name, by_dictionary = { [name] = state } },
+-- each state as Viewer:explorationState() makes it.
+local SETTING_EXPLORATIONS = "dictionaryexplorer_explorations"
 local ACTION_OPEN_AT_WORD = "dictionaryexplorer_open_at_word"
+local ACTION_CONTINUE = "dictionaryexplorer_continue"
 
 local DictionaryExplorer = WidgetContainer:extend({
 	name = "dictionaryexplorer",
@@ -70,10 +75,21 @@ function DictionaryExplorer:onDispatcherRegisterActions()
 		title = _("Dictionary Explorer: open at a word"),
 		general = true,
 	})
+	Dispatcher:registerAction(ACTION_CONTINUE, {
+		category = "none",
+		event = "ContinueDictionaryExplorer",
+		title = _("Dictionary Explorer: continue exploring"),
+		general = true,
+	})
 end
 
 function DictionaryExplorer:onOpenDictionaryExplorer()
 	self:showStartWordDialog()
+	return true
+end
+
+function DictionaryExplorer:onContinueDictionaryExplorer()
+	self:continueExploring()
 	return true
 end
 
@@ -89,6 +105,18 @@ function DictionaryExplorer:addToMainMenu(menu_items)
 				),
 				callback = function()
 					self:showStartWordDialog()
+				end,
+			},
+			{
+				text = _("Continue exploring"),
+				help_text = _(
+					"Reopens the dictionary you explored last on the page you left it, with the words you walked through. The same action can be assigned to a gesture or added to Quick Dock: look for “Dictionary Explorer: continue exploring” in the list of actions."
+				),
+				enabled_func = function()
+					return self:getLastExploration() ~= nil
+				end,
+				callback = function()
+					self:continueExploring()
 				end,
 			},
 			{
@@ -214,6 +242,14 @@ function DictionaryExplorer:showStartWordDialog()
 					end,
 				},
 				{
+					text = _("Continue"),
+					enabled = self:getLastExploration() ~= nil,
+					callback = function()
+						UIManager:close(dialog)
+						self:continueExploring()
+					end,
+				},
+				{
 					text = _("Open"),
 					is_enter_default = true,
 					callback = function()
@@ -240,14 +276,54 @@ end
 --- Opens the viewer at what StarDict:resolve() found for a word. When the word
 -- has no entry the viewer says so above the entries, and when it only leads to
 -- one (through the .syn) the trail starts with it, as Go to word's would.
-function DictionaryExplorer:showViewer(dictionary, lookup)
+function DictionaryExplorer:showViewer(dictionary, lookup, resume)
+	local name = dictionary.name
 	UIManager:show(Viewer:new({
 		ui = self.ui, -- for the vocabulary builder
 		dictionary = dictionary,
-		position = lookup.position,
+		position = lookup and lookup.position or 0,
 		lookup = lookup,
+		resume = resume,
 		side_margins = self:getSideMargins(),
+		on_explore = function(state)
+			self:saveExploration(name, state)
+		end,
 	}))
+end
+
+--- Keeps where an exploration is, to continue it later. It only changes the
+-- settings in memory: KOReader writes them out when it saves its settings.
+function DictionaryExplorer:saveExploration(name, state)
+	local saved = G_reader_settings:readSetting(SETTING_EXPLORATIONS)
+	if type(saved) ~= "table" or type(saved.by_dictionary) ~= "table" then
+		saved = { by_dictionary = {} }
+	end
+	saved.by_dictionary[name] = state
+	saved.last = name
+	G_reader_settings:saveSetting(SETTING_EXPLORATIONS, saved)
+end
+
+--- The dictionary explored last, if it can still be opened, and where it was left.
+function DictionaryExplorer:getLastExploration()
+	local saved = G_reader_settings:readSetting(SETTING_EXPLORATIONS)
+	local name = type(saved) == "table" and saved.last
+	local state = name and type(saved.by_dictionary) == "table" and saved.by_dictionary[name]
+	local dictionary = type(state) == "table" and self:getDictionary(name)
+	if dictionary then
+		return dictionary, state
+	end
+end
+
+--- Reopens the last exploration on the page it was left, with its trail.
+function DictionaryExplorer:continueExploring()
+	local dictionary, state = self:getLastExploration()
+	if not dictionary then
+		UIManager:show(InfoMessage:new({ text = _("There is no exploration to continue yet.") }))
+		return
+	end
+	self:withIndex(dictionary, function()
+		self:showViewer(dictionary, nil, state)
+	end)
 end
 
 -- Maps dictionary names (as shown in the popup) to their .ifo files. Scanned

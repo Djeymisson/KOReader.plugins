@@ -1,4 +1,4 @@
-# Dictionary Explorer ![Version](https://img.shields.io/badge/version-v1.3.0-blue)
+# Dictionary Explorer ![Version](https://img.shields.io/badge/version-v1.4.0-blue)
 
 **Dictionary Explorer** adds a **Go to dictionary** button to KOReader's dictionary popup. It opens the dictionary at the word you looked up, in a full-screen viewer where you can keep paging through the neighbouring entries like a book, similar to the Kindle's "go to dictionary".
 
@@ -101,6 +101,14 @@ You don't need to look a word up in a book first: the dictionary can be opened s
 - As a gesture, profile action or Quick Dock button: the same action is registered with KOReader's Dispatcher as **Dictionary Explorer: open at a word**, under **General** in the action lists. Assign it in **Settings > Taps and gestures > Gesture manager** (or in a profile), or pick it in Quick Dock's action picker, like any other KOReader action. Quick Dock shows a two-letter abbreviation for it unless you give it a custom icon in Quick Dock's settings.
 - Which dictionary opens is set in **Tools > Dictionary Explorer > Starting dictionary**: **Automatic**, the default, uses the first dictionary that can be opened in KOReader's own dictionary order (the order and the enabled state you set in KOReader's dictionary settings), or you can pick one of the dictionaries that can be opened. A dictionary that is no longer installed falls back to Automatic.
 
+## Continuing an exploration
+
+The viewer keeps where you are as you go: the page, the highlighted entry and the latest 50 words of the breadcrumb, for each dictionary. It only changes KOReader's settings in memory (KOReader writes them out when it saves its settings), so it costs no file writes and no screen refreshes.
+
+- **Continue exploring** reopens the dictionary you explored last on the very page you left, with its breadcrumb and the word you were on. It is in **Tools > Dictionary Explorer**, as the **Continue** button of the **Open dictionary at a word…** dialog, and as the **Dictionary Explorer: continue exploring** action for gestures, profiles and Quick Dock.
+- Opening the viewer in any other way (**Go to dictionary**, a word you type) starts a new exploration of that dictionary, which then becomes the one to continue.
+- If the dictionary was updated or replaced since (it has another number of entries, or another entry where the page started), it reopens at the word you were on instead, with a new breadcrumb.
+
 ## Use from other plugins
 
 Other plugins can open the viewer at a word through the plugin object, `ui.dictionaryexplorer`: `canOpen(dictionary_name)` says whether a dictionary can be opened, and `openWord(dictionary_name, word, definition)` opens it at the word (`definition` is optional and only picks between entries with the same headword). Lookup Preview uses this for its **Go to word** button.
@@ -110,6 +118,7 @@ Other plugins can open the viewer at a word through the plugin object, `ui.dicti
 Open the top menu and go to **Tools > Dictionary Explorer**:
 
 - **Open dictionary at a word…**: see above.
+- **Continue exploring**: see above. Dimmed until a dictionary has been explored.
 - **Starting dictionary**: which dictionary that action opens.
 - **Show dock shadow**: shows or hides the dithered shadow of the selection dock. It is on by default, and is independent of the Selection Toolbar's own shadow setting.
 - **Version**: shows the installed plugin version.

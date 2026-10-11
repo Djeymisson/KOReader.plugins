@@ -25,6 +25,10 @@ local EXPECTED = {
 	["closing the suggestions"] = 2,
 	["scrolling the breadcrumb"] = 1,
 	["closing the viewer"] = 2,
+	-- Continuing an exploration costs what opening does (see above), and
+	-- keeping where it is costs nothing on screen.
+	["continuing an exploration"] = 2,
+	["turning a page while the exploration is kept"] = 1,
 	-- Nothing changes, so nothing may be redrawn.
 	["swiping past the last page"] = 0,
 	["swiping back from the first page"] = 0,
@@ -149,6 +153,25 @@ return function(H, ui)
 		measure("closing the viewer", function()
 			viewer:onClose()
 		end)
+
+		local plugin = ui.dictionaryexplorer
+		if plugin then
+			plugin:openAt(dictionary, profile.open)
+			local explored = H.findViewer()
+			explored:showNext()
+			explored:onClose()
+			measure("continuing an exploration", function()
+				plugin:continueExploring()
+			end)
+			explored = H.findViewer()
+			measure("turning a page while the exploration is kept", function()
+				explored:showNext()
+			end)
+			explored:onClose()
+			G_reader_settings:delSetting("dictionaryexplorer_explorations")
+		else
+			H.skip("continuing an exploration", "the plugin is not active")
+		end
 		UIManager.setDirty = set_dirty
 		G_reader_settings:saveSetting("notification_sources_to_show_mask", notification_mask)
 	end)

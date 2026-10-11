@@ -80,6 +80,7 @@ local SKIP_MARGIN = 1 -- only entries predicted to fit in the room left are trie
 -- entries.
 local MISS_NOTICE_MAX_CHARS = 60
 local MISS_NOTICE_MAX_LINES = 2
+local MAX_SAVED_CRUMBS = 50 -- the latest words of the trail kept to continue an exploration
 
 -- What the viewer has learnt about how tall entries are, for the session and
 -- per dictionary, font size and text width.
@@ -131,6 +132,8 @@ local DictionaryExplorerViewer = InputContainer:extend({
 	side_margins = nil, -- { left =, right = } in pixels; defaults to a small margin
 	ui = nil, -- the ReaderUI (or FileManager) the viewer was opened from; only used to reach the vocabulary builder
 	lookup = nil, -- what StarDict:resolve() said about the word `position` was found for, if one was
+	resume = nil, -- an exploration to continue (see explorationState()), in place of `position`
+	on_explore = nil, -- function(state), told the explorationState() after each page is shown
 	covers_fullscreen = true,
 })
 
@@ -165,6 +168,16 @@ function DictionaryExplorerViewer:init()
 			ScrollDown = { { Device.input.group.PgFwd } },
 			ScrollUp = { { Device.input.group.PgBack } },
 		}
+	end
+	if self.resume then
+		if self:_restore(self.resume) then
+			return
+		end
+		-- The dictionary is not the one the exploration was saved from (it was
+		-- updated, or replaced): start again from the word it was on.
+		if type(self.resume.word) == "string" then
+			self.position = self.dictionary:locate(self.resume.word)
+		end
 	end
 	-- The words walked through with "Go to word", starting with the one the
 	-- viewer opened on; the breadcrumb only shows once there are two.
@@ -826,6 +839,62 @@ function DictionaryExplorerViewer:_installPage(html_widget, first, last, at_end)
 	UIManager:setDirty(self, function()
 		return "partial", self.dimen
 	end)
+	if self.on_explore then
+		self.on_explore(self:explorationState())
+	end
+end
+
+--- Where the exploration is, to continue it later: the page, the highlighted
+-- entry, and the latest words of the trail. Plain values only, so it can be
+-- kept in the settings; `count` and `first_word` tell whether the dictionary
+-- is still the same when it is continued.
+function DictionaryExplorerViewer:explorationState()
+	local dictionary = self.dictionary
+	local start = math.max(1, #self.trail - MAX_SAVED_CRUMBS + 1)
+	local trail = {}
+	for index = start, #self.trail do
+		local crumb = self.trail[index]
+		trail[#trail + 1] = { word = crumb.word, position = crumb.position }
+	end
+	local highlighted = self.highlighted
+	local on_page = highlighted and highlighted >= self.first and highlighted <= self.last
+	return {
+		count = dictionary:getCount(),
+		first = self.first,
+		first_word = dictionary:getEntry(self.first).word,
+		highlighted = highlighted,
+		word = dictionary:getEntry(on_page and highlighted or self.first).word,
+		trail = trail,
+		trail_index = math.max(1, self.trail_index - start + 1),
+	}
+end
+
+-- Reopens a saved exploration (see explorationState()) on the page it was on.
+-- @treturn bool false when it doesn't fit this dictionary any more
+function DictionaryExplorerViewer:_restore(state)
+	local dictionary = self.dictionary
+	local first = tonumber(state.first)
+	local entry = first and dictionary:getEntry(first)
+	if state.count ~= dictionary:getCount() or not entry or entry.word ~= state.first_word or type(state.trail) ~= "table" then
+		return false
+	end
+	local trail = {}
+	for _index, crumb in ipairs(state.trail) do
+		if type(crumb) == "table" and type(crumb.word) == "string" and dictionary:getEntry(tonumber(crumb.position) or -1) then
+			trail[#trail + 1] = { word = crumb.word, position = tonumber(crumb.position) }
+		end
+	end
+	if #trail == 0 then
+		return false
+	end
+	self.trail = trail
+	self.trail_index = math.min(math.max(tonumber(state.trail_index) or #trail, 1), #trail)
+	if self.trail_index < #trail then
+		self.crumb_end = self.trail_index -- the current word in view in the breadcrumb
+	end
+	self.highlighted = tonumber(state.highlighted)
+	self:showPage(first, self:_lastEntryFrom(first))
+	return true
 end
 
 --- Shows entries first..last as one page, rebuilding the whole screen.
