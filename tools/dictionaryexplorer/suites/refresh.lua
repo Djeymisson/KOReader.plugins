@@ -23,6 +23,13 @@ local EXPECTED = {
 	["choosing a suggestion"] = 2,
 	-- The list's area, and the page beneath repainted into it (not refreshed).
 	["closing the suggestions"] = 2,
+	-- The page closed (the page beneath only marked for repainting, not
+	-- refreshed), the next one, as big, painted and refreshed in its area, and
+	-- one refresh of both areas (the same unless the list was moved).
+	["turning a page of the suggestions"] = 4,
+	-- The same, plus the refresh of both the old and the new area (merged
+	-- by KOReader with the new list's own when they are the same).
+	["turning a page of a moved list"] = 4,
 	["scrolling the breadcrumb"] = 1,
 	["closing the viewer"] = 2,
 	-- Continuing an exploration costs what opening does (see above), and
@@ -64,7 +71,7 @@ return function(H, ui)
 	G_reader_settings:saveSetting("notification_sources_to_show_mask", Notification.SOURCE_ALL)
 	Notification:resetNotifySource()
 
-	local recording, calls, last_refresh = false, {}, nil
+	local recording, calls, last_refresh, recorded = false, {}, nil, {}
 	local set_dirty = UIManager.setDirty
 	UIManager.setDirty = function(manager, widget, refresh, region, ...)
 		if recording then
@@ -76,13 +83,14 @@ return function(H, ui)
 				area = area()
 			end
 			last_refresh = { refresh, region }
+			recorded[#recorded + 1] = last_refresh
 			calls[#calls + 1] = string.format("%s %s", tostring(mode), area and string.format("%dx%d", area.w or 0, area.h or 0) or "the widget's area")
 		end
 		return set_dirty(manager, widget, refresh, region, ...)
 	end
 
 	local function measure(name, action)
-		calls, recording = {}, true
+		calls, recorded, recording = {}, {}, true
 		action()
 		recording = false
 		H.check(name .. ": " .. #calls .. " refresh(es)", #calls <= EXPECTED[name], table.concat(calls, "; "))
@@ -130,6 +138,51 @@ return function(H, ui)
 		measure("closing the suggestions", function()
 			UIManager:close(viewer.suggestions_dialog)
 		end)
+		viewer:showSuggestions()
+		local list = viewer.suggestions_dialog
+		if list and list.pages > 1 then
+			local foot = list.buttons[#list.buttons]
+			measure("turning a page of the suggestions", function()
+				foot[2].callback()
+			end)
+			UIManager:forceRePaint()
+			local turned = viewer.suggestions_dialog
+			local area = turned and select(2, last_refresh[1]())
+			H.check("turning a page refreshes only the list's area", area ~= nil and area.w * area.h < screen:getWidth() * screen:getHeight(), area and string.format("%dx%d", area.w, area.h))
+
+			-- Moved by the user: what the old page covered is refreshed too.
+			turned.movable:setMovedOffset({ x = 0, y = turned.movable:getMovedOffset().y - 60 })
+			UIManager:setDirty(turned, "ui") -- as a drag would
+			UIManager:forceRePaint()
+			local old_area = turned.movable.dimen:copy()
+			local moved_foot = turned.buttons[#turned.buttons]
+			measure("turning a page of a moved list", function()
+				moved_foot[1].callback()
+			end)
+			UIManager:forceRePaint()
+			local covered, seen = false, {}
+			for _index, entry in ipairs(recorded) do
+				local mode, refreshed = entry[1], entry[2]
+				if type(mode) == "function" then
+					mode, refreshed = mode()
+				end
+				if type(refreshed) == "function" then
+					refreshed = refreshed()
+				end
+				seen[#seen + 1] = string.format("%s %s", tostring(mode), refreshed and string.format("%d,%d %dx%d", refreshed.x, refreshed.y, refreshed.w, refreshed.h) or "-")
+				if mode == "ui" and refreshed and refreshed.x <= old_area.x and refreshed.y <= old_area.y
+					and refreshed.x + refreshed.w >= old_area.x + old_area.w and refreshed.y + refreshed.h >= old_area.y + old_area.h then
+					covered = true
+				end
+			end
+			H.check(
+				"the area the moved list covered is refreshed too",
+				covered,
+				string.format("old %d,%d %dx%d; %s", old_area.x, old_area.y, old_area.w, old_area.h, table.concat(seen, "; "))
+			)
+			turned = viewer.suggestions_dialog
+			UIManager:close(turned)
+		end
 		measure("scrolling the breadcrumb", function()
 			viewer.crumb_end = 1
 			viewer:_refreshBreadcrumb()

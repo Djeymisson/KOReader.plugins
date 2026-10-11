@@ -60,17 +60,18 @@ return function(H, ui)
 	local function entryWord()
 		return viewer.dictionary:getEntry(viewer.highlighted).word
 	end
+	-- A list's choices, whatever its page (see Viewer:_showList()).
 	local function listLabels(dialog)
 		local labels = {}
-		for _index, row in ipairs(dialog and dialog.buttons or {}) do
-			labels[#labels + 1] = row[1].text
+		for _index, choice in ipairs(dialog and dialog.choices or {}) do
+			labels[#labels + 1] = choice.text
 		end
 		return labels
 	end
 	local function listed(dialog, prefix)
-		for _index, row in ipairs(dialog and dialog.buttons or {}) do
-			if row[1].text:sub(1, #prefix) == prefix then
-				return row[1]
+		for _index, choice in ipairs(dialog and dialog.choices or {}) do
+			if choice.text:sub(1, #prefix) == prefix then
+				return choice
 			end
 		end
 	end
@@ -283,7 +284,7 @@ return function(H, ui)
 			noticeText()
 		)
 		viewer:showSuggestions()
-		local first = viewer.suggestions_dialog and viewer.suggestions_dialog.buttons[1][1]
+		local first = viewer.suggestions_dialog and viewer.suggestions_dialog.choices[1]
 		H.check("its suggestions start with the other dictionaries", holder ~= nil and first ~= nil and first.text == "“casa” in " .. holder.name, first and first.text)
 		if first then
 			first.callback()
@@ -435,7 +436,7 @@ return function(H, ui)
 		local area = viewer.html_widget.dimen
 		H.gesture("tap", area.x + area.w / 2, area.y - 4)
 		local dialog = viewer.dictionaries_dialog
-		H.check("tapping that lists them", dialog ~= nil and #dialog.buttons == #holders, table.concat(listLabels(dialog), " | "))
+		H.check("tapping that lists them", dialog ~= nil and #dialog.choices == #holders, table.concat(listLabels(dialog), " | "))
 		if dialog then
 			UIManager:close(dialog)
 		end
@@ -491,16 +492,16 @@ return function(H, ui)
 		viewer:showSuggestions()
 		local dialog = viewer.suggestions_dialog
 		local row
-		for _index, candidate in ipairs(dialog and dialog.buttons or {}) do
-			local label = candidate[1].text
+		for _index, candidate in ipairs(dialog and dialog.choices or {}) do
+			local label = candidate.text
 			if not row and label:sub(-#text.name) == text.name and label:find("^“casa") then
-				row = candidate[1]
+				row = candidate
 			end
 		end
 		H.check("the suggestions for a word no dictionary has include the closest entries of the others", row ~= nil, table.concat(listLabels(dialog), " | "))
 		local others = 0
-		for _index, candidate in ipairs(dialog and dialog.buttons or {}) do
-			if candidate[1].text:sub(-#text.name) == text.name then
+		for _index, candidate in ipairs(dialog and dialog.choices or {}) do
+			if candidate.text:sub(-#text.name) == text.name then
 				others = others + 1
 			end
 		end
@@ -508,16 +509,16 @@ return function(H, ui)
 		-- Spelled most like it, not merely next to it: Fixture Text has casa,
 		-- Casa, casaco and casado around "casaz".
 		local alike = 0
-		for _index, candidate in ipairs(dialog and dialog.buttons or {}) do
-			local label = candidate[1].text
+		for _index, candidate in ipairs(dialog and dialog.choices or {}) do
+			local label = candidate.text
 			if label:sub(-#text.name) == text.name and label:lower():find("^“casa") then
 				alike = alike + 1
 			end
 		end
 		H.check("the ones spelled most like it", alike == others, string.format("%d of %d", alike, others))
 		local noise = false
-		for _index, candidate in ipairs(dialog and dialog.buttons or {}) do
-			local label = candidate[1].text
+		for _index, candidate in ipairs(dialog and dialog.choices or {}) do
+			local label = candidate.text
 			if label:find("” in ", 1, true) and not label:lower():find("^“ca") then
 				noise = true
 			end

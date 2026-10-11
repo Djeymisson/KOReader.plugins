@@ -83,6 +83,7 @@ local MISS_NOTICE_MAX_LINES = 2
 local MAX_SAVED_CRUMBS = 50 -- the latest words of the trail kept to continue an exploration
 local CLOSEST_ELSEWHERE = 3 -- entries of each other dictionary among the suggestions for a missed word
 local CLOSEST_SHARED = 2 -- letters they must begin with as the word does
+local LIST_ROWS_PER_PAGE = 6 -- choices on each page of a list (suggestions, other dictionaries)
 
 -- What the viewer has learnt about how tall entries are, for the session and
 -- per dictionary, font size and text width.
@@ -772,17 +773,62 @@ function DictionaryExplorerViewer:_isOnMissNotice(pos)
 end
 
 -- Shows a list of choices on top of the page, kept in self[field] while it is
--- shown. It refreshes only its own area; closing it clears that area without
--- the flash ButtonDialog uses, and does nothing at all when a choice was made:
--- the new page covers it.
-function DictionaryExplorerViewer:_showList(field, title, rows)
+-- shown, LIST_ROWS_PER_PAGE choices at a time: it never fills the screen, and
+-- a row at its foot pages through it (‹ ›) and closes it (✕), so leaving it
+-- doesn't take a choice. Every page has as many rows (the last one is filled
+-- with blank ones), so turning a page refreshes only the list's own area.
+-- Closing it clears that area without the flash ButtonDialog uses, and does
+-- nothing at all when a choice was made: the new page covers it.
+-- `rows` is { { button }, ... }, one choice per row; the dialog keeps them
+-- all, as `choices`, whatever the page. `offset`, when given, is where the
+-- user had moved the list to (see _turnList()).
+-- @treturn ButtonDialog the list shown
+function DictionaryExplorerViewer:_showList(field, title, rows, page, offset)
+	page = page or 1
+	local pages = math.max(1, math.ceil(#rows / LIST_ROWS_PER_PAGE))
+	local shown = {}
+	for index = (page - 1) * LIST_ROWS_PER_PAGE + 1, page * LIST_ROWS_PER_PAGE do
+		shown[#shown + 1] = rows[index] or (pages > 1 and { { text = "", enabled = false } }) or nil
+	end
+	local close = {
+		icon = "close",
+		callback = function()
+			if self[field] then
+				UIManager:close(self[field])
+			end
+		end,
+	}
+	if pages > 1 then
+		local function turnTo(target)
+			return function()
+				self:_turnList(field, title, rows, target)
+			end
+		end
+		table.insert(shown, {
+			{ icon = "chevron.left", enabled = page > 1, callback = turnTo(page - 1) },
+			{ icon = "chevron.right", enabled = page < pages, callback = turnTo(page + 1) },
+			close,
+		})
+	else
+		table.insert(shown, { close })
+	end
 	local dialog = ButtonDialog:new({
-		title = title,
+		-- `title` itself stays as given: turnTo() hands it to the next page.
+		title = pages > 1 and T("%1 (%2/%3)", title, page, pages) or title,
 		title_align = "center",
-		buttons = rows,
+		buttons = shown,
 	})
+	if offset then
+		dialog.movable:setMovedOffset(offset)
+	end
+	dialog.choices, dialog.page, dialog.pages = {}, page, pages
+	for _index, row in ipairs(rows) do
+		dialog.choices[#dialog.choices + 1] = row[1]
+	end
 	dialog.onCloseWidget = function(this)
-		self[field] = nil
+		if self[field] == this then
+			self[field] = nil
+		end
 		if not self._choosing then
 			UIManager:setDirty(nil, function()
 				return "ui", this.movable.dimen
@@ -791,6 +837,31 @@ function DictionaryExplorerViewer:_showList(field, title, rows)
 	end
 	self[field] = dialog
 	UIManager:show(dialog)
+	return dialog
+end
+
+-- Shows another page of a list in place of the one shown, where the user may
+-- have moved it (a ButtonDialog can be dragged). The old one goes without a
+-- refresh of its own; one refresh covers both areas, which are the same
+-- unless something moved it (KOReader merges it with the new list's own).
+function DictionaryExplorerViewer:_turnList(field, title, rows, page)
+	local old = self[field]
+	if not old then
+		return
+	end
+	local offset = old.movable:getMovedOffset()
+	local old_area = old.movable.dimen and old.movable.dimen:copy()
+	self._choosing = true
+	UIManager:close(old)
+	self._choosing = nil
+	local new = self:_showList(field, title, rows, page, offset)
+	UIManager:setDirty(nil, function()
+		local area = new.movable.dimen
+		if old_area and area then
+			return "ui", old_area:combine(area)
+		end
+		return "ui", old_area or area
+	end)
 end
 
 -- Closes the list in self[field] because a choice was made in it.

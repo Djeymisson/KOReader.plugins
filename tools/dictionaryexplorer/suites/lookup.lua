@@ -274,6 +274,65 @@ return function(H, ui)
 			UIManager:close(viewer.suggestions_dialog)
 		end
 		H.check("closing the list without choosing leaves the page as it was", viewer.suggestions_dialog == nil and viewer.miss_notice ~= nil and viewer.first == first)
+
+		-- The list is paged, with a row to page and close it at its foot.
+		viewer:showSuggestions()
+		dialog = viewer.suggestions_dialog
+		UIManager:forceRePaint()
+		local foot = dialog and dialog.buttons[#dialog.buttons]
+		H.check(
+			"the list shows 6 choices a page, the page in its title, and ‹ › ✕ at its foot",
+			dialog ~= nil and #dialog.choices > 6 and #dialog.buttons == 7 and dialog.title:find("(1/2)", 1, true) ~= nil
+				and foot[1].icon == "chevron.left" and foot[1].enabled == false and foot[2].icon == "chevron.right" and foot[3].icon == "close",
+			dialog and string.format("%d choices, %d rows, %s", #dialog.choices, #dialog.buttons, dialog.title)
+		)
+		local size = dialog and { w = dialog.movable.dimen.w, h = dialog.movable.dimen.h }
+		if foot then
+			foot[2].callback() -- next page
+		end
+		local second = viewer.suggestions_dialog
+		UIManager:forceRePaint()
+		H.check(
+			"› shows the next choices, in a list as big as the first page",
+			second ~= nil and second ~= dialog and second.page == 2 and second.buttons[1][1].text == second.choices[7].text
+				and second.movable.dimen.w == size.w and second.movable.dimen.h == size.h,
+			second and string.format("page %d, %dx%d (was %dx%d)", second.page, second.movable.dimen.w, second.movable.dimen.h, size.w, size.h)
+		)
+		-- Back and forth: the title says the page it is on, once.
+		local foot2 = second and second.buttons[#second.buttons]
+		if foot2 then
+			foot2[1].callback() -- back to page 1
+		end
+		local back = viewer.suggestions_dialog
+		local foot3 = back and back.buttons[#back.buttons]
+		if foot3 then
+			foot3[2].callback() -- page 2 again
+		end
+		second = viewer.suggestions_dialog
+		H.check(
+			"turning pages back and forth, the title says the page once",
+			back ~= nil and back.title == "Suggestions for “qqqzzzz” (1/2)" and second.title == "Suggestions for “qqqzzzz” (2/2)",
+			back and (back.title .. " / " .. second.title)
+		)
+		-- Moved by the user (a ButtonDialog can be dragged), it stays there.
+		second.movable:setMovedOffset({ x = 0, y = second.movable:getMovedOffset().y - 60 })
+		UIManager:setDirty(second, "ui") -- as a drag would
+		UIManager:forceRePaint()
+		local moved = { x = second.movable.dimen.x, y = second.movable.dimen.y }
+		second.buttons[#second.buttons][1].callback() -- page 1
+		local turned = viewer.suggestions_dialog
+		UIManager:forceRePaint()
+		H.check(
+			"a list moved by the user stays where it is when its page turns",
+			turned ~= nil and turned.movable.dimen.x == moved.x and turned.movable.dimen.y == moved.y,
+			turned and string.format("(%d,%d), was (%d,%d)", turned.movable.dimen.x, turned.movable.dimen.y, moved.x, moved.y)
+		)
+		second = turned
+		local trail = H.trailText(viewer)
+		if second then
+			second.buttons[#second.buttons][3].callback() -- close
+		end
+		H.check("✕ closes it without a choice", viewer.suggestions_dialog == nil and onTop() == viewer and viewer.first == first and H.trailText(viewer) == trail)
 		viewer:onClose()
 	end)
 
