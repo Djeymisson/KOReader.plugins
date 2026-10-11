@@ -10,6 +10,15 @@ Finding the entry for a word: what the user types, selects or taps.
                   of the .syn; every word of the fixture's .syn, across its
                   pages, leads where it says; the trail keeps the word asked
                   for; on the Oxford dictionary when installed
+  accents         a word with no entry but one spelled the same but for its
+                  accents ("acao", "pessego", "obidos") opens on that entry,
+                  in the StarDict order and in byte order (and in the
+                  Portuguese dictionary when installed); a headword or a word
+                  of the .syn wins over it
+  suggestions     the notice offers suggestions: accented spellings first,
+                  then the entries around; tapping it opens them in a list,
+                  choosing one goes there and takes the missed word's place in
+                  the trail, closing the list leaves the page as it was
   no entry        the viewer opens on the closest entry and says so on the
                   page itself, above the entries, with no notification on top;
                   the next page, word or crumb takes the line away; a long
@@ -124,7 +133,6 @@ return function(H, ui)
 		end
 	end)
 
-	-- ---- no entry ---------------------------------------------------------------
 	local viewer
 	local function onTop()
 		local stack = UIManager._window_stack
@@ -136,6 +144,118 @@ return function(H, ui)
 		return box and box.text
 	end
 
+	-- ---- accents ----------------------------------------------------------------
+	local function resolved(dictionary, text)
+		local lookup = dictionary:resolve(text)
+		return lookup.kind, dictionary:getEntry(lookup.position).word, lookup
+	end
+
+	H.step(0.5, function()
+		for _index, case in ipairs({
+			{ fixture, "acao", "accent", "ação", "a missing cedilla and tilde" },
+			{ fixture, "pessego", "accent", "pêssego", "a missing circumflex" },
+			{ fixture, "PESSEGO", "accent", "pêssego", "in capitals" },
+			{ fixture, "obidos", "accent", "Óbidos", "a name whose capital is accented" },
+			{ fixture, "etica", "accent", "ética", "the lowercase spelling first, of two" },
+			{ fixture, "acao rapida", "accent", "ação", "a phrase, through its first word" },
+			{ fixture, "arvore", "exact", "árvore", "a word of the .syn wins over the accent search" },
+			{ fixture, "casa", "exact", "casa", "a headword is a headword" },
+			{ fixture, MISSING, "closest", nil, "nothing spelled like it: the closest entry" },
+			{ by.fb, "maca", "accent", "maçã", "in a dictionary sorted in byte order" },
+			{ by.fb, "evora", "accent", "Évora", "a name, in byte order" },
+			{ "tiny_bytes", "acao", "accent", "ação", "in byte order, in a dictionary too small for its page keys to tell the order" },
+		}) do
+			local dictionary, text, kind, expected, description = case[1], case[2], case[3], case[4], case[5]
+			if type(dictionary) == "string" then
+				-- An integrity fixture: outside the dictionary folder.
+				local root = os.getenv("DE_INTEGRITY")
+				dictionary = root and H.StarDict.get(string.format("%s/%s/%s.ifo", root, dictionary, dictionary))
+				if dictionary and not (dictionary:isIndexed() or dictionary:buildIndex()) then
+					dictionary = nil
+				end
+				H.check(description .. ": the fixture opens", dictionary ~= nil)
+			end
+			if dictionary then
+				local found_kind, word = resolved(dictionary, text)
+				H.check(
+					string.format("%s: %q is %s%s", description, text, kind, expected and (" " .. expected) or ""),
+					found_kind == kind and (expected == nil or word == expected),
+					string.format("%s %s", found_kind, word)
+				)
+			end
+		end
+		local lookup = select(3, resolved(fixture, "etica"))
+		H.check("both spellings of \"etica\" are found", lookup.spellings and #lookup.spellings == 2 and fixture:getEntry(lookup.spellings[2]).word == "Ética")
+
+		local pt = by.pt
+		if pt then
+			for _index, case in ipairs({ { "acao", "ação" }, { "pessego", "pêssego" }, { "coracao", "coração" }, { "Coracao", "coração" } }) do
+				local kind, word = resolved(pt, case[1])
+				H.check(string.format("%s: %q finds %q", pt.name:sub(1, 22), case[1], case[2]), kind == "accent" and word == case[2], string.format("%s %s", kind, word))
+			end
+			-- A long word with many vowels and no entry: the walk is bounded.
+			local started = os.clock()
+			local kind = resolved(pt, "constitucionalmentezz")
+			H.say(string.format("  accent search for a long word with no entry in %s: %.1f ms CPU (not checked)", pt.name:sub(1, 22), (os.clock() - started) * 1000))
+			H.check("a long word with no entry is still answered (closest)", kind == "closest")
+		else
+			H.skip("accents in the Portuguese dictionary", "dictionary not installed")
+		end
+	end)
+
+	-- ---- suggestions ------------------------------------------------------------
+	H.step(0.5, function()
+		local suggestions = fixture:suggest("acao")
+		H.check("suggestions: the accented spelling first, at most 10, with entries around", #suggestions > 3 and #suggestions <= 10 and fixture:getEntry(suggestions[1]).word == "ação")
+		suggestions = fixture:suggest("obidos antigo")
+		H.check("for a phrase, the accented spelling of its first word comes first, as the page shows it", fixture:getEntry(suggestions[1]).word == "Óbidos", fixture:getEntry(suggestions[1]).word)
+
+		viewer = H.newViewer(fixture, "livro")
+		UIManager:show(viewer)
+		viewer:goToWord("acao")
+		H.check(
+			"Go to word with a missing accent opens the entry and says which",
+			fixture:getEntry(viewer.highlighted).word == "ação" and (noticeText() or ""):find("“ação”", 1, true) ~= nil and viewer.trail[#viewer.trail].word == "ação",
+			noticeText()
+		)
+
+		viewer:goToWord(MISSING)
+		UIManager:forceRePaint() -- where things are is known once they are drawn
+		local length = #viewer.trail
+		local area = viewer.html_widget.dimen
+		H.gesture("tap", area.x + area.w / 2, area.y - 4)
+		local dialog = viewer.suggestions_dialog
+		H.check("tapping the notice opens the suggestions on top of the page", dialog ~= nil and onTop() == dialog)
+		if dialog then
+			local chosen = dialog.buttons[2][1].text
+			dialog.buttons[2][1].callback()
+			H.check(
+				"choosing one goes there, with the list and the notice gone",
+				viewer.suggestions_dialog == nil and onTop() == viewer and viewer.miss_notice == nil and fixture:getEntry(viewer.highlighted).word == chosen
+			)
+			H.check("and it takes the place of the missed word in the trail", #viewer.trail == length and viewer.trail[#viewer.trail].word == chosen, H.trailText(viewer))
+		end
+
+		viewer:goToWord("obidos antigo")
+		viewer:showSuggestions()
+		local shown = fixture:getEntry(viewer.highlighted).word
+		local listed = viewer.suggestions_dialog and viewer.suggestions_dialog.buttons[1][1].text
+		H.check("the list for a phrase starts with the entry the page shows", shown == "Óbidos" and listed == "Óbidos", string.format("%s / %s", shown, tostring(listed)))
+		if viewer.suggestions_dialog then
+			UIManager:close(viewer.suggestions_dialog)
+		end
+
+		viewer:goToWord(MISSING)
+		local first = viewer.first
+		viewer:showSuggestions()
+		if viewer.suggestions_dialog then
+			UIManager:close(viewer.suggestions_dialog)
+		end
+		H.check("closing the list without choosing leaves the page as it was", viewer.suggestions_dialog == nil and viewer.miss_notice ~= nil and viewer.first == first)
+		viewer:onClose()
+	end)
+
+	-- ---- no entry ---------------------------------------------------------------
 	H.step(1, function()
 		viewer = H.newViewer(fixture, "livro")
 		UIManager:show(viewer)

@@ -9,6 +9,7 @@ reading history, the "last book" setting, statistics or a sidecar folder.
 
 local BD = require("ui/bidi")
 local Blitbuffer = require("ffi/blitbuffer")
+local ButtonDialog = require("ui/widget/buttondialog")
 local ButtonTable = require("ui/widget/buttontable")
 local Device = require("device")
 local Event = require("ui/event")
@@ -129,8 +130,7 @@ local DictionaryExplorerViewer = InputContainer:extend({
 	position = 0, -- 0-based number of the entry to open on (it ends up in the middle of the page, highlighted)
 	side_margins = nil, -- { left =, right = } in pixels; defaults to a small margin
 	ui = nil, -- the ReaderUI (or FileManager) the viewer was opened from; only used to reach the vocabulary builder
-	missed_word = nil, -- the word asked for, when `position` is only the closest entry to it
-	start_word = nil, -- the first word of the trail, when not the entry's own (a word of the .syn leading to it)
+	lookup = nil, -- what StarDict:resolve() said about the word `position` was found for, if one was
 	covers_fullscreen = true,
 })
 
@@ -168,9 +168,12 @@ function DictionaryExplorerViewer:init()
 	end
 	-- The words walked through with "Go to word", starting with the one the
 	-- viewer opened on; the breadcrumb only shows once there are two.
-	self.trail = { { word = self.start_word or self.dictionary:getEntry(self.position).word, position = self.position } }
+	self.trail = { { word = self:_trailWord(self.lookup, self.position), position = self.position } }
 	self.trail_index = 1
-	self.miss = self.missed_word
+	self.miss = self:_missFrom(self.lookup)
+	if self.miss then
+		self.miss.crumb = 1
+	end
 	self:showAround(self.position)
 end
 
@@ -635,27 +638,63 @@ end
 -- so in a line of its own above the entries. It is part of the page, drawn
 -- with it, so it costs no refresh of its own (a notification would cost two:
 -- showing it and taking it away); the next page or word takes it away.
+-- `text` cut to MISS_NOTICE_MAX_CHARS characters.
+local function cutText(text)
+	local characters = 0
+	for position in text:gmatch("()[%z\1-\127\194-\244]") do
+		characters = characters + 1
+		if characters > MISS_NOTICE_MAX_CHARS then
+			return text:sub(1, position - 1) .. "…"
+		end
+	end
+	return text
+end
+
+-- The word the trail shows for a word that was looked up: the word asked for
+-- when it only leads to the entry (through the .syn) or has none at all, the
+-- entry's own otherwise.
+function DictionaryExplorerViewer:_trailWord(lookup, position)
+	if lookup and lookup.synonym then
+		return lookup.synonym
+	end
+	if lookup and lookup.kind == "closest" then
+		return lookup.word
+	end
+	return self.dictionary:getEntry(position).word
+end
+
+-- What the page says about a word that has no entry of its own (nil when it
+-- has). `crumb` is set to the trail item the word got, if it got one.
+function DictionaryExplorerViewer:_missFrom(lookup)
+	if lookup and lookup.kind ~= "exact" then
+		return {
+			word = lookup.word,
+			shown = lookup.kind == "accent" and self.dictionary:getEntry(lookup.position).word or nil,
+		}
+	end
+end
+
 function DictionaryExplorerViewer:_getMissNotice()
-	if not self.miss then
+	local miss = self.miss
+	if not miss then
 		return nil
 	end
+	local key = miss.word .. "\0" .. (miss.shown or "")
 	local cached = self._miss_notice
-	if cached and cached.word == self.miss then
+	if cached and cached.key == key then
 		return cached.widget
 	end
 	if cached then
 		cached.widget:free()
 	end
 	local margins = self.side_margins
-	local word = self.miss
-	local characters = 0
-	for position in word:gmatch("()[%z\1-\127\194-\244]") do
-		characters = characters + 1
-		if characters > MISS_NOTICE_MAX_CHARS then
-			word = word:sub(1, position - 1) .. "…"
-			break
-		end
+	local text
+	if miss.shown then
+		text = T(_("No entry for “%1”. Showing “%2”."), cutText(miss.word), cutText(miss.shown))
+	else
+		text = T(_("No entry for “%1”. Showing the closest one."), cutText(miss.word))
 	end
+	text = text .. " " .. _("Tap here for suggestions.")
 	local face = Font:getFace("NotoSans-Italic.ttf", 16)
 	local line_px = math.floor((1 + TextBoxWidget.line_height) * face.size + 0.5)
 	local widget = VerticalGroup:new({
@@ -664,7 +703,7 @@ function DictionaryExplorerViewer:_getMissNotice()
 		HorizontalGroup:new({
 			HorizontalSpan:new({ width = margins.left }),
 			TextBoxWidget:new({
-				text = T(_("No entry for “%1”. Showing the closest one."), word),
+				text = text,
 				face = face,
 				width = self.dimen.w - margins.left - margins.right,
 				height = MISS_NOTICE_MAX_LINES * line_px,
@@ -673,8 +712,77 @@ function DictionaryExplorerViewer:_getMissNotice()
 			}),
 		}),
 	})
-	self._miss_notice = { word = self.miss, widget = widget }
+	self._miss_notice = { key = key, widget = widget }
 	return widget
+end
+
+-- Whether a point is on the notice: between what is above it and the entries.
+function DictionaryExplorerViewer:_isOnMissNotice(pos)
+	local notice, area = self.miss_notice, self.html_widget and self.html_widget.dimen
+	if not (notice and area) then
+		return false
+	end
+	local top = area.y - Screen:scaleBySize(GAP_BELOW_RULE) - notice:getSize().h
+	return pos.y >= top and pos.y < area.y
+end
+
+--- Offers, in a list, the entries a word with no entry may have been meant
+-- for: its accented spellings, then the entries around where it would be.
+-- The list refreshes only its own area; choosing an entry redraws the page
+-- once, with the list gone.
+function DictionaryExplorerViewer:showSuggestions()
+	local miss = self.miss
+	if not miss or self.suggestions_dialog then
+		return
+	end
+	local rows = {}
+	for _index, position in ipairs(self.dictionary:suggest(miss.word)) do
+		rows[#rows + 1] = {
+			{
+				text = self.dictionary:getEntry(position).word,
+				callback = function()
+					self:_chooseSuggestion(position)
+				end,
+			},
+		}
+	end
+	if #rows == 0 then
+		return
+	end
+	local dialog = ButtonDialog:new({
+		title = T(_("Suggestions for “%1”"), cutText(miss.word)),
+		title_align = "center",
+		buttons = rows,
+	})
+	-- Closing it clears its area without the flash ButtonDialog uses, and
+	-- nothing at all when an entry was chosen: the new page covers it.
+	dialog.onCloseWidget = function(this)
+		self.suggestions_dialog = nil
+		if not self._choosing_suggestion then
+			UIManager:setDirty(nil, function()
+				return "ui", this.movable.dimen
+			end)
+		end
+	end
+	self.suggestions_dialog = dialog
+	UIManager:show(dialog)
+end
+
+function DictionaryExplorerViewer:_chooseSuggestion(position)
+	if self.suggestions_dialog then
+		self._choosing_suggestion = true
+		UIManager:close(self.suggestions_dialog)
+		self._choosing_suggestion = nil
+	end
+	-- The chosen entry takes the place of the word that had none in the trail.
+	local miss, word = self.miss, self.dictionary:getEntry(position).word
+	self.miss = nil
+	if miss and miss.crumb == self.trail_index then
+		self.trail[self.trail_index] = { word = word, position = position }
+	else
+		self:_pushTrail(word, position)
+	end
+	self:showAround(position)
 end
 
 -- Puts a finished page on screen: title bar and buttons for the range that
@@ -904,9 +1012,11 @@ end
 -- Adds a word to the trail. Going somewhere new after having stepped back
 -- along the trail replaces whatever came after that point, like a browser's
 -- history does.
+-- @treturn bool whether the word was added (it isn't when it is the entry the
+-- trail is on already)
 function DictionaryExplorerViewer:_pushTrail(word, position)
 	if self.trail[self.trail_index].position == position then
-		return
+		return false
 	end
 	for index = #self.trail, self.trail_index + 1, -1 do
 		self.trail[index] = nil
@@ -914,6 +1024,7 @@ function DictionaryExplorerViewer:_pushTrail(word, position)
 	table.insert(self.trail, { word = word, position = position })
 	self.trail_index = #self.trail
 	self.crumb_end = nil -- show the latest words again
+	return true
 end
 
 --- Goes to a word of the trail, leaving the trail as it is.
@@ -990,12 +1101,12 @@ function DictionaryExplorerViewer:goToWord(word)
 	if word == "" then
 		return
 	end
-	local position, exact, synonym = self.dictionary:locateText(word)
-	self.miss = not exact and word or nil -- said on the page itself, see _getMissNotice
-	-- The trail keeps the word that was asked for when it only leads to the
-	-- entry ("abomined", through the .syn, to "abomine").
-	self:_pushTrail(synonym or (exact and self.dictionary:getEntry(position).word) or word, position)
-	self:showAround(position)
+	local lookup = self.dictionary:resolve(word)
+	self.miss = self:_missFrom(lookup) -- said on the page itself, see _getMissNotice
+	if self:_pushTrail(self:_trailWord(lookup, lookup.position), lookup.position) and self.miss then
+		self.miss.crumb = self.trail_index -- the crumb a suggestion will take the place of
+	end
+	self:showAround(lookup.position)
 end
 
 -- Un-highlights the text the user selected.
@@ -1269,6 +1380,10 @@ end
 -- it can scroll for itself; the ones it leaves alone, and those in the side
 -- margins, get here.
 function DictionaryExplorerViewer:onTap(_arg, ges)
+	if self:_isOnMissNotice(ges.pos) then
+		self:showSuggestions()
+		return true
+	end
 	if not self:_isInTextBand(ges.pos) then
 		return false
 	end
@@ -1299,6 +1414,9 @@ function DictionaryExplorerViewer:onClose()
 end
 
 function DictionaryExplorerViewer:onCloseWidget()
+	if self.suggestions_dialog then
+		UIManager:close(self.suggestions_dialog)
+	end
 	self:_freeContent()
 	if self._miss_notice then
 		self._miss_notice.widget:free()

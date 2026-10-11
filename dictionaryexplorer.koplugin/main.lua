@@ -25,7 +25,7 @@ local Dock = require("modules/dock")
 local StarDict = require("modules/stardict")
 local Viewer = require("modules/viewer")
 
-local PLUGIN_VERSION = "v1.2.0"
+local PLUGIN_VERSION = "v1.3.0"
 
 local SETTING_START_DICTIONARY = "dictionaryexplorer_start_dictionary" -- a dictionary name; unset means automatic
 local ACTION_OPEN_AT_WORD = "dictionaryexplorer_open_at_word"
@@ -233,22 +233,19 @@ end
 
 function DictionaryExplorer:openAt(dictionary, word)
 	self:withIndex(dictionary, function()
-		local position, exact, synonym = dictionary:locateText(word)
-		self:showViewer(dictionary, position, not exact and word or nil, synonym)
+		self:showViewer(dictionary, dictionary:resolve(word))
 	end)
 end
 
---- Opens the viewer at entry `position`. `missed_word`, when given, is the word
--- that was asked for and has no entry: the viewer says so above the entries.
--- `synonym`, when given, is the word asked for when it only leads to the entry
--- (through the .syn): the trail starts with it, as Go to word would.
-function DictionaryExplorer:showViewer(dictionary, position, missed_word, synonym)
+--- Opens the viewer at what StarDict:resolve() found for a word. When the word
+-- has no entry the viewer says so above the entries, and when it only leads to
+-- one (through the .syn) the trail starts with it, as Go to word's would.
+function DictionaryExplorer:showViewer(dictionary, lookup)
 	UIManager:show(Viewer:new({
 		ui = self.ui, -- for the vocabulary builder
 		dictionary = dictionary,
-		position = position,
-		missed_word = missed_word,
-		start_word = synonym,
+		position = lookup.position,
+		lookup = lookup,
 		side_margins = self:getSideMargins(),
 	}))
 end
@@ -306,8 +303,7 @@ function DictionaryExplorer:openWord(name, word, hint)
 		return false
 	end
 	self:withIndex(dictionary, function()
-		local position, exact, synonym = dictionary:locate(word, hint)
-		self:showViewer(dictionary, position, not exact and word or nil, synonym)
+		self:showViewer(dictionary, dictionary:resolve(word, hint))
 	end)
 	return true
 end

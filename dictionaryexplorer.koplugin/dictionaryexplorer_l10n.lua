@@ -49,6 +49,9 @@ local pt = {
 	["Could not open the dictionary: its files look incomplete. Copying it again may help."] = "Não foi possível abrir o dicionário: os arquivos parecem incompletos. Copiá-lo de novo pode resolver.",
 	["Could not read this entry."] = "Não foi possível ler este verbete.",
 	["No entry for “%1”. Showing the closest one."] = "Não há verbete para “%1”. Mostrando o mais próximo.",
+	["No entry for “%1”. Showing “%2”."] = "Não há verbete para “%1”. Mostrando “%2”.",
+	["Tap here for suggestions."] = "Toque aqui para ver sugestões.",
+	["Suggestions for “%1”"] = "Sugestões para “%1”",
 }
 
 return setmetatable({

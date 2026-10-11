@@ -35,6 +35,11 @@ local INDEX_READ_CHUNK = 256 * 1024
 local INDEX_CACHE_VERSION = 4 -- 3: definitions_end, so a cut .dict is caught on load too; 4: the .syn
 local MAX_HOMOGRAPHS = 64
 local MAX_SCAN_ENTRIES = PAGE_SIZE * 2
+-- Looking for the accented spellings of a word ("acao" -> "ação") walks the
+-- index letter by letter: at most this many prefix lookups, and spellings.
+local MAX_ACCENT_LOOKUPS = 300
+local MAX_ACCENT_SPELLINGS = 8
+local SUGGESTIONS = 10 -- at most, in suggest()
 
 local SUPPORTED_TYPES = { m = true, h = true, x = true }
 
@@ -698,6 +703,173 @@ function StarDict:locateText(text)
 		end
 	end
 	return position, exact, synonym
+end
+
+-- ---------------------------------------------------------------------------
+-- Accents, and what to do when a word has no entry
+-- ---------------------------------------------------------------------------
+
+-- The accented lowercase letters of the Latin-1 range, by their plain letter.
+-- All are two bytes, the first one \195.
+local ACCENTED = {
+	a = { "á", "à", "â", "ã", "ä", "å" },
+	e = { "é", "è", "ê", "ë" },
+	i = { "í", "ì", "î", "ï" },
+	o = { "ó", "ò", "ô", "õ", "ö" },
+	u = { "ú", "ù", "û", "ü" },
+	c = { "ç" },
+	n = { "ñ" },
+	y = { "ý", "ÿ" },
+}
+local PLAIN = {}
+for plain, accented in pairs(ACCENTED) do
+	for _index, letter in ipairs(accented) do
+		PLAIN[letter] = plain
+	end
+end
+
+--- The word without its accents, in lowercase ("Ação" -> "acao").
+function StarDict.plainSpelling(word)
+	return (changeCase(word, true):gsub("\195[\128-\191]", function(letter)
+		return PLAIN[letter] or letter
+	end))
+end
+
+local function splitCharacters(text)
+	local characters = {}
+	for character in text:gmatch("[%z\1-\127\194-\244][\128-\191]*") do
+		characters[#characters + 1] = character
+	end
+	return characters
+end
+
+-- Whether some key starts with `prefix`, under one sort order. In the
+-- StarDict order the keys that differ only in ASCII case are mixed, so a few
+-- are looked at.
+function StarDict:_hasPrefixIn(prefix, compare)
+	local position = lowerBound(self.idx, prefix, compare)
+	local folded = foldAscii(prefix)
+	for candidate = position, math.min(position + MAX_HOMOGRAPHS, self.count) - 1 do
+		local record = getRecord(self.idx, candidate)
+		local start = record and record.word:sub(1, #prefix)
+		if start == prefix then
+			return true
+		end
+		if not start or compare == compareBytes or foldAscii(start) ~= folded then
+			return false
+		end
+	end
+	return false
+end
+
+-- Whether some key starts with `prefix`. Which order a dictionary is really
+-- sorted in can't be told reliably from its keys (a small one in byte order
+-- may look like it is in the StarDict order), so both are tried, as
+-- findExact() does.
+function StarDict:_hasPrefix(prefix)
+	return self:_hasPrefixIn(prefix, compareFolded) or self:_hasPrefixIn(prefix, compareBytes)
+end
+
+--- The entries spelled like `word` but for accents ("acao" finds "ação",
+-- "pessego" "pêssego", "evora" "Évora"), found by walking the index letter by
+-- letter and following only the prefixes some key has.
+-- @treturn table positions of the entries, in the order found
+function StarDict:findAccentedSpellings(word)
+	local characters = splitCharacters(StarDict.plainSpelling(word))
+	local found, seen = {}, {}
+	local lookups = 0
+	if #characters == 0 then
+		return found
+	end
+
+	local function walk(index, prefix)
+		if #found >= MAX_ACCENT_SPELLINGS or lookups >= MAX_ACCENT_LOOKUPS then
+			return
+		end
+		if index > #characters then
+			local position, record = findExact(self.idx, prefix)
+			if record and not seen[position] then
+				seen[position] = true
+				found[#found + 1] = position
+			end
+			return
+		end
+		local plain = characters[index]
+		local options = { plain }
+		for _index, letter in ipairs(ACCENTED[plain] or {}) do
+			options[#options + 1] = letter
+		end
+		if index == 1 then
+			-- Names: "evora" for "Évora".
+			for option_index = 1, #options do
+				local capital = changeCase(options[option_index], false)
+				if capital ~= options[option_index] then
+					options[#options + 1] = capital
+				end
+			end
+		end
+		for _index, option in ipairs(options) do
+			local candidate = prefix .. option
+			lookups = lookups + 1
+			if self:_hasPrefix(candidate) then
+				walk(index + 1, candidate)
+			end
+		end
+	end
+	walk(1, "")
+	return found
+end
+
+--- What a text leads to: its entry, or the next best thing.
+-- @string text what the user typed, selected or tapped
+-- @string hint optional definition text, to pick between homographs
+-- @treturn table { position = entry to show, kind = "exact" (an entry, also
+-- through another case or the .syn), "accent" (no entry, but one spelled the
+-- same but for accents) or "closest" (no entry: the closest one), word = the
+-- text, synonym = the word of the .syn it went through, if any, spellings =
+-- the positions of every accented spelling found ("accent" only) }
+function StarDict:resolve(text, hint)
+	local position, exact, synonym = self:locate(text, hint)
+	if exact then
+		return { position = position, kind = "exact", word = text, synonym = synonym }
+	end
+	-- A phrase that is not an entry: its first word.
+	local first_word = text:match("^(%S+)%s")
+	if first_word then
+		local first_position, first_exact, first_synonym = self:locate(first_word)
+		if first_exact then
+			return { position = first_position, kind = "exact", word = text, synonym = first_synonym }
+		end
+	end
+	for _index, candidate in ipairs({ text, first_word }) do
+		local spellings = self:findAccentedSpellings(candidate)
+		if #spellings > 0 then
+			return { position = spellings[1], kind = "accent", word = text, spellings = spellings }
+		end
+	end
+	return { position = position, kind = "closest", word = text }
+end
+
+--- Entries to offer for a text that has no entry of its own: the accented
+-- spellings resolve() finds for it (of the text, or of its first word), then
+-- the entries around where the text would be.
+-- @treturn table positions, at most SUGGESTIONS of them
+function StarDict:suggest(text)
+	local suggestions, seen = {}, {}
+	local function add(position)
+		if position and position >= 0 and position < self.count and not seen[position] and #suggestions < SUGGESTIONS then
+			seen[position] = true
+			suggestions[#suggestions + 1] = position
+		end
+	end
+	for _index, position in ipairs(self:resolve(text).spellings or {}) do
+		add(position)
+	end
+	local closest = self:locate(text) -- the same closest entry the viewer shows
+	for position = closest - 3, closest + SUGGESTIONS do
+		add(position)
+	end
+	return suggestions
 end
 
 --- Reduces a definition to its first letters and digits, so text that went
