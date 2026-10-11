@@ -67,6 +67,42 @@ end
 
 local COMPARATORS = { compareFolded, compareBytes }
 
+-- Case mapping for any letter, not only A-Z ("Árvore" -> "árvore"), through
+-- the utf8proc KOReader ships. Without it, only ASCII letters change case.
+local Utf8Proc
+do
+	local ok, module = pcall(require, "ffi/utf8proc")
+	Utf8Proc = ok and module or nil
+end
+
+local function changeCase(text, lower)
+	if Utf8Proc then
+		local ok, cased = pcall(Utf8Proc.cased_dumb, text, lower)
+		if ok and cased then
+			return cased
+		end
+	end
+	return lower and foldAscii(text) or text:upper()
+end
+
+--- The other casings a key may be stored under: all lowercase (a word at the
+-- start of a sentence), capitalized (a name typed in lowercase) and all
+-- uppercase (an abbreviation), each once and none the same as `word`.
+local function caseVariants(word)
+	local lowered = changeCase(word, true)
+	local first, rest = lowered:match("^([%z\1-\127\194-\244][\128-\191]*)(.*)$")
+	local candidates = { lowered, first and (changeCase(first, false) .. rest), changeCase(word, false) }
+	local variants, seen = {}, { [word] = true }
+	for index = 1, 3 do
+		local candidate = candidates[index]
+		if candidate and not seen[candidate] then
+			seen[candidate] = true
+			variants[#variants + 1] = candidate
+		end
+	end
+	return variants
+end
+
 local function readFile(path)
 	local file = io.open(path, "rb")
 	if not file then
@@ -461,12 +497,16 @@ end
 -- @treturn int position of the entry, or of the closest one when there is none
 -- @treturn bool true when an entry with exactly that key exists
 function StarDict:locate(word, hint)
-	-- Typed input may differ in case from the key ("Casa" vs "casa").
+	-- Typed or selected text may differ in case from the key ("Casa" or
+	-- "CASA" for "casa", "Árvore" for "árvore", "óbidos" for "Óbidos"). The
+	-- text as given wins when it is a key itself.
 	local position, entry = self:_findExact(word)
 	if not entry then
-		local lowered = foldAscii(word)
-		if lowered ~= word then
-			position, entry = self:_findExact(lowered)
+		for _index, variant in ipairs(caseVariants(word)) do
+			position, entry = self:_findExact(variant)
+			if entry then
+				break
+			end
 		end
 	end
 	if not entry then

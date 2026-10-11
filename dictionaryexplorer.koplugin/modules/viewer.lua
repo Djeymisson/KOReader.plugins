@@ -26,6 +26,7 @@ local LineWidget = require("ui/widget/linewidget")
 local Notification = require("ui/widget/notification")
 local ScrollHtmlWidget = require("ui/widget/scrollhtmlwidget")
 local Size = require("ui/size")
+local TextBoxWidget = require("ui/widget/textboxwidget")
 local TextWidget = require("ui/widget/textwidget")
 local TitleBar = require("ui/widget/titlebar")
 local UIManager = require("ui/uimanager")
@@ -73,6 +74,11 @@ local HIGHLIGHT_CLASS = "dictionaryexplorer-highlight"
 local FILL_TARGET = 0.92 -- stop growing a page once it is this full
 local AIM_AT = 0.95 -- how full the first guess for a page tries to make it
 local SKIP_MARGIN = 1 -- only entries predicted to fit in the room left are tried (1.2 saved no whitespace and cost more layouts)
+-- The "no entry" line: the word asked for is cut to this many characters, and
+-- the line to this many lines, so a long pasted phrase can't crowd out the
+-- entries.
+local MISS_NOTICE_MAX_CHARS = 60
+local MISS_NOTICE_MAX_LINES = 2
 
 -- What the viewer has learnt about how tall entries are, for the session and
 -- per dictionary, font size and text width.
@@ -123,6 +129,7 @@ local DictionaryExplorerViewer = InputContainer:extend({
 	position = 0, -- 0-based number of the entry to open on (it ends up in the middle of the page, highlighted)
 	side_margins = nil, -- { left =, right = } in pixels; defaults to a small margin
 	ui = nil, -- the ReaderUI (or FileManager) the viewer was opened from; only used to reach the vocabulary builder
+	missed_word = nil, -- the word asked for, when `position` is only the closest entry to it
 	covers_fullscreen = true,
 })
 
@@ -162,6 +169,7 @@ function DictionaryExplorerViewer:init()
 	-- viewer opened on; the breadcrumb only shows once there are two.
 	self.trail = { { word = self.dictionary:getEntry(self.position).word, position = self.position } }
 	self.trail_index = 1
+	self.miss = self.missed_word
 	self:showAround(self.position)
 end
 
@@ -615,7 +623,57 @@ function DictionaryExplorerViewer:_getContentHeight()
 	if #self.trail >= 2 then
 		height = height - Breadcrumb.getHeight()
 	end
+	local notice = self:_getMissNotice()
+	if notice then
+		height = height - notice:getSize().h
+	end
 	return height
+end
+
+-- When the word asked for has no entry, the page around the closest one says
+-- so in a line of its own above the entries. It is part of the page, drawn
+-- with it, so it costs no refresh of its own (a notification would cost two:
+-- showing it and taking it away); the next page or word takes it away.
+function DictionaryExplorerViewer:_getMissNotice()
+	if not self.miss then
+		return nil
+	end
+	local cached = self._miss_notice
+	if cached and cached.word == self.miss then
+		return cached.widget
+	end
+	if cached then
+		cached.widget:free()
+	end
+	local margins = self.side_margins
+	local word = self.miss
+	local characters = 0
+	for position in word:gmatch("()[%z\1-\127\194-\244]") do
+		characters = characters + 1
+		if characters > MISS_NOTICE_MAX_CHARS then
+			word = word:sub(1, position - 1) .. "…"
+			break
+		end
+	end
+	local face = Font:getFace("NotoSans-Italic.ttf", 16)
+	local line_px = math.floor((1 + TextBoxWidget.line_height) * face.size + 0.5)
+	local widget = VerticalGroup:new({
+		align = "left",
+		VerticalSpan:new({ width = Screen:scaleBySize(GAP_BELOW_RULE) }),
+		HorizontalGroup:new({
+			HorizontalSpan:new({ width = margins.left }),
+			TextBoxWidget:new({
+				text = T(_("No entry for “%1”. Showing the closest one."), word),
+				face = face,
+				width = self.dimen.w - margins.left - margins.right,
+				height = MISS_NOTICE_MAX_LINES * line_px,
+				height_adjust = true, -- a single line takes one line's height
+				height_overflow_show_ellipsis = true,
+			}),
+		}),
+	})
+	self._miss_notice = { word = self.miss, widget = widget }
+	return widget
 end
 
 -- Puts a finished page on screen: title bar and buttons for the range that
@@ -635,6 +693,10 @@ function DictionaryExplorerViewer:_installPage(html_widget, first, last, at_end)
 	if #self.trail >= 2 then
 		self.breadcrumb = self:_buildBreadcrumb()
 		table.insert(children, self.breadcrumb)
+	end
+	self.miss_notice = self:_getMissNotice()
+	if self.miss_notice then
+		table.insert(children, self.miss_notice)
 	end
 	table.insert(children, VerticalSpan:new({ width = Screen:scaleBySize(GAP_BELOW_RULE) }))
 	table.insert(children, HorizontalGroup:new({
@@ -664,6 +726,7 @@ end
 -- @bool at_end scroll to the end of the page (used when paging back by scrolling)
 function DictionaryExplorerViewer:showPage(first, last, keep_last, at_end)
 	self:_freeContent()
+	self.miss = nil -- turning the page leaves the missed word behind
 
 	local range, max_entries
 	if keep_last then
@@ -856,6 +919,7 @@ end
 function DictionaryExplorerViewer:goToCrumb(index)
 	local crumb = self.trail[index]
 	if crumb then
+		self.miss = nil
 		self.trail_index = index
 		self:showAround(crumb.position)
 	end
@@ -926,9 +990,7 @@ function DictionaryExplorerViewer:goToWord(word)
 		return
 	end
 	local position, exact = self.dictionary:locateText(word)
-	if not exact then
-		Notification:notify(T(_("No entry for “%1”. Showing the closest one."), word))
-	end
+	self.miss = not exact and word or nil -- said on the page itself, see _getMissNotice
 	self:_pushTrail(exact and self.dictionary:getEntry(position).word or word, position)
 	self:showAround(position)
 end
@@ -1235,6 +1297,10 @@ end
 
 function DictionaryExplorerViewer:onCloseWidget()
 	self:_freeContent()
+	if self._miss_notice then
+		self._miss_notice.widget:free()
+		self._miss_notice = nil
+	end
 	self.dictionary:releaseCaches()
 end
 

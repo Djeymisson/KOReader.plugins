@@ -259,7 +259,7 @@ end
 -- for the lookups (case, accents, homographs).
 local TEXT_WORDS = {
 	"casa", "Casa", "casaco", "casado", "livro", "amor", "correr", "constitucionalmente", "responsabilidade",
-	"gato", "mesa", "extraordinariamente", "zebra", "árvore", "Árvore", "ação", "ética", "Ética", "pêssego",
+	"gato", "mesa", "extraordinariamente", "zebra", "árvore", "Árvore", "ação", "ética", "Ética", "pêssego", "Óbidos", "ONU",
 }
 
 local function textDictionary()

@@ -46,7 +46,8 @@ Pass or fail (`check` runs all of them):
 | `contract` | The interface a dictionary object must honour for the viewer to work with it (entries with a word and a size known without reading, exact `locate`, `readDefinition` returning `size` bytes, nesting reading sessions, safe `releaseCaches`), on every dictionary found. **This is what a new dictionary format has to pass.** |
 | `regression` | The viewer's behaviour with real gestures: opening centred and highlighted, paging by swipe / key / tap, contiguity in both directions, the breadcrumb and the `‹` `›` buttons, the selection dock with Go to word and Copy, the dictzip and plain formats, the three text types (`m`, `h`, `x`), the Dispatcher action, and the caches being released. |
 | `budgets` | 150 page turns per dictionary against limits on counts that do not depend on the machine: layouts per turn, files opened, definitions read, how full pages are, and no entry skipped or repeated. See below. |
-| `refresh` | Screen refreshes per action, with the mode and area of each: one for a page turn, Go to word or scrolling the breadcrumb, and none for an action that changes nothing (swiping or scrolling past either end of the dictionary). On e-ink that is what costs the most battery. Whether partial refreshes leave ghosting can only be judged on a device. |
+| `lookup` | Finding the entry for a word, on Fixture Text (and the Portuguese dictionary when installed): keys in another case, for any letter (`ÁRVORE` → `árvore`, `óbidos` → `Óbidos`, `onu` → `ONU`), the text as given winning when it is a key; and a word with no entry: the closest entry, with a line on the page saying so (no notification on top), gone with the next page, word or crumb, also when opening from the menu or another plugin. |
+| `refresh` | Screen refreshes per action, with the mode and area of each: one for a page turn, Go to word (also with no entry, said on the page) or scrolling the breadcrumb, and none for an action that changes nothing (swiping or scrolling past either end of the dictionary). On e-ink that is what costs the most battery. Notifications from every source are shown while it measures, so that one an action asks for is counted (KOReader's defaults would hide it). Whether partial refreshes leave ghosting can only be judged on a device. |
 
 Diagnostics (they measure and explain, and never fail):
 
@@ -124,7 +125,7 @@ deterministic, so every run sees the same files.
 
 | Fixture | Shape | What it is for |
 |---|---|---|
-| Fixture Text | `m`, `.dict`, StarDict order, `.syn` | stands in for the Portuguese dictionary: the words the suites walk through, homographs (`banco`), words that differ only in case, also with accented capitals (`árvore` / `Árvore`, `ética` / `Ética`), and entries longer than a screen |
+| Fixture Text | `m`, `.dict`, StarDict order, `.syn` | stands in for the Portuguese dictionary: the words the suites walk through, homographs (`banco`), words that differ only in case, also with accented capitals (`árvore` / `Árvore`, `ética` / `Ética`), keys only in capitals (`Óbidos`, `ONU`), and entries longer than a screen |
 | Fixture HTML | `h`, `.dict.dz` | the dictzip path (small 2 KB chunks, so entries span chunks) and links between entries |
 | Fixture XDXF | `x`, `.dict` | the XDXF-lite text of the Dicionário Aberto |
 | Fixture Bytes | `m`, `.dict`, byte order | capitalized words before all the lowercase ones, like Priberam's |

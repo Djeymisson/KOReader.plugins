@@ -15,6 +15,7 @@ local EXPECTED = {
 	["turning a page"] = 1,
 	["Go to word (the breadcrumb appears)"] = 1,
 	["Go to word (again)"] = 1,
+	["Go to word with no entry (said on the page)"] = 1,
 	["scrolling the breadcrumb"] = 1,
 	["closing the viewer"] = 2,
 	-- Nothing changes, so nothing may be redrawn.
@@ -35,6 +36,15 @@ return function(H, ui)
 		H.finish()
 		return
 	end
+
+	-- KOReader's default settings hide notifications from "other sources" (and
+	-- with no gesture behind it, a notification has no source at all), which
+	-- would hide a notification an action asks for, and its refreshes: show
+	-- them all here, so that such a notification is counted.
+	local Notification = require("ui/widget/notification")
+	local notification_mask = G_reader_settings:readSetting("notification_sources_to_show_mask")
+	G_reader_settings:saveSetting("notification_sources_to_show_mask", Notification.SOURCE_ALL)
+	Notification:resetNotifySource()
 
 	local recording, calls = false, {}
 	local set_dirty = UIManager.setDirty
@@ -69,6 +79,9 @@ return function(H, ui)
 		measure("Go to word (again)", function()
 			viewer:goToWord(profile.walk[3])
 		end)
+		measure("Go to word with no entry (said on the page)", function()
+			viewer:goToWord("qqqzzzz")
+		end)
 		measure("scrolling the breadcrumb", function()
 			viewer.crumb_end = 1
 			viewer:_refreshBreadcrumb()
@@ -100,6 +113,7 @@ return function(H, ui)
 			viewer:onClose()
 		end)
 		UIManager.setDirty = set_dirty
+		G_reader_settings:saveSetting("notification_sources_to_show_mask", notification_mask)
 	end)
 
 	H.finish()

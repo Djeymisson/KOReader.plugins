@@ -13,7 +13,6 @@ from a gesture, profile or Quick Dock button, through a Dispatcher action.
 local Dispatcher = require("dispatcher")
 local InfoMessage = require("ui/widget/infomessage")
 local InputDialog = require("ui/widget/inputdialog")
-local Notification = require("ui/widget/notification")
 local UIManager = require("ui/uimanager")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local logger = require("logger")
@@ -26,7 +25,7 @@ local Dock = require("modules/dock")
 local StarDict = require("modules/stardict")
 local Viewer = require("modules/viewer")
 
-local PLUGIN_VERSION = "v1.0.1"
+local PLUGIN_VERSION = "v1.1.0"
 
 local SETTING_START_DICTIONARY = "dictionaryexplorer_start_dictionary" -- a dictionary name; unset means automatic
 local ACTION_OPEN_AT_WORD = "dictionaryexplorer_open_at_word"
@@ -235,18 +234,18 @@ end
 function DictionaryExplorer:openAt(dictionary, word)
 	self:withIndex(dictionary, function()
 		local position, exact = dictionary:locateText(word)
-		if not exact then
-			Notification:notify(T(_("No entry for “%1”. Showing the closest one."), word))
-		end
-		self:showViewer(dictionary, position)
+		self:showViewer(dictionary, position, not exact and word or nil)
 	end)
 end
 
-function DictionaryExplorer:showViewer(dictionary, position)
+--- Opens the viewer at entry `position`. `missed_word`, when given, is the word
+-- that was asked for and has no entry: the viewer says so above the entries.
+function DictionaryExplorer:showViewer(dictionary, position, missed_word)
 	UIManager:show(Viewer:new({
 		ui = self.ui, -- for the vocabulary builder
 		dictionary = dictionary,
 		position = position,
+		missed_word = missed_word,
 		side_margins = self:getSideMargins(),
 	}))
 end
@@ -304,7 +303,8 @@ function DictionaryExplorer:openWord(name, word, hint)
 		return false
 	end
 	self:withIndex(dictionary, function()
-		self:showViewer(dictionary, (dictionary:locate(word, hint)))
+		local position, exact = dictionary:locate(word, hint)
+		self:showViewer(dictionary, position, not exact and word or nil)
 	end)
 	return true
 end
