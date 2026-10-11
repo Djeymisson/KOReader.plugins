@@ -7,9 +7,10 @@
 #
 # SUITE is the name of a file in suites/ (without .lua), "unit" for the tests
 # that need no KOReader, or "check" for everything that passes or fails
-# (unit, integrity, contract, lookup, resume, regression, refresh, budgets). See README.md for
-# what each does. The synthetic dictionaries of fixtures/ are always there, so
-# every suite runs even with no dictionary of your own.
+# (unit, integrity, contract, lookup, resume, switching, regression, refresh,
+# budgets). See README.md for what each does. The synthetic dictionaries of
+# fixtures/ are always there, so every suite runs even with no dictionary of
+# your own.
 #
 # Options:
 #   --koreader DIR   KOReader install to run (default: $KOREADER_DIR, or /usr/lib/koreader;
@@ -51,7 +52,7 @@ done
 expanded=""
 for suite in $SUITES; do
 	if [ "$suite" = check ]; then
-		expanded="$expanded unit integrity contract lookup resume regression refresh budgets"
+		expanded="$expanded unit integrity contract lookup resume switching regression refresh budgets"
 	else
 		expanded="$expanded $suite"
 	fi

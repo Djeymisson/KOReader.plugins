@@ -226,6 +226,24 @@ function H.trailText(viewer)
 	return table.concat(words, ">")
 end
 
+--- Taps the word `index` of the trail in the breadcrumb, with a real tap, if
+-- it is in view. The breadcrumb knows where it is once it is drawn.
+function H.tapCrumb(viewer, index)
+	local breadcrumb = viewer.breadcrumb
+	if not breadcrumb then
+		return false
+	end
+	UIManager:forceRePaint()
+	for _index, item in ipairs(breadcrumb.items or {}) do
+		if item.kind == "crumb" and item.index == index and item.hit_from then
+			local x = breadcrumb.dimen.x + breadcrumb.padding_h + (item.hit_from + item.hit_to) / 2
+			H.gesture("tap", x, breadcrumb.dimen.y + breadcrumb.dimen.h / 2)
+			return true
+		end
+	end
+	return false
+end
+
 --- The word shown in bold in the breadcrumb, if it is in view.
 function H.boldWord(viewer)
 	for _index, item in ipairs(viewer.breadcrumb.items) do

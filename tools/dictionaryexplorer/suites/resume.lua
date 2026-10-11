@@ -3,7 +3,8 @@ Continuing an exploration where it was left.
 
   saving          each page shown keeps where the exploration is, in the
                   settings (in memory: no file is written, nothing redrawn),
-                  per dictionary, with the latest 50 words of the trail
+                  with the latest 50 words of the trail; there is one
+                  exploration, the last one
   continuing      from the menu, the word dialog's Continue button or the
                   Dispatcher action: the dictionary explored last reopens on
                   the same page, with the same highlighted entry, trail and
@@ -18,7 +19,7 @@ local Dispatcher = require("dispatcher")
 
 return function(H, ui)
 	local UIManager = require("ui/uimanager")
-	local SETTING = "dictionaryexplorer_explorations"
+	local SETTING = "dictionaryexplorer_exploration"
 	local plugin = ui.dictionaryexplorer
 	local by = H.dictionaries().by
 	local fixture, html = by.fx, by.fh
@@ -87,14 +88,14 @@ return function(H, ui)
 		for _index, word in ipairs({ "amor", "correr", "gato", "mesa" }) do
 			viewer:goToWord(word)
 		end
-		viewer:goToPreviousWord() -- the current word is not the latest
+		viewer:goToCrumb(viewer.trail_index - 1) -- the current word is not the latest
 		viewer:showNext()
 		viewer:showNext()
 		rawset(io, "open", open)
 		G_reader_settings.flush = nil -- back to the class's
 		saved = snapshot(viewer)
 		local state = G_reader_settings:readSetting(SETTING)
-		H.check("each page keeps where the exploration is, without writing a file", write == 0 and state and state.last == fixture.name and state.by_dictionary[fixture.name].first == viewer.first, write .. " file(s) written")
+		H.check("each page keeps where the exploration is, without writing a file", write == 0 and state and state.dictionary == fixture.name and state.first == viewer.first, write .. " file(s) written")
 		close()
 	end)
 
@@ -146,7 +147,7 @@ return function(H, ui)
 		H.check("continuing opens the dictionary explored last", viewer and viewer.dictionary == html and viewer.first == first)
 		close()
 		local state = G_reader_settings:readSetting(SETTING)
-		H.check("and each dictionary keeps its own place", state.by_dictionary[fixture.name] ~= nil and state.by_dictionary[fixture.name].first == saved.first)
+		H.check("there is one exploration: the last one replaces the one before", state.dictionary == html.name and state.first == first)
 	end)
 
 	-- ---- long trails, changes, damage ------------------------------------------------------
@@ -159,7 +160,7 @@ return function(H, ui)
 		end
 		local latest = viewer.trail[#viewer.trail].word
 		close()
-		local state = G_reader_settings:readSetting(SETTING).by_dictionary[fixture.name]
+		local state = G_reader_settings:readSetting(SETTING)
 		H.check("the latest 50 words of the trail are kept", #state.trail == 50 and state.trail[50].word == latest and state.trail_index == 50)
 		plugin:continueExploring()
 		viewer = H.findViewer()
@@ -167,7 +168,7 @@ return function(H, ui)
 		close()
 
 		-- Saved from another version of the dictionary.
-		state = G_reader_settings:readSetting(SETTING).by_dictionary[fixture.name]
+		state = G_reader_settings:readSetting(SETTING)
 		state.count = state.count + 7
 		plugin:continueExploring()
 		viewer = H.findViewer()
@@ -179,7 +180,7 @@ return function(H, ui)
 		close()
 
 		-- Damaged.
-		state = G_reader_settings:readSetting(SETTING).by_dictionary[fixture.name]
+		state = G_reader_settings:readSetting(SETTING)
 		state.trail, state.first, state.word = "nonsense", "x", nil
 		local called, err = pcall(function()
 			plugin:continueExploring()

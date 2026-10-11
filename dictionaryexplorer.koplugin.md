@@ -1,4 +1,4 @@
-# Dictionary Explorer ![Version](https://img.shields.io/badge/version-v1.4.0-blue)
+# Dictionary Explorer ![Version](https://img.shields.io/badge/version-v1.5.0-blue)
 
 **Dictionary Explorer** adds a **Go to dictionary** button to KOReader's dictionary popup. It opens the dictionary at the word you looked up, in a full-screen viewer where you can keep paging through the neighbouring entries like a book, similar to the Kindle's "go to dictionary".
 
@@ -21,6 +21,7 @@ dictionaryexplorer.koplugin/
 ├── dictionaryexplorer_l10n.lua
 ├── icons/
 │   ├── add_word.svg
+│   ├── other_dictionary.svg
 │   └── remove_word.svg
 └── modules/
     ├── breadcrumb.lua
@@ -72,7 +73,7 @@ The left and right margins of the book you were reading are applied to the dicti
 
 ### The buttons at the bottom
 
-One row: **Go to word**, the only bold label, which takes all the width the other buttons leave, and a narrow **✕** that closes the viewer. Once you start walking through words, **‹** (back) and **›** (forward) join it on either side of **Go to word**, giving `‹ | Go to word | › | ✕` (see the breadcrumb below). There are no page buttons: pages turn by swiping left / right on the text, by tapping its left or right side (reaching the end of a page carries on into the next one), or with the page-turn keys.
+One row: **Go to word**, the only bold label, which takes all the width the other buttons leave, and a narrow **✕** that closes the viewer. There are no back and forward buttons (the breadcrumb is for that, see below), and no page buttons: pages turn by swiping left / right on the text, by tapping its left or right side (reaching the end of a page carries on into the next one), or with the page-turn keys.
 
 ### The breadcrumb
 
@@ -83,15 +84,26 @@ Once you start walking through the dictionary with **Go to word** (typed, from t
 - It uses the whole width of the page, with a rule above it that separates it from the entries and one below it that separates it from the buttons. Words that don't fit are replaced by `…`, and the latest word is always shown.
 - **Swipe right** on it to see the earlier words (swipe left to come back towards the latest). One word stays in view across each swipe, and tapping a `…` does the same. When a swipe reaches the first word of the trail, the rest of the line is filled with the words that come after it (`responder › aperto › socorro › arroba › pedaço › laranja › …`), so there is never room wasted before the closing `…`.
 - **Tap a word** to go to it. It becomes the bold one, and nothing else changes: the same words stay on screen, in the same order, so you can hop back and forth along your path. Which words fit is worked out with the bold width of every word, so bolding a different word never pushes another out of view.
-- The buttons **‹** and **›** of the bottom row are Back and Forward. They appear at the same moment as the breadcrumb. **‹** goes to the word before the one you are on, and **›**, after going back, to the word after it: one word at a time, without changing the breadcrumb, where only the bold word moves. If that word would leave the part of the breadcrumb on screen, the breadcrumb slides to keep it in view. **‹** is dimmed on the first word of the trail and **›** on the last.
-- Going to a *new* word after stepping back replaces whatever came after the word you were on, like a browser's history: with `casa › livro › amor` and you on `livro`, looking up `zebra` gives `casa › livro › zebra`.
-- Paging with the arrows, swiping or scrolling does not change it. The first word is the one the viewer opened on, and the breadcrumb only appears once there are two words. While it is shown, pages have one line less of room for entries.
+- Going to a *new* word after going back replaces whatever came after the word you were on, like a browser's history: with `casa › livro › amor` and you on `livro`, looking up `zebra` gives `casa › livro › zebra`.
+- Paging, swiping or scrolling does not change it. The first word is the one the viewer opened on, and the breadcrumb only appears once there are two words. While it is shown, pages have one line less of room for entries.
+- It goes through dictionaries: a word gone to in another dictionary (see below) is a word of the breadcrumb like any other, and tapping it takes the viewer back to its dictionary.
+
+### Other dictionaries
+
+The words of a definition are often in another language than its headword: `house` in the English–Portuguese dictionary is explained with `casa`, whose meaning is in the Portuguese dictionary. **Go to word** looks in the dictionary on screen only, so for those there is a button of its own.
+
+- Select the word: the dock has, last, an icon (`icons/other_dictionary.svg`; hold it to see what it does) that lists the **other dictionaries that have it**. The icon is only there when one of them has it: before the dock is drawn, the dictionaries already loaded in this session are asked for the word as it is (in any case, or through the `.syn`; not for its accents, since a selection is spelled right), which takes a fraction of a millisecond. A dictionary not loaded yet isn't read just for that, so while there is one the icon is offered anyway. The list has them in KOReader's dictionary order, leaving out the ones disabled in its dictionary settings. A dictionary that has it only with accents, or under another spelling, shows that entry next to its name (`Fixture Text (ação)` for `acao`). A dictionary whose index was never prepared can't be asked, so it is listed as "(index not prepared yet)": choosing it prepares it first. When no other dictionary has the word, a message says so.
+- Choosing a dictionary opens the word there, centred and highlighted, and the viewer stays in that dictionary: the header names it, and **Go to word** looks in it from then on. Tapping the word before it in the breadcrumb takes you back to that word, and the dictionary, you came from.
+- **Tap the header** (the headwords, the entry numbers or the dictionary's name) for the same list for the word the page is about: the highlighted entry, or the first one of the page. It is how to see a word in another dictionary without selecting it.
+- When **Go to word** (or a link, or the selection dock) finds no entry here, the other dictionaries are asked too, and the line above the entries says which has it: "No entry for “casa”. It is in Dicionário Priberam da Língua Portuguesa." (or "… and 2 more."). Tapping the line opens the suggestions, which then start with those dictionaries; choosing one goes there, and the word takes the place, in the breadcrumb, of the one that had no entry. Only dictionaries whose index is ready are asked, so a missed word never makes one be prepared.
+- A word you **type** in **Go to word** that has an entry here *and* in other dictionaries goes to the entry here, as always, and the line above the entries says where else it is: "“sofa” is also in Priberam English – Portuguese Dictionary." (or "… and 2 more."). Tapping the line lists those dictionaries, to see it there. A word typed may lack its accents, so they are looked for too: `sofa` in the English–Portuguese dictionary is also in the Portuguese one as `sofá`, which the list shows next to its name. Only the dictionaries already loaded in this session are asked, so it costs a millisecond or two and no refresh of its own; the line goes away with the next page or word. Words selected or tapped as links don't get it: the dock has its button for that.
+- The lists refresh only their own area, and choosing a dictionary redraws the page once.
 
 ### The selection dock
 
 The dock is drawn like the toolbar of the Selection Toolbar plugin, so both look alike: the same rounded frame and uniform border, buttons of the same height separated by a light grey rule, and the same dithered shadow along the right and bottom edges. Its text buttons have more room on the sides than that toolbar's icon buttons.
 
-**Add to vocabulary builder.** When KOReader's *Vocabulary builder* plugin is enabled, a selection of a single word also offers an icon button, the first of the dock, that adds it to the builder, the same as the "Add to vocabulary builder" button of the dictionary popup (the word is stored with the title of the book you came from). The icon says what the button will do: `icons/add_word.svg` when the word is not in the builder yet, `icons/remove_word.svg` when it is, in which case tapping it asks for confirmation and removes the word. It is an icon because the full name does not fit next to the other two buttons, especially in Portuguese; **hold it** to see what it does. Adding shows a brief "Added to vocabulary builder." note. With no vocabulary builder, or with a phrase selected, the dock has only Copy and Go to word. The builder's option to store the context of a word is not used here: the viewer has no book sentence to give it.
+**Add to vocabulary builder.** When KOReader's *Vocabulary builder* plugin is enabled, a selection of a single word also offers an icon button, the first of the dock, that adds it to the builder, the same as the "Add to vocabulary builder" button of the dictionary popup (the word is stored with the title of the book you came from). The icon says what the button will do: `icons/add_word.svg` when the word is not in the builder yet, `icons/remove_word.svg` when it is, in which case tapping it asks for confirmation and removes the word. It is an icon because the full name does not fit next to the other two buttons, especially in Portuguese; **hold it** to see what it does. Adding shows a brief "Added to vocabulary builder." note. With no vocabulary builder, or with a phrase selected, the dock has no such button. When there are other dictionaries, the dock ends with another icon, for the same word in another dictionary (see **Other dictionaries** above). The builder's option to store the context of a word is not used here: the viewer has no book sentence to give it.
 
 ## Opening from a starting word
 
@@ -103,11 +115,12 @@ You don't need to look a word up in a book first: the dictionary can be opened s
 
 ## Continuing an exploration
 
-The viewer keeps where you are as you go: the page, the highlighted entry and the latest 50 words of the breadcrumb, for each dictionary. It only changes KOReader's settings in memory (KOReader writes them out when it saves its settings), so it costs no file writes and no screen refreshes.
+The viewer keeps where you are as you go: the dictionary and page you are on, the highlighted entry and the latest 50 words of the breadcrumb, each with its dictionary. There is one exploration, the last one, whichever dictionaries it went through. It only changes KOReader's settings in memory (KOReader writes them out when it saves its settings), so it costs no file writes and no screen refreshes.
 
-- **Continue exploring** reopens the dictionary you explored last on the very page you left, with its breadcrumb and the word you were on. It is in **Tools > Dictionary Explorer**, as the **Continue** button of the **Open dictionary at a word…** dialog, and as the **Dictionary Explorer: continue exploring** action for gestures, profiles and Quick Dock.
-- Opening the viewer in any other way (**Go to dictionary**, a word you type) starts a new exploration of that dictionary, which then becomes the one to continue.
-- If the dictionary was updated or replaced since (it has another number of entries, or another entry where the page started), it reopens at the word you were on instead, with a new breadcrumb.
+- **Continue exploring** reopens the dictionary you were in on the very page you left, with its breadcrumb (still going through the other dictionaries) and the word you were on. It is in **Tools > Dictionary Explorer**, as the **Continue** button of the **Open dictionary at a word…** dialog, and as the **Dictionary Explorer: continue exploring** action for gestures, profiles and Quick Dock.
+- Opening the viewer in any other way (**Go to dictionary**, a word you type) starts a new exploration, which then becomes the one to continue.
+- If the dictionary was updated or replaced since (it has another number of entries, or another entry where the page started), it reopens at the word you were on instead, with a new breadcrumb. A word of the breadcrumb in another dictionary that changed is looked for again, by the word, when you go to it; one whose dictionary is no longer installed is left out.
+- What version 1.4.0 kept (a place for each dictionary) is continued once, from the dictionary explored last, and then replaced.
 
 ## Use from other plugins
 

@@ -26,12 +26,15 @@ local Dock = require("modules/dock")
 local StarDict = require("modules/stardict")
 local Viewer = require("modules/viewer")
 
-local PLUGIN_VERSION = "v1.4.0"
+local PLUGIN_VERSION = "v1.5.0"
 
 local SETTING_START_DICTIONARY = "dictionaryexplorer_start_dictionary" -- a dictionary name; unset means automatic
--- Where each dictionary was left: { last = name, by_dictionary = { [name] = state } },
--- each state as Viewer:explorationState() makes it.
-local SETTING_EXPLORATIONS = "dictionaryexplorer_explorations"
+-- Where the exploration was left, as Viewer:explorationState() makes it: one
+-- for all dictionaries, since a trail can go through several.
+local SETTING_EXPLORATION = "dictionaryexplorer_exploration"
+-- Before v1.5.0: { last = name, by_dictionary = { [name] = state } }. Read once
+-- and replaced.
+local SETTING_EXPLORATIONS_V1 = "dictionaryexplorer_explorations"
 local ACTION_OPEN_AT_WORD = "dictionaryexplorer_open_at_word"
 local ACTION_CONTINUE = "dictionaryexplorer_continue"
 
@@ -277,7 +280,6 @@ end
 -- has no entry the viewer says so above the entries, and when it only leads to
 -- one (through the .syn) the trail starts with it, as Go to word's would.
 function DictionaryExplorer:showViewer(dictionary, lookup, resume)
-	local name = dictionary.name
 	UIManager:show(Viewer:new({
 		ui = self.ui, -- for the vocabulary builder
 		dictionary = dictionary,
@@ -285,30 +287,58 @@ function DictionaryExplorer:showViewer(dictionary, lookup, resume)
 		lookup = lookup,
 		resume = resume,
 		side_margins = self:getSideMargins(),
+		library = self:getLibrary(),
 		on_explore = function(state)
-			self:saveExploration(name, state)
+			self:saveExploration(state)
 		end,
 	}))
 end
 
---- Keeps where an exploration is, to continue it later. It only changes the
--- settings in memory: KOReader writes them out when it saves its settings.
-function DictionaryExplorer:saveExploration(name, state)
-	local saved = G_reader_settings:readSetting(SETTING_EXPLORATIONS)
-	if type(saved) ~= "table" or type(saved.by_dictionary) ~= "table" then
-		saved = { by_dictionary = {} }
-	end
-	saved.by_dictionary[name] = state
-	saved.last = name
-	G_reader_settings:saveSetting(SETTING_EXPLORATIONS, saved)
+--- What the viewer needs to go to words in other dictionaries (see
+-- Viewer.library): the dictionaries that can be opened and are enabled in
+-- KOReader's dictionary settings, in KOReader's order.
+function DictionaryExplorer:getLibrary()
+	return {
+		list = function()
+			local disabled = self.ui.dictionary.dicts_disabled or {}
+			local list = {}
+			for _index, entry in ipairs(self:getSupportedDictionaries()) do
+				if not disabled[entry.file] then
+					list[#list + 1] = entry.dictionary
+				end
+			end
+			return list
+		end,
+		find = function(name)
+			return self:getDictionary(name)
+		end,
+		prepare = function(dictionary, callback)
+			self:withIndex(dictionary, callback)
+		end,
+	}
 end
 
---- The dictionary explored last, if it can still be opened, and where it was left.
+--- Keeps where the exploration is, to continue it later. It only changes the
+-- settings in memory: KOReader writes them out when it saves its settings.
+function DictionaryExplorer:saveExploration(state)
+	G_reader_settings:saveSetting(SETTING_EXPLORATION, state)
+end
+
+--- The dictionary the exploration was left in, if it can still be opened,
+-- and where it was left.
 function DictionaryExplorer:getLastExploration()
-	local saved = G_reader_settings:readSetting(SETTING_EXPLORATIONS)
-	local name = type(saved) == "table" and saved.last
-	local state = name and type(saved.by_dictionary) == "table" and saved.by_dictionary[name]
-	local dictionary = type(state) == "table" and self:getDictionary(name)
+	local state = G_reader_settings:readSetting(SETTING_EXPLORATION)
+	if state == nil then
+		-- Saved by v1.4.0, one per dictionary: the last one is the exploration.
+		local saved = G_reader_settings:readSetting(SETTING_EXPLORATIONS_V1)
+		if type(saved) == "table" and type(saved.by_dictionary) == "table" and type(saved.by_dictionary[saved.last]) == "table" then
+			state = saved.by_dictionary[saved.last]
+			state.dictionary = saved.last
+			G_reader_settings:saveSetting(SETTING_EXPLORATION, state)
+		end
+		G_reader_settings:delSetting(SETTING_EXPLORATIONS_V1)
+	end
+	local dictionary = type(state) == "table" and type(state.dictionary) == "string" and self:getDictionary(state.dictionary)
 	if dictionary then
 		return dictionary, state
 	end

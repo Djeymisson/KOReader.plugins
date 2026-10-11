@@ -29,6 +29,13 @@ local EXPECTED = {
 	-- keeping where it is costs nothing on screen.
 	["continuing an exploration"] = 2,
 	["turning a page while the exploration is kept"] = 1,
+	-- As the suggestions: the list is painted and refreshed in its own area;
+	-- choosing a dictionary closes it and draws the page there in one tick.
+	["opening the other dictionaries"] = 2,
+	["going to the word in another dictionary"] = 2,
+	-- Saying which other dictionaries have a missed word is part of the page.
+	["Go to word with no entry, found in another dictionary"] = 1,
+	["Go to word typed, also in another dictionary (said on the page)"] = 1,
 	-- Nothing changes, so nothing may be redrawn.
 	["swiping past the last page"] = 0,
 	["swiping back from the first page"] = 0,
@@ -167,8 +174,30 @@ return function(H, ui)
 			measure("turning a page while the exploration is kept", function()
 				explored:showNext()
 			end)
+			local other = explored:_otherDictionaries()[1]
+			if other then
+				local word = other:getEntry(math.floor(other:getCount() / 2)).word
+				measure("opening the other dictionaries", function()
+					explored:showOtherDictionaries(word)
+				end)
+				local row = explored.dictionaries_dialog and explored.dictionaries_dialog.buttons[1][1]
+				measure("going to the word in another dictionary", function()
+					if row then
+						row.callback()
+					end
+				end)
+				H.check("the page is then in the other dictionary", row ~= nil and explored.dictionary ~= dictionary)
+				explored:goToCrumb(1) -- back in the first dictionary
+				local elsewhere = explored.trail[#explored.trail].word -- a word the other one has
+				measure("Go to word with no entry, found in another dictionary", function()
+					explored:goToWord(elsewhere)
+				end)
+				measure("Go to word typed, also in another dictionary (said on the page)", function()
+					explored:goToWordIn(explored.dictionary, "casa", false, true)
+				end)
+			end
 			explored:onClose()
-			G_reader_settings:delSetting("dictionaryexplorer_explorations")
+			G_reader_settings:delSetting("dictionaryexplorer_exploration")
 		else
 			H.skip("continuing an exploration", "the plugin is not active")
 		end

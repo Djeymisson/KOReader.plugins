@@ -57,6 +57,15 @@ local pt = {
 	["No entry for “%1”. Showing “%2”."] = "Não há verbete para “%1”. Mostrando “%2”.",
 	["Tap here for suggestions."] = "Toque aqui para ver sugestões.",
 	["Suggestions for “%1”"] = "Sugestões para “%1”",
+	["Go to word in another dictionary"] = "Ir para a palavra em outro dicionário",
+	["“%1” in other dictionaries"] = "“%1” em outros dicionários",
+	["No other dictionary has “%1”."] = "Nenhum outro dicionário tem “%1”.",
+	["%1 (index not prepared yet)"] = "%1 (índice ainda não preparado)",
+	["No entry for “%1”. It is in %2."] = "Não há verbete para “%1”. Ele está em %2.",
+	["%1 and %2 more"] = "%1 e mais %2",
+	["“%1” in %2"] = "“%1” em %2",
+	["“%1” is also in %2."] = "“%1” também está em %2.",
+	["Tap here to see it there."] = "Toque aqui para ver lá.",
 }
 
 return setmetatable({

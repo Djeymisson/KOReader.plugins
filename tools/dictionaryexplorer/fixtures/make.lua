@@ -266,7 +266,7 @@ end
 -- for the lookups (case, accents, homographs).
 local TEXT_WORDS = {
 	"casa", "Casa", "casaco", "casado", "livro", "amor", "correr", "constitucionalmente", "responsabilidade",
-	"gato", "mesa", "extraordinariamente", "zebra", "árvore", "Árvore", "ação", "ética", "Ética", "pêssego", "Óbidos", "ONU",
+	"gato", "mesa", "extraordinariamente", "zebra", "árvore", "Árvore", "ação", "ética", "Ética", "pêssego", "Óbidos", "ONU", "sofá",
 }
 
 local function textDictionary()
@@ -305,7 +305,7 @@ end
 
 local function htmlDictionary()
 	local next_random = random(202)
-	local words = { "apple", "house", "cat", "dog", "bookshop", "Apple" }
+	local words = { "apple", "house", "cat", "dog", "bookshop", "Apple", "sofa" }
 	for _index, word in ipairs(fillerWords(11, 1200)) do
 		words[#words + 1] = word
 	end

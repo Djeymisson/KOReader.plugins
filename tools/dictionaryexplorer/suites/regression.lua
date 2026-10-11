@@ -4,7 +4,7 @@ Functional regression: the behaviour of the viewer, checked with real gestures
 
   opening        the entry is centred and highlighted, the page fits one screen
   paging         by swipe, key and tap; contiguous in both directions
-  walking        the breadcrumb, the back and forward buttons, the trail's semantics
+  walking        the breadcrumb, tapping its words, the trail's semantics
   selection      the dock, Go to word, Copy and the vocabulary button
   formats        the dictzip (Oxford) and plain (English-Portuguese) paths, and the
                  three kinds of text (m, h, x)
@@ -98,65 +98,34 @@ return function(H, ui)
 		viewer:goToWord("livro")
 		H.check("the breadcrumb appears after the first Go to word", viewer.breadcrumb ~= nil and H.trailText(viewer) == "casa>livro")
 		local footer = H.footer(viewer)
-		H.check(
-			"the footer becomes < | Go to word | > | close, with > dimmed on the latest word",
-			#footer == 4 and footer[1].icon == "chevron.left" and footer[1].enabled and footer[2].text == "Go to word"
-				and footer[3].icon == "chevron.right" and not footer[3].enabled and footer[4].icon == "close"
-		)
+		H.check("the footer stays Go to word + close: no arrows", #footer == 2 and footer[1].text == "Go to word" and footer[2].icon == "close")
 		for _index, word in ipairs(pt_profile.walk) do
 			viewer:goToWord(word)
 		end
 		H.check("the latest word is bold and the page fits", H.boldWord(viewer) == viewer.trail[#viewer.trail].word and H.fits(viewer))
-		H.tapButton(viewer, "chevron.right")
-	end)
-	H.step(0.5, function()
-		if viewer then
-			H.check("forward does nothing on the last word", viewer.trail_index == #viewer.trail)
-		end
 	end)
 
-	-- One real tap per step: the Button runs its callback on the next tick.
-	local intact, always_visible, snapshot = true, true, nil
-	for _index = 1, 8 do
+	-- Back along the trail by tapping its words, the one before the current
+	-- each time, with real taps.
+	local intact, bold, snapshot, tapped = true, true, nil, true
+	for _index = 1, 3 do
 		H.step(0.4, function()
 			if viewer then
 				snapshot = H.trailText(viewer)
-				H.tapButton(viewer, "chevron.left")
+				tapped = H.tapCrumb(viewer, viewer.trail_index - 1) and tapped
 			end
 		end)
 		H.step(0.4, function()
 			if viewer then
 				intact = intact and H.trailText(viewer) == snapshot
-				always_visible = always_visible and H.boldWord(viewer) == viewer.trail[viewer.trail_index].word
+				bold = bold and H.boldWord(viewer) == viewer.trail[viewer.trail_index].word
 			end
 		end)
 	end
 	H.step(0.4, function()
 		if viewer then
-			H.check("back walks to the first word", viewer.trail_index == 1, "index " .. viewer.trail_index)
-			H.check("the trail stays intact and the bold word in view while walking back", intact and always_visible)
-		end
-	end)
-	for _index = 1, 8 do
-		H.step(0.4, function()
-			if viewer then
-				H.tapButton(viewer, "chevron.right")
-			end
-		end)
-	end
-	H.step(0.5, function()
-		if viewer then
-			H.check("forward walks to the last word again", viewer.trail_index == #viewer.trail, "index " .. viewer.trail_index)
-		end
-	end)
-	H.step(0.4, function()
-		if viewer then
-			H.tapButton(viewer, "chevron.left")
-		end
-	end)
-	H.step(0.4, function()
-		if viewer then
-			H.tapButton(viewer, "chevron.left")
+			H.check("tapping a word of the breadcrumb goes to it", tapped and viewer.trail_index == #viewer.trail - 3, "index " .. viewer.trail_index)
+			H.check("the trail stays intact, with the word gone to in bold", intact and bold)
 		end
 	end)
 	H.step(0.5, function()
