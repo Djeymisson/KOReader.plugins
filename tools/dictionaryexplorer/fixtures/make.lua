@@ -36,7 +36,8 @@ INTEGRITY_DIR gets what only the integrity suite opens:
   syn_wrong_count/               .ifo synwordcount that does not match the .syn
   syn_out_of_range/              a .syn word leading past the last entry
   tiny_bytes/                    valid, in byte order, but a single page: its
-                                 page keys can't tell its order
+                                 page keys can't tell its order; also words for
+                                 the closest-entry search (casa..., Cyrillic)
 
 Everything is deterministic: the same files every run. Plain Lua 5.1 (it runs
 on the luajit KOReader ships), no library needed: the dictzip chunks are
@@ -450,11 +451,22 @@ broken("malformed_ra", { compressed = true }, function(files)
 end)
 broken("cut_after_index", {})
 broken("cut_after_index_dz", { compressed = true })
+local tiny_entries = {
+	{ "Zulu", "Zulu, a name." }, { "abc", "abc, letters." }, { "ação", "ação, a deed." },
+	{ "casa", "casa, a house." }, { "casaco", "casaco, a coat." }, { "casado", "casado, married." },
+	{ "азбука", "азбука, an alphabet." }, { "апельсин", "апельсин, an orange." }, { "арбуз", "арбуз, a watermelon." },
+}
+-- Capitalized names around where "Casaz" sorts in byte order, so that it is
+-- far from the lowercase "casa..." entries there.
+for index = 1, 12 do
+	table.insert(tiny_entries, { string.format("Ba%02d", index), "A name." })
+	table.insert(tiny_entries, { string.format("Cb%02d", index), "A name." })
+end
 writeDictionary(integrity_dir .. "/tiny_bytes", "tiny_bytes", {
 	bookname = "Fixture Tiny Bytes",
 	type = "m",
 	less = byteLess,
-	entries = numbered({ { "Zulu", "Zulu, a name." }, { "abc", "abc, letters." }, { "ação", "ação, a deed." } }),
+	entries = numbered(tiny_entries),
 })
 broken("syn_ok", { with_synonyms = true })
 broken("syn_truncated", { with_synonyms = true }, function(files)

@@ -40,6 +40,7 @@ local MAX_SCAN_ENTRIES = PAGE_SIZE * 2
 local MAX_ACCENT_LOOKUPS = 300
 local MAX_ACCENT_SPELLINGS = 8
 local SUGGESTIONS = 10 -- at most, in suggest()
+local NEAREST_WINDOW = 8 -- entries looked at on each side of where a word would be, in nearest()
 
 local SUPPORTED_TYPES = { m = true, h = true, x = true }
 
@@ -848,6 +849,56 @@ function StarDict:resolve(text, hint)
 		end
 	end
 	return { position = position, kind = "closest", word = text }
+end
+
+--- The entries spelled most like `word`, which has none: of the entries
+-- around where it would be (in both sort orders, see COMPARATORS), the ones
+-- that share the longest beginning with it, accents and case aside ("casado"
+-- and "casaco" for "casaz", rather than "constitucionalmente", which follows
+-- it), the nearest first among those that share as much. Where the word
+-- would be depends on its case in a dictionary in byte order ("Casaz" sorts
+-- among the capitals there), so it is looked for in each casing.
+-- @int min_shared optional: leave out the ones that share fewer letters
+-- (counted as letters, not bytes: "ар" is two)
+-- @treturn table positions, at most `limit` of them
+function StarDict:nearest(word, limit, min_shared)
+	local letters = splitCharacters(StarDict.plainSpelling(word))
+	min_shared = math.min(min_shared or 0, #letters)
+	local queries = caseVariants(word)
+	table.insert(queries, 1, word)
+	local candidates, seen = {}, {}
+	for _index, query in ipairs(queries) do
+		for index = 1, #COMPARATORS do
+			local around = lowerBound(self.idx, query, COMPARATORS[index])
+			for position = math.max(around - NEAREST_WINDOW, 0), math.min(around + NEAREST_WINDOW, self.count - 1) do
+				if not seen[position] then
+					seen[position] = true
+					local entry_letters = splitCharacters(StarDict.plainSpelling(self:getEntry(position).word))
+					local shared = 0
+					while shared < #letters and entry_letters[shared + 1] == letters[shared + 1] do
+						shared = shared + 1
+					end
+					if shared >= min_shared then
+						candidates[#candidates + 1] = { position = position, shared = shared, distance = math.abs(position - around) }
+					end
+				end
+			end
+		end
+	end
+	table.sort(candidates, function(a, b)
+		if a.shared ~= b.shared then
+			return a.shared > b.shared
+		end
+		if a.distance ~= b.distance then
+			return a.distance < b.distance
+		end
+		return a.position < b.position
+	end)
+	local positions = {}
+	for index = 1, math.min(limit, #candidates) do
+		positions[index] = candidates[index].position
+	end
+	return positions
 end
 
 --- Entries to offer for a text that has no entry of its own: the accented

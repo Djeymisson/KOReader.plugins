@@ -203,6 +203,28 @@ return function(H, ui)
 		end
 	end)
 
+	-- ---- the entries spelled most like a word --------------------------------------
+	H.step(0.5, function()
+		local root = os.getenv("DE_INTEGRITY")
+		local tiny = root and H.StarDict.get(root .. "/tiny_bytes/tiny_bytes.ifo")
+		if not (tiny and (tiny:isIndexed() or tiny:buildIndex())) then
+			H.skip("the entries spelled most like a word", "the tiny_bytes fixture was not made")
+			return
+		end
+		local function words(text, min_shared)
+			local nearest = {}
+			for _index, position in ipairs(tiny:nearest(text, 3, min_shared)) do
+				nearest[#nearest + 1] = tiny:getEntry(position).word
+			end
+			table.sort(nearest)
+			return table.concat(nearest, ",")
+		end
+		for _index, text in ipairs({ "casaz", "Casaz", "CASAZ" }) do
+			H.check(string.format("in byte order, %q finds the casa- entries", text), words(text, 2) == "casa,casaco,casado", words(text, 2))
+		end
+		H.check("letters, not bytes, are counted: “арп” shares two only with “арбуз”", words("арп", 2) == "арбуз", words("арп", 2))
+	end)
+
 	-- ---- suggestions ------------------------------------------------------------
 	H.step(0.5, function()
 		local suggestions = fixture:suggest("acao")

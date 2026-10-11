@@ -187,6 +187,28 @@ return function(H, ui)
 			dock ~= nil and #buttons == (builder and 3 or 2) and buttons[#buttons].text == "Go to word" and buttons[#buttons - 1].text == "Copy"
 				and (not builder or (buttons[1].icon or ""):match("icons/add_word%.svg$"))
 		)
+		-- Holding a text button does nothing: the dock stays where it is (it
+		-- once went to the middle of the screen, as a moved ButtonDialog does).
+		if dock then
+			local UIManager = require("ui/uimanager")
+			UIManager:forceRePaint()
+			local before = { x = dock.movable.dimen.x, y = dock.movable.dimen.y }
+			local layout = dock.buttontable.buttons_layout[1]
+			for _index, position in ipairs({ #layout, #layout - 1 }) do -- Go to word, Copy
+				local button = layout[position].dimen
+				local cx, cy = button.x + button.w / 2, button.y + button.h / 2
+				-- As a finger does: touch first, then hold, then release.
+				H.gesture("touch", cx, cy)
+				H.gesture("hold", cx, cy)
+				H.gesture("hold_release", cx, cy)
+			end
+			UIManager:forceRePaint()
+			H.check(
+				"holding Go to word or Copy leaves the dock where it is, open",
+				viewer.selection_dock == dock and dock.movable.dimen.x == before.x and dock.movable.dimen.y == before.y,
+				string.format("(%d,%d) -> (%d,%d)", before.x, before.y, dock.movable.dimen.x, dock.movable.dimen.y)
+			)
+		end
 		if dock then
 			buttons[#buttons - 1].callback()
 		end

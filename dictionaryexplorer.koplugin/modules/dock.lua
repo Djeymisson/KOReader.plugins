@@ -238,6 +238,11 @@ function ShadowedButtonDialog:init()
 	withFileIcons(function()
 		ButtonDialog.init(self)
 	end)
+	-- The dock sits next to the selection, so it is not to be moved. Left
+	-- movable, holding a text button (they have no hold action of their own)
+	-- ends in MovableContainer's "hold without moving", which puts the dock
+	-- back where a ButtonDialog starts: the middle of the screen.
+	self.movable.ges_events = {}
 	if self.show_shadow then
 		local frame = self.movable[1]
 		self.movable[1] = ShadowedPopup:new({

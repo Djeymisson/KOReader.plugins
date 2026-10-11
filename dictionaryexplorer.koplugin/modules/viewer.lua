@@ -81,6 +81,8 @@ local SKIP_MARGIN = 1 -- only entries predicted to fit in the room left are trie
 local MISS_NOTICE_MAX_CHARS = 60
 local MISS_NOTICE_MAX_LINES = 2
 local MAX_SAVED_CRUMBS = 50 -- the latest words of the trail kept to continue an exploration
+local CLOSEST_ELSEWHERE = 3 -- entries of each other dictionary among the suggestions for a missed word
+local CLOSEST_SHARED = 2 -- letters they must begin with as the word does
 
 -- What the viewer has learnt about how tall entries are, for the session and
 -- per dictionary, font size and text width.
@@ -653,17 +655,41 @@ function DictionaryExplorerViewer:_trailWord(lookup, position)
 end
 
 -- What the page says about a word that has no entry of its own (nil when it
--- has). `crumb` is set to the trail item the word got, if it got one. When
--- there is nothing close to it here, `elsewhere` lists the other dictionaries
--- that have it.
+-- has). `crumb` is set to the trail item the word got, if it got one.
+-- `elsewhere` lists the other dictionaries that have it; the page names them
+-- when there is nothing close to it here (not when it shows the word with
+-- its accents), and the suggestions list them either way.
 function DictionaryExplorerViewer:_missFrom(lookup)
 	if lookup and lookup.kind ~= "exact" then
 		return {
 			word = lookup.word,
 			shown = lookup.kind == "accent" and self.dictionary:getEntry(lookup.position).word or nil,
-			elsewhere = lookup.kind == "closest" and self:_findElsewhere(lookup.word) or nil,
+			elsewhere = self:_findElsewhere(lookup.word),
 		}
 	end
+end
+
+-- The entries of another dictionary closest to a word it has no entry for:
+-- its accented spellings first, then the ones spelled most like it (see
+-- StarDict:nearest()), if they begin as it does: entries of another dictionary
+-- that only happen to sort near it would be noise. At most CLOSEST_ELSEWHERE.
+function DictionaryExplorerViewer:_closestIn(dictionary, word)
+	local lookup = dictionary:resolve(word)
+	local count = dictionary:getCount()
+	local positions, seen = {}, {}
+	local function add(position)
+		if position >= 0 and position < count and not seen[position] and #positions < CLOSEST_ELSEWHERE then
+			seen[position] = true
+			positions[#positions + 1] = position
+		end
+	end
+	for _index, position in ipairs(lookup.spellings or {}) do
+		add(position)
+	end
+	for _index, position in ipairs(dictionary:nearest(word, CLOSEST_ELSEWHERE, CLOSEST_SHARED)) do
+		add(position)
+	end
+	return positions
 end
 
 -- The other dictionaries that have `word` (also through another case, the
@@ -778,25 +804,31 @@ end
 
 --- Offers, in a list, the entries a word with no entry may have been meant
 -- for: first the other dictionaries that have it, then its accented
--- spellings here and the entries around where it would be. The list
--- refreshes only its own area; choosing an entry redraws the page once, with
--- the list gone, and the entry takes the place of the missed word in the trail.
+-- spellings here and the entries around where it would be, then the entries
+-- closest to it in each other dictionary. The list refreshes only its own
+-- area; choosing an entry redraws the page once, with the list gone, and the
+-- entry takes the place of the missed word in the trail.
 function DictionaryExplorerViewer:showSuggestions()
 	local miss = self.miss
 	if not miss or self.suggestions_dialog then
 		return
 	end
 	local rows = {}
-	for _index, found in ipairs(miss.elsewhere or {}) do
+	local function addElsewhere(dictionary, entry, word)
 		rows[#rows + 1] = {
 			{
-				text = T(_("“%1” in %2"), found.entry, found.dictionary.name),
+				text = T(_("“%1” in %2"), entry, dictionary.name),
 				callback = function()
 					self:_closeListForChoice("suggestions_dialog")
-					self:goToWordIn(found.dictionary, miss.word, true)
+					self:goToWordIn(dictionary, word, true)
 				end,
 			},
 		}
+	end
+	local has_it = {}
+	for _index, found in ipairs(miss.elsewhere or {}) do
+		has_it[found.dictionary] = true
+		addElsewhere(found.dictionary, found.entry, miss.word)
 	end
 	for _index, position in ipairs(self.dictionary:suggest(miss.word)) do
 		rows[#rows + 1] = {
@@ -807,6 +839,14 @@ function DictionaryExplorerViewer:showSuggestions()
 				end,
 			},
 		}
+	end
+	for _index, dictionary in ipairs(self:_otherDictionaries()) do
+		if not has_it[dictionary] and dictionary:isIndexed() then
+			for _index2, position in ipairs(self:_closestIn(dictionary, miss.word)) do
+				local entry = dictionary:getEntry(position).word
+				addElsewhere(dictionary, entry, entry)
+			end
+		end
 	end
 	if #rows > 0 then
 		self:_showList("suggestions_dialog", T(_("Suggestions for “%1”"), cutText(miss.word)), rows)
@@ -1570,7 +1610,7 @@ function DictionaryExplorerViewer:onTextSelected(text)
 	-- of them has it, or might.
 	local known, unknown = self:_checkSelection(selected)
 	if unknown or self:_anyFound(known) then
-		table.insert(row, dockIconButton(Dock.iconPath("other_dictionary"), _("Go to word in another dictionary"), function()
+		table.insert(row, dockIconButton(Dock.iconPath("other_dictionary"), _("See in another dictionary"), function()
 			self:_closeSelectionDock()
 			self:_clearSelection()
 			self:showOtherDictionaries(selected, known)

@@ -15,7 +15,9 @@ Going to a word in another dictionary, and the trail through several.
   not here        a word with no entry here but in other dictionaries says so on
                   the page; its suggestions start with them, and choosing one
                   goes there in place of the missed word in the trail; only
-                  dictionaries whose index is ready are asked
+                  dictionaries whose index is ready are asked; for a word no
+                  dictionary has, the suggestions end with the closest entries
+                  of each other dictionary (3 at most)
   also there      a word typed in Go to word that has an entry here and in
                   other dictionaries goes to it here, and the page says which
                   others have it; tapping that lists them; a word only here,
@@ -475,6 +477,60 @@ return function(H, ui)
 		H.check("a word typed that only this dictionary has: nothing said", only ~= nil and viewer.miss_notice == nil and entryWord() == only, only)
 		viewer:goToWord("casa") -- as a selection or a link
 		H.check("a word gone to otherwise than typed: nothing said", viewer.miss_notice == nil and entryWord() == "casa")
+		close()
+		G_reader_settings:delSetting(SETTING)
+	end)
+
+	-- ---- closest elsewhere ----------------------------------------------------------------
+	-- A word no dictionary has: the suggestions also offer the entries closest
+	-- to it in the other dictionaries.
+	H.step(0.5, function()
+		plugin:openAt(html, "house")
+		viewer = H.findViewer()
+		viewer:goToWord("casaz")
+		viewer:showSuggestions()
+		local dialog = viewer.suggestions_dialog
+		local row
+		for _index, candidate in ipairs(dialog and dialog.buttons or {}) do
+			local label = candidate[1].text
+			if not row and label:sub(-#text.name) == text.name and label:find("^“casa") then
+				row = candidate[1]
+			end
+		end
+		H.check("the suggestions for a word no dictionary has include the closest entries of the others", row ~= nil, table.concat(listLabels(dialog), " | "))
+		local others = 0
+		for _index, candidate in ipairs(dialog and dialog.buttons or {}) do
+			if candidate[1].text:sub(-#text.name) == text.name then
+				others = others + 1
+			end
+		end
+		H.check("at most 3 for each other dictionary", others >= 1 and others <= 3, others)
+		-- Spelled most like it, not merely next to it: Fixture Text has casa,
+		-- Casa, casaco and casado around "casaz".
+		local alike = 0
+		for _index, candidate in ipairs(dialog and dialog.buttons or {}) do
+			local label = candidate[1].text
+			if label:sub(-#text.name) == text.name and label:lower():find("^“casa") then
+				alike = alike + 1
+			end
+		end
+		H.check("the ones spelled most like it", alike == others, string.format("%d of %d", alike, others))
+		local noise = false
+		for _index, candidate in ipairs(dialog and dialog.buttons or {}) do
+			local label = candidate[1].text
+			if label:find("” in ", 1, true) and not label:lower():find("^“ca") then
+				noise = true
+			end
+		end
+		H.check("and none of the others' entries that only sort near it", not noise)
+		if row then
+			row.callback()
+		end
+		H.check(
+			"choosing one goes there, in place of the missed word in the trail",
+			viewer.dictionary == text and entryWord():find("^casa") ~= nil and #viewer.trail == 2 and viewer.trail[2].dictionary == text,
+			H.trailText(viewer)
+		)
 		close()
 		G_reader_settings:delSetting(SETTING)
 	end)
