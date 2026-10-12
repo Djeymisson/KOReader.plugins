@@ -123,11 +123,11 @@ return function(ctx)
 
 		resetWikipediaSearchState(state, lang)
 		self:showCarousel(state, PAGE_WIKIPEDIA)
-		if self:useAutomaticOnlineCardLoading() then
-			UIManager:scheduleIn(0.05, function()
-				self:loadWikipedia(state)
-			end)
-		end
+		-- loadWikipedia decides whether to search (or use what is cached) or to
+		-- wait for the Load button.
+		UIManager:scheduleIn(0.05, function()
+			self:loadWikipedia(state)
+		end)
 		return true
 	end
 
@@ -266,7 +266,8 @@ return function(ctx)
 		}
 	end
 
-	function LookupPreview:buildWikipediaManualLoadButtons(state, label)
+	-- `refresh` (the Retry button) searches again even when the answer is cached.
+	function LookupPreview:buildWikipediaManualLoadButtons(state, label, refresh)
 		state = state or self.current_state
 		return {
 			{
@@ -278,11 +279,11 @@ return function(ctx)
 				end,
 			},
 			{
-				spec = { text = label or _("Load") },
+				spec = { plugin_icon = refresh and ICON_RETRY or ICON_LOAD, text = label or _("Load") },
 				hint = _("Query Wikipedia"),
 				weight = 1.6,
 				callback = function()
-					return self:requestWikipediaLoad(state)
+					return self:requestWikipediaLoad(state, refresh)
 				end,
 			},
 		}
@@ -308,7 +309,7 @@ return function(ctx)
 	end
 
 	-- What the Load and Retry buttons do: show the card loading, then query.
-	function LookupPreview:requestWikipediaLoad(state)
+	function LookupPreview:requestWikipediaLoad(state, refresh)
 		state = state or self.current_state
 		if not state or state ~= self.current_state or getLoadStatus(state, PAGE_WIKIPEDIA) == LOAD_LOADING then
 			return true
@@ -323,7 +324,7 @@ return function(ctx)
 
 		UIManager:scheduleIn(0.05, function()
 			if state == self.current_state then
-				self:queryWikipedia(state)
+				self:queryWikipedia(state, refresh)
 			end
 		end)
 		return true
@@ -474,16 +475,35 @@ return function(ctx)
 		)
 	end
 
-	-- Loads the card when it is shown, unless online cards wait for the Load
-	-- button.
+	local function getWikipediaCacheKey(plugin, state)
+		return onlineCacheKey("wikipedia", state.wikipedia_lang or plugin:getWikipediaLang(), state.search_text or "")
+	end
+
+	-- Fills the state with the articles Wikipedia found (or the cache had).
+	local function applyWikipediaResults(plugin, state, wikipedia_results)
+		if #wikipedia_results == 0 then
+			setLoadStatus(state, PAGE_WIKIPEDIA, LOAD_EMPTY, _("No Wikipedia article found."))
+			return
+		end
+
+		state.wikipedia_pages = wikipedia_results
+		state.wikipedia_count = #wikipedia_results
+		state.wikipedia_index = normalizeResultIndex(state.wikipedia_index or 1, state.wikipedia_count)
+		plugin:updateWikipediaPayload(state, state.wikipedia_index)
+		setLoadStatus(state, PAGE_WIKIPEDIA, LOAD_DONE)
+	end
+
+	-- Loads the card when it is shown. What is cached is shown at once, even
+	-- when online cards wait for the Load button, since it needs no network.
 	function LookupPreview:loadWikipedia(state)
 		if not state or state ~= self.current_state then
 			return true
 		end
-		if self:useManualOnlineCardLoading() then
-			return self:refreshCard(PAGE_WIKIPEDIA)
-		end
 		if getLoadStatus(state, PAGE_WIKIPEDIA) ~= LOAD_IDLE then
+			return true
+		end
+		local cached = getCachedOnlineResult(getWikipediaCacheKey(self, state))
+		if not cached and self:useManualOnlineCardLoading() then
 			return true
 		end
 
@@ -491,11 +511,21 @@ return function(ctx)
 		return self:queryWikipedia(state)
 	end
 
-	-- Searches Wikipedia for a card already marked as loading.
-	function LookupPreview:queryWikipedia(state)
+	-- Searches Wikipedia for a card already marked as loading, unless the
+	-- answer is cached and `refresh` is not set. See runOnlineQuery for where
+	-- the search runs.
+	function LookupPreview:queryWikipedia(state, refresh)
 		local text = state.search_text or ""
 		if text == "" then
 			setLoadStatus(state, PAGE_WIKIPEDIA, LOAD_ERROR, _("No text to search on Wikipedia."))
+			return self:refreshCard(PAGE_WIKIPEDIA)
+		end
+
+		state.wikipedia_lang = state.wikipedia_lang or self:getWikipediaLang()
+		local cache_key = getWikipediaCacheKey(self, state)
+		local cached = not refresh and getCachedOnlineResult(cache_key)
+		if cached then
+			applyWikipediaResults(self, state, cached)
 			return self:refreshCard(PAGE_WIKIPEDIA)
 		end
 
@@ -504,33 +534,32 @@ return function(ctx)
 			return self:refreshCard(PAGE_WIKIPEDIA)
 		end
 
-		local ok, err = pcall(function()
+		runOnlineQuery(self, function()
 			local Wikipedia = require("ui/wikipedia")
-			local lang = state.wikipedia_lang or self:getWikipediaLang()
-			state.wikipedia_lang = lang
-			setWikipediaTrapWidget(Wikipedia, _("Querying Wikipedia…"))
+			local ok, err = pcall(function()
+				setWikipediaTrapWidget(Wikipedia, _("Querying Wikipedia…"))
+				local wikipedia_results =
+					self:buildWikipediaResults(Wikipedia:searchAndGetIntros(text, state.wikipedia_lang))
+				resetWikipediaTrapWidget()
 
-			local wikipedia_results = self:buildWikipediaResults(Wikipedia:searchAndGetIntros(text, lang))
-			resetWikipediaTrapWidget()
+				cacheOnlineResult(cache_key, wikipedia_results)
+				applyWikipediaResults(self, state, wikipedia_results)
+			end)
 
-			if #wikipedia_results == 0 then
-				setLoadStatus(state, PAGE_WIKIPEDIA, LOAD_EMPTY, _("No Wikipedia article found."))
-				return
+			if not ok then
+				resetWikipediaTrapWidget()
+				if tostring(err):find(Wikipedia.dismissed_error_code or "Interrupted by user", 1, true) then
+					setLoadStatus(state, PAGE_WIKIPEDIA, LOAD_ERROR, _("Wikipedia lookup interrupted."))
+				else
+					logger.warn("LookupPreview: Wikipedia lookup failed:", err)
+					setLoadStatus(state, PAGE_WIKIPEDIA, LOAD_ERROR, onlineLookupError(err, _("Wikipedia lookup failed.")))
+				end
 			end
 
-			state.wikipedia_pages = wikipedia_results
-			state.wikipedia_count = #wikipedia_results
-			state.wikipedia_index = normalizeResultIndex(state.wikipedia_index or 1, state.wikipedia_count)
-			self:updateWikipediaPayload(state, state.wikipedia_index)
-			setLoadStatus(state, PAGE_WIKIPEDIA, LOAD_DONE)
+			if state == self.current_state then
+				self:refreshCard(PAGE_WIKIPEDIA)
+			end
 		end)
-
-		if not ok then
-			logger.warn("LookupPreview: Wikipedia lookup failed:", err)
-			resetWikipediaTrapWidget()
-			setLoadStatus(state, PAGE_WIKIPEDIA, LOAD_ERROR, onlineLookupError(err, _("Wikipedia lookup failed.")))
-		end
-
-		return self:refreshCard(PAGE_WIKIPEDIA)
+		return true
 	end
 end

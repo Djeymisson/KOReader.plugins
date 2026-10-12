@@ -217,6 +217,12 @@ return function(ctx)
 			return nil
 		end
 
+		-- Search, like Highlight, acts on the text selected in the book, also in
+		-- a lookup made inside the preview.
+		local root = getRootState(state)
+		if root ~= state then
+			search_text = root.dictionary_search_text or root.search_text or ""
+		end
 		search_text = search_text or state.dictionary_search_text or state.search_text or ""
 		local status = getLoadStatus(state, PAGE_DICTIONARY)
 
@@ -277,7 +283,7 @@ return function(ctx)
 			return button_specs
 		elseif status == LOAD_ERROR then
 			button_specs[#button_specs + 1] = {
-				spec = { text = _("Retry") },
+				spec = { plugin_icon = ICON_RETRY, text = _("Retry") },
 				hint = _("Look the text up in the dictionary again"),
 				callback = function()
 					return self:loadDictionary(state, true)
@@ -287,6 +293,25 @@ return function(ctx)
 		elseif status == LOAD_IDLE or not state.dict_self then
 			-- Nothing to open in the full dictionary yet.
 			return button_specs
+		end
+
+		-- The Vocabulary Builder saves the book's selection as the word's
+		-- context, which is not the context of a word looked up in the preview.
+		if status == LOAD_DONE and not state.parent and self:showVocabularyButton() then
+			if state.vocabulary_added then
+				button_specs[#button_specs + 1] = {
+					spec = { icon = ICON_VOCABULARY_ADDED },
+					hint = _("Added to the vocabulary builder"),
+				}
+			else
+				button_specs[#button_specs + 1] = {
+					spec = { plugin_icon = ICON_VOCABULARY, icon = ICON_VOCABULARY_FALLBACK },
+					hint = _("Add the word to the vocabulary builder"),
+					callback = function()
+						return self:addToVocabularyBuilder(state)
+					end,
+				}
+			end
 		end
 
 		local show_koreader, show_explorer = self:getDetailsButtonKinds(getCurrentResult(state))
@@ -440,6 +465,53 @@ return function(ctx)
 		)
 	end
 
+	-- Adds the looked up word to KOReader's Vocabulary Builder, as the button of
+	-- KOReader's popup does (with the selection around it as context). When the
+	-- word is there already, the Vocabulary Builder shows it in a dialog of its
+	-- own; otherwise a notification says it was added.
+	function LookupPreview:addToVocabularyBuilder(state)
+		local word = trim(state and state.word or "")
+		if word == "" or not self:getVocabularyBuilder() then
+			return true
+		end
+
+		local book_title = self.ui.doc_props and self.ui.doc_props.display_title or _("Dictionary lookup")
+		local top_before = UIManager:getTopmostVisibleWidget()
+		self.ui:handleEvent(Event:new("WordLookedUp", word, book_title, true))
+		state.vocabulary_added = true
+		if UIManager:getTopmostVisibleWidget() == top_before then
+			self:notify(_("Added to vocabulary builder."))
+		end
+		return self:refreshCard(PAGE_DICTIONARY)
+	end
+
+	-- A link tapped in a definition: "bword://word", or just the word. It is
+	-- looked up in the same carousel, in the dictionary of the definition, as
+	-- KOReader's popup does; other links (web, resources) are left alone.
+	function LookupPreview:followDictionaryLink(state, link)
+		local uri = link and link.uri
+		if not uri or state ~= self.current_state then
+			return false
+		end
+
+		local word
+		if uri:sub(1, 8) == "bword://" then
+			word = uri:sub(9)
+		elseif not uri:find("://", 1, true) then
+			word = uri
+		end
+		word = trim(util and util.urlDecode and util.urlDecode(word or "") or word)
+		if word == "" then
+			return false
+		end
+
+		local dict_name = getCurrentResult(state).dict
+		self:lookUpInPreview(word, PAGE_DICTIONARY, {
+			dictionary_lookup = dict_name and { dict_names = { dict_name }, fuzzy = false } or nil,
+		})
+		return true
+	end
+
 	-- Opens Dictionary Explorer at the word of the result being shown, like the
 	-- "Go to dictionary" button of KOReader's own popup does.
 	function LookupPreview:openDictionaryExplorerFromState(state)
@@ -513,19 +585,70 @@ return function(ctx)
 		return false
 	end
 
+	-- The dictionary lookups the cards asked for and are still waiting for,
+	-- oldest first. Several can be pending (a lookup made inside the carousel
+	-- before the previous one answered): each keeps its own state.
+	local function pendingCaptures(plugin)
+		plugin.dictionary_captures = plugin.dictionary_captures or {}
+		return plugin.dictionary_captures
+	end
+
+	-- The pending lookup that `word` answers, the oldest first.
+	function LookupPreview:findDictionaryCapture(word)
+		local captures = pendingCaptures(self)
+		for index = 1, #captures do
+			if captures[index].word == word then
+				return captures[index]
+			end
+		end
+		return nil
+	end
+
+	function LookupPreview:isDictionaryCapturePending(capture)
+		local captures = pendingCaptures(self)
+		for index = 1, #captures do
+			if captures[index] == capture then
+				return true
+			end
+		end
+		return false
+	end
+
+	-- Stops waiting for `capture`, or for every pending lookup without one.
+	-- KOReader's "No results" dialog comes back when nothing is pending.
 	function LookupPreview:endDictionaryCapture(capture)
-		capture = capture or self.dictionary_capture
-		if not capture or self.dictionary_capture ~= capture then
+		local captures = pendingCaptures(self)
+		if not capture then
+			self.waiting_dictionary_lookups = nil
+			for index = #captures, 1, -1 do
+				self:endDictionaryCapture(captures[index])
+			end
 			return
 		end
-		self.dictionary_capture = nil
+		if not self:isDictionaryCapturePending(capture) then
+			return
+		end
+		for index = #captures, 1, -1 do
+			if captures[index] == capture then
+				table.remove(captures, index)
+			end
+		end
 
 		local dictionary = capture.dictionary
-		if dictionary and rawget(dictionary, "showNoResultsDialog") == skipNoResultsDialog then
-			dictionary.showNoResultsDialog = capture.no_results_dialog
+		if dictionary and #captures == 0 then
+			if rawget(dictionary, "showNoResultsDialog") == skipNoResultsDialog then
+				dictionary.showNoResultsDialog = self.saved_no_results_dialog
+			end
+			self.saved_no_results_dialog = nil
 		end
 		if dictionary and type(dictionary.dismissLookupInfo) == "function" then
 			pcall(dictionary.dismissLookupInfo, dictionary)
+		end
+		-- The next waiting lookup starts once KOReader is done with this one.
+		if #captures == 0 and self.waiting_dictionary_lookups and #self.waiting_dictionary_lookups > 0 then
+			UIManager:nextTick(function()
+				self:startNextDictionaryLookup()
+			end)
 		end
 	end
 
@@ -534,13 +657,16 @@ return function(ctx)
 	function LookupPreview:receiveDictionaryResults(capture, dict_self, word, results)
 		self:endDictionaryCapture(capture)
 		local state = capture.state
-		if state ~= self.current_state then
+		if not self:isStateOpen(state) then
 			-- The carousel was closed while looking up.
 			return true
 		end
 
 		self:setDictionaryResults(state, dict_self, word, results)
-		return self:refreshCard(PAGE_DICTIONARY)
+		if state == self.current_state then
+			self:refreshCard(PAGE_DICTIONARY)
+		end
+		return true
 	end
 
 	-- Looks the selected text up for a carousel opened from Translate or
@@ -568,51 +694,83 @@ return function(ctx)
 			return self:refreshCard(PAGE_DICTIONARY)
 		end
 
+		setLoadStatus(state, PAGE_DICTIONARY, LOAD_LOADING)
+		self:refreshCard(PAGE_DICTIONARY)
+
+		-- KOReader's dictionary does one lookup at a time (they share its
+		-- progress message and the trap that cancels them): a lookup asked for
+		-- while another runs waits for it (see endDictionaryCapture).
+		if #pendingCaptures(self) > 0 then
+			local waiting = self.waiting_dictionary_lookups or {}
+			self.waiting_dictionary_lookups = waiting
+			waiting[#waiting + 1] = state
+			return true
+		end
+		return self:startDictionaryLookup(state)
+	end
+
+	-- Starts the lookup of a card marked as loading.
+	function LookupPreview:startDictionaryLookup(state)
+		local dictionary = self.ui.dictionary
 		local text = state.search_text or ""
 		local ok_clean, word = pcall(dictionary.cleanSelection, dictionary, text, false)
 		word = ok_clean and word or text
 
-		self:endDictionaryCapture()
-		local capture = {
-			state = state,
-			word = word,
-			dictionary = dictionary,
-			no_results_dialog = rawget(dictionary, "showNoResultsDialog"),
-		}
-		self.dictionary_capture = capture
+		local capture = { state = state, word = word, dictionary = dictionary }
+		local captures = pendingCaptures(self)
+		if rawget(dictionary, "showNoResultsDialog") ~= skipNoResultsDialog then
+			self.saved_no_results_dialog = rawget(dictionary, "showNoResultsDialog")
+		end
+		captures[#captures + 1] = capture
 		dictionary.showNoResultsDialog = skipNoResultsDialog
-
-		setLoadStatus(state, PAGE_DICTIONARY, LOAD_LOADING)
-		self:refreshCard(PAGE_DICTIONARY)
 
 		-- KOReader calls this instead of showDict when the lookup is cancelled
 		-- right after it started.
 		local function onCancelled()
-			if self.dictionary_capture ~= capture then
+			if not self:isDictionaryCapturePending(capture) then
 				return
 			end
 			self:endDictionaryCapture(capture)
-			if state == self.current_state then
+			if self:isStateOpen(state) then
 				setLoadStatus(state, PAGE_DICTIONARY, LOAD_ERROR, _("Dictionary lookup interrupted."))
+			end
+			if state == self.current_state then
 				self:refreshCard(PAGE_DICTIONARY)
 			end
 		end
 
-		local ok, err = pcall(
-			dictionary.onLookupWord,
-			dictionary,
-			word,
-			true,
-			nil,
-			state.highlight_self,
-			nil,
-			onCancelled
-		)
+		local ok, err
+		local restricted = state.dictionary_lookup
+		if restricted then
+			-- A followed link: only in its dictionary, as KOReader's popup does.
+			ok, err = pcall(function()
+				require("ui/trapper"):wrap(function()
+					dictionary:stardictLookup(word, restricted.dict_names, restricted.fuzzy, nil, nil, onCancelled)
+				end)
+			end)
+		else
+			ok, err = pcall(dictionary.onLookupWord, dictionary, word, true, nil, state.highlight_self, nil, onCancelled)
+		end
 		if not ok then
 			logger.warn("LookupPreview: dictionary lookup failed:", err)
 			self:endDictionaryCapture(capture)
 			setLoadStatus(state, PAGE_DICTIONARY, LOAD_ERROR, _("Dictionary lookup failed."))
-			return self:refreshCard(PAGE_DICTIONARY)
+			if state == self.current_state then
+				self:refreshCard(PAGE_DICTIONARY)
+			end
+		end
+		return true
+	end
+
+	-- Starts the oldest waiting lookup whose card is still open and loading;
+	-- the others were closed meanwhile.
+	function LookupPreview:startNextDictionaryLookup()
+		local waiting = self.waiting_dictionary_lookups or {}
+		while #waiting > 0 and #pendingCaptures(self) == 0 do
+			local state = table.remove(waiting, 1)
+			if self:isStateOpen(state) and getLoadStatus(state, PAGE_DICTIONARY) == LOAD_LOADING then
+				return self:startDictionaryLookup(state)
+			end
 		end
 		return true
 	end

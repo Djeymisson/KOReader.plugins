@@ -856,17 +856,17 @@ return function(ctx)
 	end
 
 	function SimplePageMenu:makeContainer(content_width, border_size)
+		local rows = {}
+		for position = 1, #self.cards do
+			rows[#rows + 1] = self:makeRow(self.cards[position], content_width)
+		end
 		return FrameContainer:new({
 			background = Blitbuffer.COLOR_WHITE,
 			bordersize = border_size,
 			color = Blitbuffer.COLOR_DARK_GRAY,
 			margin = 0,
 			padding = 0,
-			VerticalGroup:new({
-				self:makeRow(PAGE_DICTIONARY, content_width),
-				self:makeRow(PAGE_TRANSLATION, content_width),
-				self:makeRow(PAGE_WIKIPEDIA, content_width),
-			}),
+			VerticalGroup:new(rows),
 		})
 	end
 
@@ -906,12 +906,14 @@ return function(ctx)
 		local border_size = Size.border.thin
 		local content_width = math.min(PAGE_MENU_WIDTH, screen_width - 2 * CARD_EDGE_MARGIN - 2 * border_size)
 
+		local plugin = self.parent_popup and self.parent_popup.plugin
+		self.cards = plugin and plugin:getVisibleCards() or CARD_IDS
 		self.container = self:makeContainer(content_width, border_size)
 
 		local container_size = getWidgetSize(self.container)
 		local width = container_size.w and container_size.w > 0 and container_size.w or content_width + 2 * border_size
 		local height = container_size.h and container_size.h > 0 and container_size.h
-			or PAGE_MENU_ITEM_HEIGHT * 3 + 2 * border_size
+			or PAGE_MENU_ITEM_HEIGHT * #self.cards + 2 * border_size
 		local x, y = self:getPosition(width, height, screen_width, screen_height)
 
 		self.visible_dimen = Geom:new({ x = x, y = y, w = width, h = height })
@@ -961,12 +963,7 @@ return function(ctx)
 
 	function SimplePageMenu:getPageIndexFromTap(y)
 		local item_index = math.floor((y - self.visible_dimen.y) / PAGE_MENU_ITEM_HEIGHT) + 1
-		if item_index == 2 then
-			return PAGE_TRANSLATION
-		elseif item_index >= 3 then
-			return PAGE_WIKIPEDIA
-		end
-		return PAGE_DICTIONARY
+		return self.cards[clamp(item_index, 1, #self.cards)]
 	end
 
 	function SimplePageMenu:onTapPageMenu(_arg, ges)
@@ -1022,6 +1019,7 @@ return function(ctx)
 		self.side_tab_bounds = {}
 
 		self.side_tab_position = nil
+		self:updateCardOrder()
 		self.tab_protrusion = self:useTabsMode() and math.max(0, TAB_TOUCH_HEIGHT - SIDE_TAB_BORDER_SIZE) or 0
 		self.card_y = self.tab_protrusion
 		self.dimen = Geom:new({
@@ -1038,6 +1036,15 @@ return function(ctx)
 		end
 
 		self:buildActiveContainer()
+	end
+
+	-- The cards shown, in their order, and the active card's neighbours (nil at
+	-- either end).
+	function CarouselRow:updateCardOrder()
+		local plugin = self.popup and self.popup.plugin
+		self.card_order = plugin and plugin:getVisibleCards() or CARD_IDS
+		self.prev_index = plugin and plugin:getNeighborCard(self.active_index, -1, self.card_order)
+		self.next_index = plugin and plugin:getNeighborCard(self.active_index, 1, self.card_order)
 	end
 
 	function CarouselRow:useTabsMode()
@@ -1093,8 +1100,10 @@ return function(ctx)
 		end
 
 		local use_tabs = self:useTabsMode()
-		for index = PAGE_DICTIONARY, PAGE_WIKIPEDIA do
-			if index == self.active_index or (not use_tabs and math.abs(index - self.active_index) <= 1) then
+		for position = 1, #self.card_order do
+			local index = self.card_order[position]
+			local is_neighbor = index == self.prev_index or index == self.next_index
+			if index == self.active_index or (not use_tabs and is_neighbor) then
 				local card = self:makeCard(index, index == self.active_index)
 				if index == self.active_index then
 					self.active_card = card
@@ -1105,11 +1114,13 @@ return function(ctx)
 
 	function CarouselRow:buildCardPositions()
 		local active_x = math.floor((self.screen_width - self.card_width) / 2)
-		self.positions = {
-			[self.active_index - 1] = active_x - self.card_width - CARD_GAP,
-			[self.active_index] = active_x,
-			[self.active_index + 1] = active_x + self.card_width + CARD_GAP,
-		}
+		self.positions = { [self.active_index] = active_x }
+		if self.prev_index then
+			self.positions[self.prev_index] = active_x - self.card_width - CARD_GAP
+		end
+		if self.next_index then
+			self.positions[self.next_index] = active_x + self.card_width + CARD_GAP
+		end
 	end
 
 	function CarouselRow:buildSideTabs()
@@ -1130,7 +1141,8 @@ return function(ctx)
 		local specs = {}
 		local used_width = 0
 
-		for page_index = PAGE_DICTIONARY, PAGE_WIKIPEDIA do
+		for position = 1, #self.card_order do
+			local page_index = self.card_order[position]
 			local active = page_index == self.active_index
 			local text = getTabLabel(page_index)
 			local width = getCompactTabWidth(text, active)
@@ -1152,11 +1164,12 @@ return function(ctx)
 			end
 		end
 
+		local first_card = self.card_order[1]
 		for _, spec in ipairs(specs) do
 			local extend_dictionary_border = card_radius
 				and card_radius > 0
-				and self.active_index ~= PAGE_DICTIONARY
-				and spec.page_index == PAGE_DICTIONARY
+				and self.active_index ~= first_card
+				and spec.page_index == first_card
 			local tab_border_size = math.max(1, SIDE_TAB_BORDER_SIZE or 1)
 			self.side_tab_widgets[spec.page_index] = CardTabButton:new({
 				text = spec.text,
@@ -1189,7 +1202,8 @@ return function(ctx)
 			return
 		end
 
-		for page_index = PAGE_DICTIONARY, PAGE_WIKIPEDIA do
+		for position = 1, #self.card_order do
+			local page_index = self.card_order[position]
 			local widget = self.side_tab_widgets and self.side_tab_widgets[page_index]
 			local bounds = self.side_tab_bounds and self.side_tab_bounds[page_index]
 			if widget and bounds then
@@ -1248,7 +1262,7 @@ return function(ctx)
 			return
 		end
 
-		if self.active_index == PAGE_DICTIONARY then
+		if self.active_index == self.card_order[1] then
 			local bridge_height = math.max(border_size, math.min(card_radius, Screen:scaleBySize(5)))
 			local bridge_x = cover_x
 			local bridge_right = math.min(tab_right - active_tab_border_size, card_right - border_size)
@@ -1269,7 +1283,7 @@ return function(ctx)
 			return
 		end
 
-		local first_tab_bounds = self.side_tab_bounds and self.side_tab_bounds[PAGE_DICTIONARY]
+		local first_tab_bounds = self.side_tab_bounds and self.side_tab_bounds[self.card_order[1]]
 		local first_tab_left = first_tab_bounds and ((base_x or 0) + first_tab_bounds.x) or card_x
 		local left_join_x = math.max(first_tab_left, card_x + card_radius)
 		local left_join_w = math.max(0, cover_x - left_join_x)
@@ -1294,7 +1308,8 @@ return function(ctx)
 			return nil
 		end
 
-		for page_index = PAGE_DICTIONARY, PAGE_WIKIPEDIA do
+		for position = 1, #self.card_order do
+			local page_index = self.card_order[position]
 			local bounds = self.side_tab_bounds and self.side_tab_bounds[page_index]
 			if bounds then
 				local absolute_bounds = Geom:new({
@@ -1376,8 +1391,8 @@ return function(ctx)
 	end
 
 	function CarouselRow:paintCard(bb, base_x, base_y, index)
-		local card = self.cards and self.cards[index]
-		local card_x = self.positions and self.positions[index]
+		local card = index and self.cards and self.cards[index]
+		local card_x = index and self.positions and self.positions[index]
 		if not card or not card_x then
 			return
 		end
@@ -1400,8 +1415,8 @@ return function(ctx)
 		y = y or (self.dimen and self.dimen.y) or 0
 
 		if not self:useTabsMode() then
-			self:paintCard(bb, x, y, self.active_index - 1)
-			self:paintCard(bb, x, y, self.active_index + 1)
+			self:paintCard(bb, x, y, self.prev_index)
+			self:paintCard(bb, x, y, self.next_index)
 		end
 
 		if self.active_container then
@@ -1444,6 +1459,7 @@ return function(ctx)
 
 	function CarouselRow:rebuildForPage(index)
 		self.active_index = index or PAGE_DICTIONARY
+		self:updateCardOrder()
 		self.cards = {}
 		self.side_tab_widgets = {}
 		self.side_tab_bounds = {}
@@ -1533,17 +1549,51 @@ return function(ctx)
 		})
 	end
 
-	function LookupPreviewPopup:makeHeader(payload, content_width)
+	-- The active card's header has a back button when the lookup was made
+	-- inside the preview, and a button to edit the looked up text.
+	function LookupPreviewPopup:makeHeaderNavigation(is_active)
+		if not (is_active and self.plugin and self.state) then
+			return nil, nil
+		end
+
+		local back_button
+		local parent = self.state.parent
+		if parent then
+			back_button = HeaderPageMenuButton:new({
+				icon = ICON_PREVIOUS,
+				icon_file = self.plugin:getPluginIconFile(ICON_PREVIOUS),
+				width = HEADER_MENU_WIDTH,
+				show_parent = self,
+				hint = string.format(_("Back to %s"), parent.search_text or ""),
+				callback = function()
+					return self.plugin:goBack()
+				end,
+			})
+		end
+
+		local edit_button = HeaderPageMenuButton:new({
+			icon = ICON_EDIT_FALLBACK,
+			icon_file = self.plugin:getPluginIconFile(ICON_EDIT),
+			width = HEADER_MENU_WIDTH,
+			show_parent = self,
+			hint = _("Edit the looked up text"),
+			callback = function()
+				return self.plugin:showEditDialog()
+			end,
+		})
+		return back_button, edit_button
+	end
+
+	function LookupPreviewPopup:makeHeader(payload, content_width, is_active)
 		payload = payload or {}
 
+		local back_button, edit_button = self:makeHeaderNavigation(is_active)
 		local menu_button
-		local menu_width = 0
 		if not self:useTabsMode() then
 			local menu_icon_file = self.plugin and self.plugin:getPluginIconFile(ICON_MENU)
-			menu_width = HEADER_MENU_WIDTH
 			menu_button = HeaderPageMenuButton:new({
 				icon_file = menu_icon_file,
-				width = menu_width,
+				width = HEADER_MENU_WIDTH,
 				show_parent = self,
 				hint = _("Choose which card to show"),
 				callback = function()
@@ -1552,8 +1602,13 @@ return function(ctx)
 			})
 		end
 
-		local text_width = menu_button and math.max(1, content_width - menu_width - HEADER_TITLE_MENU_GAP)
-			or content_width
+		local text_width = content_width
+		for _, button in ipairs({ back_button or false, edit_button or false, menu_button or false }) do
+			if button then
+				text_width = text_width - HEADER_MENU_WIDTH - HEADER_TITLE_MENU_GAP
+			end
+		end
+		text_width = math.max(1, text_width)
 		local hide_redundant_title = self:useTabsMode()
 			and (payload.page_type == PAGE_TRANSLATION or payload.page_type == PAGE_WIKIPEDIA)
 		local text_items = {}
@@ -1579,24 +1634,32 @@ return function(ctx)
 
 		local text_block = VerticalGroup:new(text_items)
 		local row_height = getWidgetSize(text_block).h or Screen:scaleBySize(24)
-		if menu_button then
-			row_height = math.max(row_height, getWidgetSize(menu_button).h or HEADER_MENU_HEIGHT)
+		if menu_button or back_button or edit_button then
+			row_height = math.max(row_height, HEADER_MENU_HEIGHT)
 		end
 
-		local row_items = {
-			LeftContainer:new({
-				allow_mirroring = false,
-				dimen = Geom:new({ w = text_width, h = row_height }),
-				text_block,
-			}),
-		}
-
-		if menu_button then
-			row_items[#row_items + 1] = HorizontalSpan:new({ width = HEADER_TITLE_MENU_GAP })
-			row_items[#row_items + 1] = CenterContainer:new({
-				dimen = Geom:new({ w = menu_width, h = row_height }),
-				menu_button,
+		local function headerButton(button)
+			return CenterContainer:new({
+				dimen = Geom:new({ w = HEADER_MENU_WIDTH, h = row_height }),
+				button,
 			})
+		end
+
+		local row_items = {}
+		if back_button then
+			row_items[#row_items + 1] = headerButton(back_button)
+			row_items[#row_items + 1] = HorizontalSpan:new({ width = HEADER_TITLE_MENU_GAP })
+		end
+		row_items[#row_items + 1] = LeftContainer:new({
+			allow_mirroring = false,
+			dimen = Geom:new({ w = text_width, h = row_height }),
+			text_block,
+		})
+		for _, button in ipairs({ edit_button or false, menu_button or false }) do
+			if button then
+				row_items[#row_items + 1] = HorizontalSpan:new({ width = HEADER_TITLE_MENU_GAP })
+				row_items[#row_items + 1] = headerButton(button)
+			end
 		end
 
 		return VerticalGroup:new({
@@ -1751,7 +1814,7 @@ return function(ctx)
 	function LookupPreviewPopup:makeCard(payload, card_width, card_height, scroll_key, is_active)
 		payload = payload or {}
 		local content_width = math.max(1, card_width - 2 * CARD_PADDING_H - 2 * CARD_BORDER_SIZE)
-		local header = self:makeHeader(payload, content_width)
+		local header = self:makeHeader(payload, content_width, is_active)
 		local buttons = self:makeDictionaryButtons(payload, content_width)
 		local html_height, buttons_gap =
 			self:getCardDimensions(card_height, header, buttons, payload.page_type)
@@ -1761,13 +1824,16 @@ return function(ctx)
 			is_xhtml = true,
 			css = payload.css or FALLBACK_CSS,
 			html_resource_directory = payload.html_resource_directory,
-			default_font_size = BODY_FONT_SIZE,
+			default_font_size = self.plugin and self.plugin:getBodyFontSize() or Screen:scaleBySize(DEFAULT_TEXT_SIZE),
 			width = content_width,
 			height = html_height,
 			scroll_bar_width = SCROLL_BAR_WIDTH,
 			text_scroll_span = TEXT_SCROLL_SPAN,
 			dialog = self.dialog,
-			highlight_text_selection = false,
+			-- The active card's text can be held to look a word up, and its
+			-- links followed (see the HoldReleaseText gesture of the popup).
+			highlight_text_selection = is_active and true or false,
+			html_link_tapped_callback = is_active and payload.link_callback or nil,
 		})
 		if scroll_key then
 			local state = self.state
@@ -1817,7 +1883,7 @@ return function(ctx)
 			square_top_left = self:useTabsMode()
 				and card_radius ~= nil
 				and card_radius > 0
-				and payload.page_type == PAGE_DICTIONARY,
+				and payload.page_type == (self.plugin and self.plugin:getVisibleCards()[1] or PAGE_DICTIONARY),
 			margin = 0,
 			padding = 0,
 			VerticalGroup:new(content_items),
@@ -1841,7 +1907,8 @@ return function(ctx)
 	function LookupPreviewPopup:init()
 		local screen_width = Screen:getWidth()
 		local screen_height = Screen:getHeight()
-		local card_height = math.floor(screen_height * CARD_HEIGHT_RATIO)
+		local height_ratio = self.plugin and self.plugin:getCardHeightRatio(self.state) or CARD_HEIGHT_RATIO
+		local card_height = math.floor(screen_height * height_ratio)
 		local card_width = math.max(CARD_MIN_WIDTH, math.floor(screen_width * CARD_WIDTH_RATIO))
 		card_width = math.min(card_width, screen_width - 2 * CARD_EDGE_MARGIN)
 		self.card_width = card_width
@@ -1853,13 +1920,36 @@ return function(ctx)
 				TapClose = { GestureRange:new({ ges = "tap", range = range }) },
 				SwipePage = { GestureRange:new({ ges = "swipe", range = range }) },
 				HoldTab = { GestureRange:new({ ges = "hold", range = range }) },
+				-- Spreading two fingers expands the cards, pinching compacts them.
+				SpreadCard = { GestureRange:new({ ges = "spread", range = range }) },
+				PinchCard = { GestureRange:new({ ges = "pinch", range = range }) },
+				-- Selecting text in the active card, as in KOReader's popup: the
+				-- events go down to the card's HtmlBoxWidget, which only takes
+				-- them inside its text, and on release the text is looked up.
+				HoldStartText = { GestureRange:new({ ges = "hold", range = range }) },
+				HoldPanText = { GestureRange:new({ ges = "hold_pan", range = range }) },
+				HoldReleaseText = {
+					GestureRange:new({ ges = "hold_release", range = range }),
+					args = function(text)
+						return self.plugin:lookUpHeldText(text)
+					end,
+				},
 			}
 		end
 
+		-- Keys: Back closes; page turn buttons (and up/down) scroll the active
+		-- card; left/right go to the previous or next card.
 		if HAS_KEYS then
+			local has_dpad = Device:hasDPad()
 			self.key_events = {
 				Close = { { Device.input.group.Back } },
+				ScrollCardDown = { has_dpad and { "Down", "RPgFwd", "LPgFwd" } or Device.input.group.PgFwd },
+				ScrollCardUp = { has_dpad and { "Up", "RPgBack", "LPgBack" } or Device.input.group.PgBack },
 			}
+			if has_dpad then
+				self.key_events.NextCard = { { "Right" } }
+				self.key_events.PrevCard = { { "Left" } }
+			end
 		end
 
 		local tab_protrusion = self:useTabsMode() and math.max(0, TAB_TOUCH_HEIGHT - SIDE_TAB_BORDER_SIZE) or 0
@@ -1982,7 +2072,7 @@ return function(ctx)
 	end
 
 	function LookupPreviewPopup:switchToPage(index)
-		index = math.max(PAGE_DICTIONARY, math.min(PAGE_WIKIPEDIA, index or PAGE_DICTIONARY))
+		index = self.plugin:normalizeCard(index or PAGE_DICTIONARY)
 		self:closePageMenu()
 		self.active_index = index
 		if self.state then
@@ -2060,25 +2150,65 @@ return function(ctx)
 		return false
 	end
 
+	function LookupPreviewPopup:onSpreadCard()
+		return self.plugin:setCardExpanded(true)
+	end
+
+	function LookupPreviewPopup:onPinchCard()
+		return self.plugin:setCardExpanded(false)
+	end
+
 	function LookupPreviewPopup:onSwipePage(_arg, ges)
 		if not ges or not ges.direction then
 			return false
 		end
 
 		if ges.direction == "west" then
-			return self.plugin:switchToPage(math.min(PAGE_WIKIPEDIA, self.active_index + 1))
+			return self:onNextPage()
 		elseif ges.direction == "east" then
-			return self.plugin:switchToPage(math.max(PAGE_DICTIONARY, self.active_index - 1))
+			return self:onPrevPage()
 		end
 
 		return false
 	end
 
+	local function activeHtml(popup)
+		local card = popup.card_container and popup.card_container.active_card
+		return card and card.html_widget
+	end
+
+	function LookupPreviewPopup:onScrollCardDown()
+		local html = activeHtml(self)
+		if html then
+			html:onScrollDown()
+		end
+		return true
+	end
+
+	function LookupPreviewPopup:onScrollCardUp()
+		local html = activeHtml(self)
+		if html then
+			html:onScrollUp()
+		end
+		return true
+	end
+
+	function LookupPreviewPopup:onNextCard()
+		return self:onNextPage()
+	end
+
+	function LookupPreviewPopup:onPrevCard()
+		return self:onPrevPage()
+	end
+
+	-- The next or previous card shown; nothing past either end.
 	function LookupPreviewPopup:onNextPage()
-		return self.plugin:switchToPage(math.min(PAGE_WIKIPEDIA, self.active_index + 1))
+		local index = self.plugin:getNeighborCard(self.active_index, 1)
+		return index and self.plugin:switchToPage(index) or true
 	end
 
 	function LookupPreviewPopup:onPrevPage()
-		return self.plugin:switchToPage(math.max(PAGE_DICTIONARY, self.active_index - 1))
+		local index = self.plugin:getNeighborCard(self.active_index, -1)
+		return index and self.plugin:switchToPage(index) or true
 	end
 end

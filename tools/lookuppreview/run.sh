@@ -6,7 +6,7 @@
 #   tools/lookuppreview/run.sh [options] SUITE...
 #
 # SUITE is the name of a file in suites/ (without .lua), or "check" for every
-# suite (entry, dictionary, scroll). See README.md for what each does. The
+# suite (entry, dictionary, scroll, online, vocabulary, navigation, reading). See README.md for what each does. The
 # synthetic dictionaries of tools/dictionaryexplorer/fixtures are always there,
 # and the translation service and Wikipedia are replaced by stand-ins, so no
 # suite needs a dictionary of your own or the network.
@@ -49,7 +49,7 @@ done
 expanded=""
 for suite in $SUITES; do
 	if [ "$suite" = check ]; then
-		expanded="$expanded entry dictionary scroll"
+		expanded="$expanded entry dictionary scroll online vocabulary navigation reading"
 	else
 		expanded="$expanded $suite"
 	fi

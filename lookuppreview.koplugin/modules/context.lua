@@ -63,7 +63,6 @@ TITLE_FONT_SIZE = math.max(16, UI_FONT_SIZE - 1)
 SUBTITLE_FONT_SIZE = math.max(14, UI_FONT_SIZE - 3)
 HEADER_MENU_FONT_SIZE = math.max(14, UI_FONT_SIZE - 4)
 HEADER_BUTTON_FONT_SIZE = math.max(18, UI_FONT_SIZE)
-BODY_FONT_SIZE = scaleBySize(18)
 DICTIONARY_BUTTON_FONT_SIZE = math.max(13, UI_FONT_SIZE - 5)
 
 function getUIFontFace(names, size, fallback_name)
@@ -98,6 +97,15 @@ DICTIONARY_BUTTON_FACE = Font:getFace("cfont", DICTIONARY_BUTTON_FONT_SIZE)
 -- Layout --------------------------------------------------------------------
 CARD_WIDTH_RATIO = 0.92
 CARD_HEIGHT_RATIO = 0.38
+CARD_EXPANDED_HEIGHT_RATIO = 0.75
+
+CARD_HEIGHT_COMPACT = "compact"
+CARD_HEIGHT_EXPANDED = "expanded"
+DEFAULT_CARD_HEIGHT = CARD_HEIGHT_COMPACT
+
+-- Text size of the cards' content, before scaling to the screen.
+TEXT_SIZES = { 14, 16, 18, 20, 22, 24 }
+DEFAULT_TEXT_SIZE = 18
 CARD_MIN_WIDTH = scaleBySize(220)
 CARD_GAP = scaleBySize(8)
 CARD_EDGE_MARGIN = scaleBySize(10)
@@ -162,11 +170,18 @@ EMPTY_TEXT = "—"
 SETTING_ENABLED = "lookuppreview_enabled"
 SETTING_CARD_ROUNDED = "lookuppreview_card_rounded"
 SETTING_CARD_SHADOWS = "lookuppreview_card_shadows"
+SETTING_CARD_HEIGHT = "lookuppreview_card_height"
+SETTING_CARD_ORDER = "lookuppreview_card_order"
+SETTING_HIDDEN_CARDS = "lookuppreview_hidden_cards"
+SETTING_OPEN_CARD = "lookuppreview_open_card"
+SETTING_LAST_CARD = "lookuppreview_last_card"
+SETTING_TEXT_SIZE = "lookuppreview_text_size"
 SETTING_SIDE_PREVIEW_MODE = "lookuppreview_side_preview_mode"
 SETTING_ONLINE_CARD_LOAD_MODE = "lookuppreview_online_card_load_mode"
 SETTING_DICTIONARY_HTML_MODE = "lookuppreview_dictionary_html_mode"
 SETTING_WIKI_LANG = "lookuppreview_wikipedia_lang"
 SETTING_DICTIONARY_DETAILS_BUTTONS = "lookuppreview_dictionary_details_buttons"
+SETTING_DICTIONARY_VOCABULARY_BUTTON = "lookuppreview_dictionary_vocabulary_button"
 SETTING_TRANSLATION_SHOW_SOURCE = "lookuppreview_translation_show_source"
 SETTING_TRANSLATION_SHOW_COPY_BUTTON = "lookuppreview_translation_show_copy_button"
 SETTING_TRANSLATION_SHOW_NOTE_BUTTON = "lookuppreview_translation_show_note_button"
@@ -192,11 +207,20 @@ ICON_NEXT = "chevron.right"
 ICON_DETAILS = "open_popup"
 ICON_DETAILS_FALLBACK = "chevron.up"
 ICON_GO_TO_DICT = "go_to_dict"
+ICON_VOCABULARY = "vocabulary"
+ICON_VOCABULARY_FALLBACK = "plus"
+ICON_VOCABULARY_ADDED = "check"
 ICON_COPY = "copy"
 ICON_ADD_NOTE = "add_note"
 ICON_WIKIPEDIA = "wikipedia"
 ICON_LOADING = "loading"
 ICON_MENU = "menu"
+ICON_EDIT = "edit"
+ICON_TRANSLATE_SENTENCE = "translate_sentence"
+ICON_TRANSLATE_SELECTION = "translate_selection"
+ICON_LOAD = "load_online"
+ICON_RETRY = "retry"
+ICON_EDIT_FALLBACK = "edit"
 
 PLUGIN_ICON_DEFINITIONS = {
 	{
@@ -230,6 +254,11 @@ PLUGIN_ICON_DEFINITIONS = {
 		basenames = { "go_to_dict" },
 	},
 	{
+		id = ICON_VOCABULARY,
+		label = _("Add to vocabulary builder"),
+		basenames = { "vocabulary" },
+	},
+	{
 		id = ICON_COPY,
 		label = _("Copy translation"),
 		basenames = { "copy" },
@@ -250,6 +279,31 @@ PLUGIN_ICON_DEFINITIONS = {
 		basenames = { "loading" },
 	},
 	{
+		id = ICON_TRANSLATE_SENTENCE,
+		label = _("Translate the whole sentence"),
+		basenames = { "translate_sentence" },
+	},
+	{
+		id = ICON_TRANSLATE_SELECTION,
+		label = _("Translate only the selected text"),
+		basenames = { "translate_selection" },
+	},
+	{
+		id = ICON_LOAD,
+		label = _("Load an online card"),
+		basenames = { "load_online" },
+	},
+	{
+		id = ICON_RETRY,
+		label = _("Retry"),
+		basenames = { "retry" },
+	},
+	{
+		id = ICON_EDIT,
+		label = _("Edit the looked up text"),
+		basenames = { "edit_lookup", "edit" },
+	},
+	{
 		id = ICON_MENU,
 		label = _("Card selector"),
 		basenames = { "menu" },
@@ -265,6 +319,12 @@ end
 PAGE_DICTIONARY = 1
 PAGE_TRANSLATION = 2
 PAGE_WIKIPEDIA = 3
+
+CARD_IDS = { PAGE_DICTIONARY, PAGE_TRANSLATION, PAGE_WIKIPEDIA }
+
+-- Which card a lookup from the book (a long press on a word) opens on.
+OPEN_CARD_DICTIONARY = "dictionary"
+OPEN_CARD_LAST = "last"
 
 PAGE_TITLES = {
 	[PAGE_DICTIONARY] = _("Dictionary"),

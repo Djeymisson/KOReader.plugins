@@ -34,18 +34,14 @@ return function(ctx)
 
 	local function applyCardShadowMode(plugin, enabled)
 		plugin:setCardShadows(enabled)
-		local state = plugin.current_state
-		if state and plugin.current_popup then
-			local active_index = state.active_index or PAGE_DICTIONARY
-			plugin:closeCurrentPopup(true)
-			return plugin:showCarousel(state, active_index)
-		end
-		return true
+		return plugin:reopenCarousel()
 	end
 
+	-- Tabs make the row taller than full cards, so an open carousel is shown
+	-- again, placed for its new height.
 	local function applySidePreviewMode(plugin, mode)
 		plugin:setSidePreviewMode(mode)
-		return plugin:refreshVisibleCards()
+		return plugin:reopenCarousel()
 	end
 
 	local function applyOnlineCardLoadMode(plugin, mode)
@@ -81,6 +77,8 @@ return function(ctx)
 		self.plugin_icon_cache = {}
 		self.language_menu = nil
 		self.clipboard_available = Device:hasClipboard()
+		-- See runOnlineQuery in utils.lua.
+		self.online_queries_in_subprocess = jit.os ~= "OSX"
 
 		if self.ui and self.ui.menu then
 			self.ui.menu:registerToMainMenu(self)
@@ -120,6 +118,107 @@ return function(ctx)
 					end,
 				},
 			},
+		}
+
+		local cards_item = {
+			text = _("Cards"),
+			help_text = _(
+				"Choose which cards the carousel shows and in which order, and which card a lookup from the book opens on. A hidden card's action (Dictionary, Translate or Wikipedia) opens KOReader's own window instead."
+			),
+			sub_item_table = {
+				{
+					text = _("Show and order cards"),
+					keep_menu_open = true,
+					callback = function()
+						return self:showCardOrderDialog()
+					end,
+					separator = true,
+				},
+				{
+					text = _("Open on the dictionary card"),
+					help_text = _("A long press on a word opens the carousel on the Dictionary card."),
+					radio = true,
+					checked_func = function()
+						return self:getOpenCardMode() == OPEN_CARD_DICTIONARY
+					end,
+					callback = function()
+						G_reader_settings:saveSetting(SETTING_OPEN_CARD, OPEN_CARD_DICTIONARY)
+					end,
+				},
+				{
+					text = _("Open on the last card used"),
+					help_text = _(
+						"A long press on a word opens the carousel on the card that was shown when it was last closed. Translate and Wikipedia from the selection menu still open on their own card."
+					),
+					radio = true,
+					checked_func = function()
+						return self:getOpenCardMode() == OPEN_CARD_LAST
+					end,
+					callback = function()
+						G_reader_settings:saveSetting(SETTING_OPEN_CARD, OPEN_CARD_LAST)
+					end,
+				},
+			},
+		}
+
+		local card_height_item = {
+			text_func = function()
+				local mode = self:getCardHeightMode() == CARD_HEIGHT_EXPANDED and _("Expanded") or _("Compact")
+				return string.format("%s: %s", _("Card height"), mode)
+			end,
+			help_text = _(
+				"Choose how tall the cards open. Spreading two fingers on a card expands it and pinching makes it compact again, for that lookup."
+			),
+			sub_item_table = {
+				{
+					text = _("Compact"),
+					radio = true,
+					checked_func = function()
+						return self:getCardHeightMode() == CARD_HEIGHT_COMPACT
+					end,
+					callback = function()
+						self:setCardHeightMode(CARD_HEIGHT_COMPACT)
+						return self:reopenCarousel()
+					end,
+				},
+				{
+					text = _("Expanded"),
+					radio = true,
+					checked_func = function()
+						return self:getCardHeightMode() == CARD_HEIGHT_EXPANDED
+					end,
+					callback = function()
+						self:setCardHeightMode(CARD_HEIGHT_EXPANDED)
+						return self:reopenCarousel()
+					end,
+				},
+			},
+		}
+
+		local text_size_item = {
+			text_func = function()
+				return string.format("%s: %d", _("Text size"), self:getTextSize())
+			end,
+			help_text = _("Choose the size of the text of the cards' content."),
+			sub_item_table_func = function()
+				local items = {}
+				local default_label = _("default")
+				for size_index = 1, #TEXT_SIZES do
+					local size = TEXT_SIZES[size_index]
+					items[#items + 1] = {
+						text = size == DEFAULT_TEXT_SIZE and string.format("%d (%s)", size, default_label) or tostring(size),
+						radio = true,
+						checked_func = function()
+							return self:getTextSize() == size
+						end,
+						callback = function()
+							G_reader_settings:saveSetting(SETTING_TEXT_SIZE, size)
+							return self:refreshVisibleCards()
+						end,
+					}
+				end
+				return items
+			end,
 		}
 
 		local side_previews_item = {
@@ -341,6 +440,8 @@ return function(ctx)
 					sub_item_table = {
 						card_corners_item,
 						side_previews_item,
+						card_height_item,
+						text_size_item,
 						{
 							text = _("Show card shadows"),
 							help_text = _(
@@ -367,9 +468,29 @@ return function(ctx)
 					help_text = _("Choose how online cards load, dictionary HTML rendering, and Wikipedia/translation language and buttons."),
 					separator = true,
 					sub_item_table = {
+						cards_item,
 						online_loading_item,
 						dictionary_html_item,
 						details_buttons_item,
+						{
+							text = _("Show vocabulary builder button"),
+							help_text = _(
+								"Shows a button on the dictionary card that adds the word to KOReader's vocabulary builder, like the one in KOReader's dictionary popup. It is not shown when the vocabulary builder adds every looked up word by itself."
+							),
+							enabled_func = function()
+								return self:getVocabularyBuilder() ~= nil
+							end,
+							checked_func = function()
+								return G_reader_settings:nilOrTrue(SETTING_DICTIONARY_VOCABULARY_BUTTON)
+							end,
+							callback = function()
+								G_reader_settings:saveSetting(
+									SETTING_DICTIONARY_VOCABULARY_BUTTON,
+									not G_reader_settings:nilOrTrue(SETTING_DICTIONARY_VOCABULARY_BUTTON)
+								)
+								self:refreshCurrentPage(PAGE_DICTIONARY)
+							end,
+						},
 						{
 							text_func = function()
 								return string.format("%s: %s", _("Wikipedia language"), self:getWikipediaLang())
@@ -414,6 +535,195 @@ return function(ctx)
 
 	function LookupPreview:setCardShadows(enabled)
 		G_reader_settings:saveSetting(SETTING_CARD_SHADOWS, enabled and true or false)
+	end
+
+	-- Cards ----------------------------------------------------------------------
+	-- The cards are always the three of CARD_IDS; the settings give their order
+	-- and which are hidden. A hidden card's action is left to KOReader.
+
+	function LookupPreview:getCardOrder()
+		local saved = G_reader_settings:readSetting(SETTING_CARD_ORDER)
+		local order, seen = {}, {}
+		if type(saved) == "table" then
+			for position = 1, #saved do
+				local id = tonumber(saved[position])
+				if id and PAGE_TITLES[id] and not seen[id] then
+					order[#order + 1] = id
+					seen[id] = true
+				end
+			end
+		end
+		for position = 1, #CARD_IDS do
+			if not seen[CARD_IDS[position]] then
+				order[#order + 1] = CARD_IDS[position]
+			end
+		end
+		return order
+	end
+
+	function LookupPreview:isCardShown(id)
+		local hidden = G_reader_settings:readSetting(SETTING_HIDDEN_CARDS)
+		return not (type(hidden) == "table" and hidden[tostring(id)])
+	end
+
+	-- The cards shown, in order (all of them if every one was hidden).
+	function LookupPreview:getVisibleCards()
+		local order = self:getCardOrder()
+		local cards = {}
+		for position = 1, #order do
+			if self:isCardShown(order[position]) then
+				cards[#cards + 1] = order[position]
+			end
+		end
+		return #cards > 0 and cards or order
+	end
+
+	-- The card shown before (step -1) or after (step 1) card `id`, if any.
+	function LookupPreview:getNeighborCard(id, step, cards)
+		cards = cards or self:getVisibleCards()
+		for position = 1, #cards do
+			if cards[position] == id then
+				return cards[position + step]
+			end
+		end
+		return nil
+	end
+
+	-- `id` when it is shown, or else the first card shown.
+	function LookupPreview:normalizeCard(id)
+		local cards = self:getVisibleCards()
+		for position = 1, #cards do
+			if cards[position] == id then
+				return id
+			end
+		end
+		return cards[1]
+	end
+
+	function LookupPreview:getOpenCardMode()
+		return G_reader_settings:readSetting(SETTING_OPEN_CARD) == OPEN_CARD_LAST and OPEN_CARD_LAST
+			or OPEN_CARD_DICTIONARY
+	end
+
+	-- The card a lookup from the book opens on.
+	function LookupPreview:getOpenCard()
+		if self:getOpenCardMode() == OPEN_CARD_LAST then
+			local last = tonumber(G_reader_settings:readSetting(SETTING_LAST_CARD))
+			if last and self:isCardShown(last) then
+				return last
+			end
+		end
+		return self:normalizeCard(PAGE_DICTIONARY)
+	end
+
+	-- Sorting and showing or hiding the cards, with KOReader's SortWidget (as
+	-- for its dictionaries). At least one card stays shown.
+	function LookupPreview:showCardOrderDialog()
+		local SortWidget = require("ui/widget/sortwidget")
+		local hidden = {}
+		for position = 1, #CARD_IDS do
+			hidden[CARD_IDS[position]] = not self:isCardShown(CARD_IDS[position])
+		end
+
+		local items = {}
+		local order = self:getCardOrder()
+		for position = 1, #order do
+			local id = order[position]
+			items[#items + 1] = {
+				text = PAGE_TITLES[id],
+				id = id,
+				checked_func = function()
+					return not hidden[id]
+				end,
+				callback = function()
+					hidden[id] = not hidden[id]
+				end,
+			}
+		end
+
+		UIManager:show(SortWidget:new({
+			title = _("Show and order cards"),
+			item_table = items,
+			callback = function()
+				local new_order, new_hidden, shown = {}, {}, 0
+				for position = 1, #items do
+					local id = items[position].id
+					new_order[#new_order + 1] = id
+					if hidden[id] then
+						new_hidden[tostring(id)] = true
+					else
+						shown = shown + 1
+					end
+				end
+				if shown == 0 then
+					return self:notify(_("At least one card must be shown."))
+				end
+				G_reader_settings:saveSetting(SETTING_CARD_ORDER, new_order)
+				G_reader_settings:saveSetting(SETTING_HIDDEN_CARDS, new_hidden)
+				return self:reopenCarousel()
+			end,
+		}))
+		return true
+	end
+
+	function LookupPreview:getCardHeightMode()
+		local mode = G_reader_settings:readSetting(SETTING_CARD_HEIGHT)
+		return mode == CARD_HEIGHT_EXPANDED and CARD_HEIGHT_EXPANDED or CARD_HEIGHT_COMPACT
+	end
+
+	function LookupPreview:setCardHeightMode(mode)
+		G_reader_settings:saveSetting(SETTING_CARD_HEIGHT, mode == CARD_HEIGHT_EXPANDED and mode or CARD_HEIGHT_COMPACT)
+	end
+
+	-- Whether the cards of a lookup are expanded: as set by a spread or pinch
+	-- on the carousel showing it, or else as the setting says.
+	function LookupPreview:isCardExpanded(state)
+		local root = getRootState(state)
+		if root and root.card_expanded ~= nil then
+			return root.card_expanded
+		end
+		return self:getCardHeightMode() == CARD_HEIGHT_EXPANDED
+	end
+
+	function LookupPreview:getCardHeightRatio(state)
+		return self:isCardExpanded(state) and CARD_EXPANDED_HEIGHT_RATIO or CARD_HEIGHT_RATIO
+	end
+
+	-- Expands or compacts the cards of the open lookup (and of the lookups made
+	-- inside it). The carousel is shown again at its new height; each card
+	-- keeps the same proportion of its content in view.
+	function LookupPreview:setCardExpanded(expanded)
+		local state = self.current_state
+		if not state or self:isCardExpanded(state) == expanded then
+			return true
+		end
+		getRootState(state).card_expanded = expanded
+		return self:reopenCarousel()
+	end
+
+	function LookupPreview:getTextSize()
+		local size = tonumber(G_reader_settings:readSetting(SETTING_TEXT_SIZE))
+		return size and size > 0 and size or DEFAULT_TEXT_SIZE
+	end
+
+	function LookupPreview:getBodyFontSize()
+		return Screen:scaleBySize(self:getTextSize())
+	end
+
+	-- Shows the open carousel again from scratch, for changes that move or
+	-- resize it. The lookup and its scroll positions are kept. When the active
+	-- card is no longer shown (hidden in the settings), another one takes its
+	-- place, and is loaded if it never was.
+	function LookupPreview:reopenCarousel()
+		local state = self.current_state
+		if not (state and self.current_popup) then
+			return true
+		end
+		local active_index = state.active_index or PAGE_DICTIONARY
+		self:closeCurrentPopup(true)
+		self:showCarousel(state, active_index)
+		self:scheduleCardLoad(state, state.active_index)
+		return true
 	end
 
 	function LookupPreview:getCardRadius()
@@ -525,6 +835,27 @@ return function(ctx)
 			return explorer
 		end
 		return nil
+	end
+
+	-- KOReader's Vocabulary Builder, when enabled. Plugins are registered on the
+	-- UI by their folder name (vocabbuilder.koplugin), not their own `name`.
+	-- Words reach it through its WordLookedUp event, as from KOReader's popup.
+	function LookupPreview:getVocabularyBuilder()
+		local vocabulary_builder = self.ui and self.ui.vocabbuilder
+		return type(vocabulary_builder) == "table" and vocabulary_builder or nil
+	end
+
+	-- Whether the Vocabulary Builder adds every looked up word by itself, in
+	-- which case it shows no button in KOReader's popup, and neither do we.
+	function LookupPreview:vocabularyAddsAutomatically()
+		local settings = G_reader_settings:readSetting("vocabulary_builder")
+		return type(settings) == "table" and settings.enabled == true
+	end
+
+	function LookupPreview:showVocabularyButton()
+		return G_reader_settings:nilOrTrue(SETTING_DICTIONARY_VOCABULARY_BUTTON)
+			and self:getVocabularyBuilder() ~= nil
+			and not self:vocabularyAddsAutomatically()
 	end
 
 	function LookupPreview:getDetailsButtonsMode()
@@ -658,12 +989,18 @@ return function(ctx)
 		dictionary.showDict = function(dict_self, word, results, boxes, link, dict_close_callback)
 			-- The lookup the dictionary card asked for (see loadDictionary). Any
 			-- other word is a lookup of its own and goes the usual way.
-			local capture = plugin.dictionary_capture
-			if capture and word == capture.word and not plugin.opening_original_popup then
+			local capture = not plugin.opening_original_popup and plugin:findDictionaryCapture(word)
+			if capture then
 				return plugin:receiveDictionaryResults(capture, dict_self, word, results)
 			end
 
-			if not plugin:isPreviewEnabled() or plugin.opening_original_popup or not results or not results[1] then
+			if
+				not plugin:isPreviewEnabled()
+				or not plugin:isCardShown(PAGE_DICTIONARY)
+				or plugin.opening_original_popup
+				or not results
+				or not results[1]
+			then
 				return plugin.original_showDict(dict_self, word, results, boxes, link, dict_close_callback)
 			end
 
@@ -713,7 +1050,11 @@ return function(ctx)
 
 		if self.original_highlight_translate then
 			highlight.translate = function(highlight_self, ...)
-				if not plugin:isPreviewEnabled() or plugin.opening_original_popup then
+				if
+					not plugin:isPreviewEnabled()
+					or not plugin:isCardShown(PAGE_TRANSLATION)
+					or plugin.opening_original_popup
+				then
 					return plugin.original_highlight_translate(highlight_self, ...)
 				end
 
@@ -727,7 +1068,11 @@ return function(ctx)
 
 		if self.original_highlight_lookupWikipedia then
 			highlight.lookupWikipedia = function(highlight_self, ...)
-				if not plugin:isPreviewEnabled() or plugin.opening_original_popup then
+				if
+					not plugin:isPreviewEnabled()
+					or not plugin:isCardShown(PAGE_WIKIPEDIA)
+					or plugin.opening_original_popup
+				then
 					return plugin.original_highlight_lookupWikipedia(highlight_self, ...)
 				end
 
@@ -934,6 +1279,10 @@ return function(ctx)
 
 	function LookupPreview:closeCurrentPopup(preserve_state)
 		self:closeLanguageMenu()
+		local state = self.current_state
+		if self.current_popup and state and state.active_index then
+			G_reader_settings:saveSetting(SETTING_LAST_CARD, state.active_index)
+		end
 		if self.current_popup then
 			if self.current_popup.closePageMenu then
 				self.current_popup:closePageMenu()

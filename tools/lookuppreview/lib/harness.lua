@@ -186,7 +186,11 @@ local function walk(widget, visit, seen)
 	return nil
 end
 
---- The button of the active card whose hint is `hint`.
+local function isButton(widget)
+	return widget.onTapDictionaryButton ~= nil or widget.onTapHeaderPageMenu ~= nil
+end
+
+--- The button of the active card (its footer or its header) whose hint is `hint`.
 function H.findButton(hint)
 	local popup = H.popup()
 	local card = popup and popup.card_container.active_card
@@ -194,7 +198,7 @@ function H.findButton(hint)
 		return nil
 	end
 	return walk(card, function(widget)
-		return widget.hint == hint and widget.onTapDictionaryButton ~= nil
+		return widget.hint == hint and isButton(widget)
 	end, {})
 end
 
@@ -216,7 +220,7 @@ function H.buttonHints()
 	local card = popup and popup.card_container.active_card
 	if card then
 		walk(card, function(widget)
-			if widget.onTapDictionaryButton and widget.hint then
+			if isButton(widget) and widget.hint then
 				hints[#hints + 1] = widget.hint
 			end
 			return false
@@ -236,6 +240,35 @@ function H.closeCarousel()
 	H.gesture("tap", 10, y)
 end
 
+--- Presses a key, as a device's button does: `name` is a key of
+-- device/input.lua ("Right", "Left", "RPgFwd"...).
+function H.key(name)
+	local Key = require("device/key")
+	UIManager:sendEvent(Event:new("KeyPress", Key:new(name, {})))
+end
+
+--- An item of the plugin's menu, found by the beginning of its text along
+-- `path` ("Appearance", "Card height", "Expanded").
+function H.menuItem(...)
+	local menu_items = {}
+	H.plugin:addToMainMenu(menu_items)
+	local items = menu_items.lookuppreview.sub_item_table
+	local item
+	for _, wanted in ipairs({ ... }) do
+		item = nil
+		for _, candidate in ipairs(items or {}) do
+			local text = candidate.text or (candidate.text_func and candidate.text_func()) or ""
+			if text:sub(1, #wanted) == wanted then
+				item = candidate
+				break
+			end
+		end
+		assert(item, "no menu item " .. wanted)
+		items = item.sub_item_table or (item.sub_item_table_func and item.sub_item_table_func())
+	end
+	return item
+end
+
 --- KOReader's own dictionary windows on screen.
 function H.nativeWindows()
 	return #require("ui/widget/dictquicklookup").window_list
@@ -248,6 +281,24 @@ function H.status(page)
 	return load and load.status or "idle", load and load.message
 end
 
+--- How many times `word` is in KOReader's Vocabulary Builder (its own database).
+function H.vocabularyCount(word)
+	local SQ3 = require("lua-ljsqlite3/init")
+	local DataStorage = require("datastorage")
+	local conn = SQ3.open(DataStorage:getSettingsDir() .. "/vocabulary_builder.sqlite3")
+	local statement = conn:prepare("SELECT count(*) FROM vocabulary WHERE word = ?;")
+	local row = statement:reset():bind(word):step()
+	local count = row and tonumber(row[1]) or 0
+	statement:close()
+	conn:close()
+	return count
+end
+
+--- The topmost widget on screen.
+function H.topWidget()
+	return UIManager:getTopmostVisibleWidget()
+end
+
 -- ---------------------------------------------------------------------------
 -- Stand-ins for the network
 -- ---------------------------------------------------------------------------
@@ -255,17 +306,33 @@ end
 --- The translation service and Wikipedia answer from here. `translate(text,
 -- target)` returns the translated text; `wikipedia(text, lang)` returns a list
 -- of { title = , extract = }. H.calls counts the queries.
+--
+-- Trapper runs a query in a subprocess when it is wrapped (Trapper:wrap), so
+-- that a tap cancels it; here it runs in this process, so that the stand-ins
+-- can count, and H.calls.wrapped / H.calls.unwrapped count the queries made
+-- with and without Trapper:wrap.
 function H.stubOnline(translate, wikipedia)
-	H.calls = { translation = 0, wikipedia = 0 }
+	H.calls = { translation = 0, wikipedia = 0, wrapped = 0, unwrapped = 0 }
 	local NetworkMgr = require("ui/network/manager")
 	NetworkMgr.isOnline = function()
 		return true
 	end
 
+	local Trapper = require("ui/trapper")
+	Trapper.dismissableRunInSubprocess = function(_self, task)
+		if coroutine.running() then
+			H.calls.wrapped = H.calls.wrapped + 1
+		else
+			H.calls.unwrapped = H.calls.unwrapped + 1
+		end
+		return true, task()
+	end
+
 	local Translator = require("ui/translator")
-	Translator.loadPage = function(_self, text, target_lang)
+	Translator.loadPage = function(_self, text, target_lang, source_lang)
 		H.calls.translation = H.calls.translation + 1
 		H.calls.last_translation = text
+		H.calls.last_source = source_lang
 		return { { { translate(text, target_lang), text } }, nil, "pt" }
 	end
 
@@ -273,6 +340,7 @@ function H.stubOnline(translate, wikipedia)
 	Wikipedia.searchAndGetIntros = function(_self, text, lang)
 		H.calls.wikipedia = H.calls.wikipedia + 1
 		H.calls.last_wikipedia = text
+		H.calls.wikipedia_wrapped = coroutine.running() ~= nil
 		local pages = {}
 		for index, page in ipairs(wikipedia(text, lang) or {}) do
 			pages[page.title] = { title = page.title, extract = page.extract, index = index }

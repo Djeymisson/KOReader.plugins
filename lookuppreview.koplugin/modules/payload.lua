@@ -35,6 +35,9 @@ return function(ctx)
 
 		payload.dictionary_buttons =
 			plugin:buildDictionaryButtons(state, state.dictionary_search_text or state.search_text or "")
+		payload.link_callback = function(link)
+			return plugin:followDictionaryLink(state, link)
+		end
 
 		return payload
 	end
@@ -99,7 +102,7 @@ return function(ctx)
 		if status == LOAD_ERROR then
 			local payload = textPayload(_("Translate"), state.search_text, message, PAGE_TRANSLATION)
 			if is_active then
-				payload.card_buttons = plugin:buildTranslationManualLoadButtons(state, _("Retry"))
+				payload.card_buttons = plugin:buildTranslationManualLoadButtons(state, _("Retry"), true)
 			end
 			return payload
 		end
@@ -174,7 +177,7 @@ return function(ctx)
 			)
 
 			if is_active then
-				payload.card_buttons = plugin:buildWikipediaManualLoadButtons(state, _("Retry"))
+				payload.card_buttons = plugin:buildWikipediaManualLoadButtons(state, _("Retry"), true)
 			end
 			return payload
 		end

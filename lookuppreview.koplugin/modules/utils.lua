@@ -109,6 +109,53 @@ return function(ctx)
 		end
 	end
 
+	-- Online results cache -----------------------------------------------------
+	-- What Translate and Wikipedia answered, kept for the whole KOReader session
+	-- (across lookups and books), so looking the same text up again needs no
+	-- network. Answers only, "nothing found" included; never errors. It lives on
+	-- the shared context, which outlasts the plugin instance of each book.
+
+	local ONLINE_CACHE_SIZE = 64
+
+	ONLINE_CACHE = ONLINE_CACHE or { entries = {}, order = {} }
+
+	local function touchCacheKey(key)
+		local order = ONLINE_CACHE.order
+		for index = #order, 1, -1 do
+			if order[index] == key then
+				table.remove(order, index)
+				break
+			end
+		end
+		order[#order + 1] = key
+	end
+
+	function onlineCacheKey(...)
+		return table.concat({ ... }, "\n")
+	end
+
+	function getCachedOnlineResult(key)
+		local value = ONLINE_CACHE.entries[key]
+		if value ~= nil then
+			touchCacheKey(key)
+		end
+		return value
+	end
+
+	function cacheOnlineResult(key, value)
+		touchCacheKey(key)
+		ONLINE_CACHE.entries[key] = value
+		local order = ONLINE_CACHE.order
+		while #order > ONLINE_CACHE_SIZE do
+			ONLINE_CACHE.entries[table.remove(order, 1)] = nil
+		end
+	end
+
+	function clearOnlineCache()
+		ONLINE_CACHE.entries = {}
+		ONLINE_CACHE.order = {}
+	end
+
 	-- Network helpers ----------------------------------------------------------
 	-- Shared by translation.lua and wikipedia.lua, which both need to skip a
 	-- blocking online lookup when the device has no connectivity, and to turn
@@ -132,6 +179,19 @@ return function(ctx)
 		end
 
 		return false
+	end
+
+	-- Runs an online query. Under Trapper:wrap, as KOReader does, the query
+	-- goes to a subprocess that a tap cancels. Not on macOS: a process forked
+	-- from the KOReader app there dies as soon as it resolves a host name
+	-- (macOS system services are not fork-safe), so the query never answers;
+	-- it runs in KOReader's process instead, as Trapper does when unwrapped.
+	function runOnlineQuery(plugin, query)
+		if plugin.online_queries_in_subprocess then
+			require("ui/trapper"):wrap(query)
+		else
+			query()
+		end
 	end
 
 	function onlineLookupError(err, fallback)

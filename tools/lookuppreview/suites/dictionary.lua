@@ -35,7 +35,7 @@ return function(H, ui)
 	end
 
 	local function captureCleared()
-		return plugin.dictionary_capture == nil and rawget(ui.dictionary, "showNoResultsDialog") == nil
+		return #(plugin.dictionary_captures or {}) == 0 and rawget(ui.dictionary, "showNoResultsDialog") == nil
 	end
 
 	local function inputDialogShown()
@@ -165,6 +165,8 @@ return function(H, ui)
 		H.check("that says so", message and message:find("interrupted", 1, true) ~= nil, message)
 		H.check("with no dictionary window", H.nativeWindows() == 0, H.nativeWindows())
 		H.check("and the lookup is no longer caught", captureCleared())
+		local retry = H.findButton("Look the text up in the dictionary again")
+		H.check("Retry is the retry.svg icon", retry and tostring(retry.icon_file):find("/icons/retry.svg", 1, true) ~= nil, retry and tostring(retry.icon_file))
 		ui.dictionary.startSdcv = nil
 		H.check("Retry is offered and tapped", H.tapButton("Look the text up in the dictionary again"))
 	end)
