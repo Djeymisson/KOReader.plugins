@@ -1,12 +1,7 @@
 --[[
-All the dictionaries as one: going to a word looks for it in all of them.
+All the dictionaries as one, in the viewer: going to a word looks for it in
+all of them (the rules are in the library suite).
 
-  short names     made from the dictionaries' names (the languages they
-                  mention, "EN-PT"; a word of the name when that doesn't tell
-                  them apart), and one set by the user wins
-  priority        a word leads to: its exact entry here, then an exact entry
-                  elsewhere (KOReader's order), then an accented spelling here,
-                  then one elsewhere; else the closest entry here
   going there     Go to word (dock, links, menu, popup) goes to the dictionary
                   that has the word and says so on the page; the dock has no
                   button of its own for other dictionaries any more
@@ -19,8 +14,6 @@ All the dictionaries as one: going to a word looks for it in all of them.
                   short name in the breadcrumb then
   lists           Search and the suggestions show one row per word, with the
                   dictionaries that have it; choosing one goes there
-  preparing       a dictionary never prepared is not asked (nor prepared) by a
-                  word; it is listed as such, and the menu prepares them all
   continuing      the exploration goes on in the dictionary it was left in, its
                   trail still crossing them; what v1.4.0 saved is taken over
 
@@ -94,77 +87,9 @@ return function(H, ui)
 		return viewer
 	end
 
-	-- ---- short names ------------------------------------------------------------------
+	-- ---- going there --------------------------------------------------------------------
 	H.step(1, function()
 		G_reader_settings:delSetting(SETTING)
-		G_reader_settings:delSetting("dictionaryexplorer_short_names")
-		open(html, "house")
-		local names = viewer.lib:shortNames()
-		H.check(
-			"short names tell the fixtures apart with a word of their names",
-			names[text] == "Fixture Text" and names[html] == "Fixture HTML" and names[xdxf] == "Fixture XDXF" and names[bytes] == "Fixture Bytes",
-			string.format("%s, %s, %s, %s", tostring(names[text]), tostring(names[html]), tostring(names[xdxf]), tostring(names[bytes]))
-		)
-		local en, pt, ox = by.en, by.pt, by.ox
-		if en and pt and ox then
-			H.check("and the author's dictionaries with the languages they mention", names[en] == "EN-PT" and names[pt] == "PT" and names[ox] == "EN", string.format("%s, %s, %s", names[en], names[pt], names[ox]))
-		else
-			H.skip("short names of the author's dictionaries", "not installed")
-		end
-		G_reader_settings:saveSetting("dictionaryexplorer_short_names", { [text.name] = "FT" })
-		H.check("a short name set by the user wins", viewer.lib:shortName(text) == "FT")
-		G_reader_settings:delSetting("dictionaryexplorer_short_names")
-
-		-- The menu's editor shows the name as it is now, each time it opens.
-		local item
-		for _index, candidate in ipairs(plugin:getShortNamesMenu()) do
-			if candidate.text_func():find(text.name, 1, true) == 1 then
-				item = candidate
-			end
-		end
-		local function edit(new_name)
-			item.callback()
-			local editor = H.findInputDialog()
-			local shown = editor and editor:getInputText()
-			if editor and new_name then
-				editor:setInputText(new_name)
-				for _index, button in ipairs(editor.buttons[1]) do
-					if button.text == "Save" then
-						button.callback()
-					end
-				end
-			elseif editor then
-				UIManager:close(editor)
-			end
-			return shown
-		end
-		local before = item and edit("CUSTOM")
-		local after = item and edit(nil)
-		H.check("the short-name editor shows the name saved last, not the one the menu was made with", before == "Fixture Text" and after == "CUSTOM", string.format("%s, then %s", tostring(before), tostring(after)))
-		G_reader_settings:delSetting("dictionaryexplorer_short_names")
-	end)
-
-	-- ---- priority -----------------------------------------------------------------------
-	H.step(0.5, function()
-		local lib = viewer.lib
-		local function check(description, word, current, dictionary, kind, from)
-			local lookup = lib:resolve(word, current)
-			H.check(
-				string.format("%s: %q from %s", description, word, current.name),
-				dictionary ~= nil and lookup.dictionary == dictionary and lookup.kind == kind and lookup.from == from,
-				string.format("%s, %s, from %s", lookup.dictionary.name, lookup.kind, lookup.from and lookup.from.name or "-")
-			)
-		end
-		check("an exact entry here stays here", "house", html, html, "exact", nil)
-		check("no entry here, an exact one elsewhere goes there", "casa", html, firstElsewhere("casa", html, "exact"), "exact", html)
-		check("an exact entry elsewhere wins over an accented spelling here", "sofa", text, firstElsewhere("sofa", text, "exact"), "exact", text)
-		check("an accented spelling here, with no exact entry anywhere, stays here", "acao", text, text, "accent", nil)
-		check("no exact entry anywhere and no spelling here: an accented one elsewhere", "acao", html, firstElsewhere("acao", html, "accent"), "accent", html)
-		check("nothing anywhere: the closest entry here", "qqqzzzz", html, html, "closest", nil)
-	end)
-
-	-- ---- going there --------------------------------------------------------------------
-	H.step(0.5, function()
 		open(html, "house")
 		local holder = firstElsewhere("casa", html, "exact")
 		viewer:goToWord("casa")
@@ -364,25 +289,6 @@ return function(H, ui)
 			casa.callback()
 		end
 		H.check("and the one chosen takes the missed word's place in the trail", entryWord():lower() == "casa" and #viewer.trail == length, H.trailText(viewer))
-	end)
-
-	-- ---- preparing --------------------------------------------------------------------------
-	H.step(0.5, function()
-		open(html, "house")
-		os.remove(xdxf.cache_path)
-		xdxf.idx, xdxf.syn, xdxf.offsets, xdxf.first_keys, xdxf.count = nil, nil, nil, nil, nil
-		local lookup = viewer.lib:resolve("sol", html) -- the XDXF fixture has it (and the Portuguese dictionary)
-		H.check("a dictionary never prepared is not asked, nor prepared, by a word", lookup.dictionary ~= xdxf and not xdxf:isIndexed())
-		viewer:showOtherDictionaries("casa")
-		local unprepared = row(viewer.dictionaries_dialog, "index not prepared yet")
-		H.check("it is listed as such", unprepared ~= nil and unprepared.text:find(xdxf.name, 1, true) ~= nil, labels(viewer.dictionaries_dialog))
-		closeList("dictionaries_dialog")
-		plugin:prepareAll()
-	end)
-	H.step(1.5, function()
-		H.check("the menu's Prepare all dictionaries prepares it", xdxf:isIndexed())
-		H.closeStartupMessages()
-		H.check("and then a word finds it", viewer.lib:resolve("sol", html).kind ~= "closest")
 	end)
 
 	-- ---- continuing ------------------------------------------------------------------------

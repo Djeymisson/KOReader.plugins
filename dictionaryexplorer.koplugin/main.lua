@@ -27,7 +27,7 @@ local Library = require("modules/library")
 local StarDict = require("modules/stardict")
 local Viewer = require("modules/viewer")
 
-local PLUGIN_VERSION = "v1.7.0"
+local PLUGIN_VERSION = "v1.7.1"
 
 local SETTING_START_DICTIONARY = "dictionaryexplorer_start_dictionary" -- a dictionary name; unset means automatic
 local SETTING_SHORT_NAMES = "dictionaryexplorer_short_names" -- { [dictionary name] = short name } set by the user (see Library)
@@ -215,6 +215,7 @@ function DictionaryExplorer:getStartDictionary()
 end
 
 function DictionaryExplorer:getStartDictionaryMenu()
+	self:refreshDictionaries()
 	local items = {
 		{
 			text = _("Automatic (first in KOReader's dictionary order)"),
@@ -245,6 +246,7 @@ end
 
 --- Asks for a word and opens the starting dictionary there.
 function DictionaryExplorer:showStartWordDialog()
+	self:refreshDictionaries() -- the starting dictionary as things are now
 	local dictionary = self:getStartDictionary()
 	if not dictionary then
 		UIManager:show(InfoMessage:new({ text = _("No dictionary that can be opened was found.") }))
@@ -278,8 +280,16 @@ function DictionaryExplorer:showStartWordDialog()
 					callback = function()
 						local word = util.trim(dialog:getInputText())
 						UIManager:close(dialog)
-						if word ~= "" then
-							self:openAt(dictionary, word)
+						if word == "" then
+							return
+						end
+						-- It may have been removed (or replaced) while the dialog was open.
+						self:refreshDictionaries()
+						local target = self:getDictionary(dictionary.name) or self:getStartDictionary()
+						if target then
+							self:openAt(target, word)
+						else
+							UIManager:show(InfoMessage:new({ text = _("No dictionary that can be opened was found.") }))
 						end
 					end,
 				},
@@ -294,6 +304,7 @@ end
 -- Library:resolve()): in `dictionary` when it has it, in the one that has it
 -- otherwise, saying so.
 function DictionaryExplorer:openAt(dictionary, word, hint)
+	self:refreshDictionaries() -- the other dictionaries, as they are now
 	self:withIndex(dictionary, function()
 		local lookup = Library.new(self:getLibrary()):resolve(word, dictionary, hint)
 		self:showViewer(lookup.dictionary, lookup)
@@ -342,10 +353,32 @@ function DictionaryExplorer:getLibrary()
 	}
 end
 
+-- Removes the index caches of dictionaries no longer installed.
+-- @treturn int how many were removed
+function DictionaryExplorer:removeUnusedCaches()
+	local keep = {}
+	for _name, file in pairs(self:getIfoFiles()) do
+		local dictionary = StarDict.get(file)
+		if dictionary then
+			keep[dictionary.cache_path] = true
+		end
+	end
+	return StarDict.removeCachesExcept(keep)
+end
+
 --- Prepares the index of every enabled dictionary that has none yet, one
--- after the other, saying which one it is on. Words are looked for in all the
+-- after the other, saying which one it is on; and removes the caches of
+-- dictionaries no longer installed. Words are looked for in all the
 -- dictionaries, but only those whose index is ready can be asked.
 function DictionaryExplorer:prepareAll()
+	self:refreshDictionaries()
+	local removed = self:removeUnusedCaches()
+	local function cleaned(message)
+		if removed > 0 then
+			return message .. "\n" .. T(_("Indexes of %1 dictionaries no longer installed removed."), removed)
+		end
+		return message
+	end
 	local pending = {}
 	for _index, dictionary in ipairs(self:getLibrary().list()) do
 		if not dictionary:isIndexed() then
@@ -353,7 +386,7 @@ function DictionaryExplorer:prepareAll()
 		end
 	end
 	if #pending == 0 then
-		UIManager:show(InfoMessage:new({ text = _("All the dictionaries are ready.") }))
+		UIManager:show(InfoMessage:new({ text = cleaned(_("All the dictionaries are ready.")) }))
 		return
 	end
 	local index, failed, notice = 0, 0, nil
@@ -365,8 +398,8 @@ function DictionaryExplorer:prepareAll()
 		local dictionary = pending[index]
 		if not dictionary then
 			UIManager:show(InfoMessage:new({
-				text = failed == 0 and T(_("%1 dictionaries prepared."), #pending)
-					or T(_("%1 of %2 dictionaries prepared; the others' files look incomplete."), #pending - failed, #pending),
+				text = cleaned(failed == 0 and T(_("%1 dictionaries prepared."), #pending)
+					or T(_("%1 of %2 dictionaries prepared; the others' files look incomplete."), #pending - failed, #pending)),
 			}))
 			return
 		end
@@ -386,6 +419,7 @@ end
 -- The menu of the short names: each enabled dictionary, with its short name,
 -- to change it.
 function DictionaryExplorer:getShortNamesMenu()
+	self:refreshDictionaries()
 	local items = {}
 	for _index, dictionary in ipairs(self:getLibrary().list()) do
 		table.insert(items, {
@@ -470,6 +504,7 @@ end
 
 --- Reopens the last exploration on the page it was left, with its trail.
 function DictionaryExplorer:continueExploring()
+	self:refreshDictionaries()
 	local dictionary, state = self:getLastExploration()
 	if not dictionary then
 		UIManager:show(InfoMessage:new({ text = _("There is no exploration to continue yet.") }))
@@ -481,7 +516,16 @@ function DictionaryExplorer:continueExploring()
 end
 
 -- Maps dictionary names (as shown in the popup) to their .ifo files. Scanned
--- once per session, like KOReader does for its own dictionary list.
+-- when first needed, and again each time the viewer opens or a menu lists the
+-- dictionaries (see refreshDictionaries()), so that dictionaries added or
+-- removed meanwhile are seen without restarting.
+--- Forgets the dictionaries found so far: the next use scans the folders
+-- again (a millisecond or two). The dictionaries already opened keep their
+-- loaded index, as StarDict keeps one object per file.
+function DictionaryExplorer:refreshDictionaries()
+	self.ifo_by_name, self.resolved = nil, nil
+end
+
 function DictionaryExplorer:getIfoFiles()
 	if not self.ifo_by_name then
 		self.ifo_by_name = {}
@@ -503,6 +547,16 @@ function DictionaryExplorer:getDictionary(name)
 		return nil
 	end
 	self.resolved = self.resolved or {}
+	if self.resolved[name] == nil and not self:getIfoFiles()[name] then
+		-- A dictionary installed since the folders were scanned (the popup
+		-- shows its name): scan again, once per name, for its button to show.
+		self._rescanned = self._rescanned or {}
+		if not self._rescanned[name] then
+			self._rescanned[name] = true
+			self:refreshDictionaries()
+			self.resolved = {}
+		end
+	end
 	if self.resolved[name] == nil then
 		local ifo_file = self:getIfoFiles()[name]
 		local dictionary = ifo_file and StarDict.get(ifo_file)
@@ -527,6 +581,7 @@ end
 -- that was shown for it, used to pick between entries with the same headword.
 -- Returns false, after saying so, if the dictionary can't be opened.
 function DictionaryExplorer:openWord(name, word, hint)
+	self:refreshDictionaries()
 	local dictionary = self:getDictionary(name)
 	if not dictionary then
 		UIManager:show(InfoMessage:new({ text = _("This dictionary can't be opened as a book.") }))

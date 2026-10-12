@@ -117,12 +117,32 @@ StarDict.__index = StarDict
 
 local instances = {}
 
---- Returns the (shared) dictionary object for an .ifo file.
+-- What a dictionary's files look like on disk (size and date of each), to
+-- tell when they were replaced or removed.
+local function filesSignature(ifo_path)
+	local base = ifo_path:gsub("%.ifo$", "")
+	local parts = {}
+	for _index, path in ipairs({ ifo_path, base .. ".idx", base .. ".dict", base .. ".dict.dz", base .. ".syn" }) do
+		local attributes = lfs.attributes(path)
+		parts[#parts + 1] = attributes and (attributes.size .. ":" .. attributes.modification) or "-"
+	end
+	return table.concat(parts, "|")
+end
+
+--- Returns the (shared) dictionary object for an .ifo file. The object is
+-- made anew when the dictionary's files changed since it was made (a
+-- dictionary copied again in its place), so nothing of the old one is used.
 -- @treturn StarDict dictionary, or nil and a reason ("unreadable",
 -- "unsupported", or "incomplete" when the .idx is not the size the .ifo says)
 function StarDict.get(ifo_path)
-	if instances[ifo_path] then
-		return instances[ifo_path]
+	local signature = filesSignature(ifo_path)
+	local known = instances[ifo_path]
+	if known then
+		if known.files_signature == signature then
+			return known
+		end
+		known:releaseCaches()
+		instances[ifo_path] = nil
 	end
 
 	local info = parseIfo(ifo_path)
@@ -153,7 +173,7 @@ function StarDict.get(ifo_path)
 		return nil, "incomplete"
 	end
 
-	local cache_dir = DataStorage:getDataDir() .. "/cache/dictionaryexplorer/"
+	local cache_dir = StarDict.cacheDir()
 	local cache_name = base:match("[^/]+$"):gsub("[^%w_%-]", "_")
 	local self = setmetatable({
 		ifo_path = ifo_path,
@@ -169,6 +189,7 @@ function StarDict.get(ifo_path)
 		cache_path = cache_dir .. cache_name .. "-" .. pathHash(ifo_path) .. ".lua",
 		legacy_cache_path = cache_dir .. cache_name .. ".lua", -- before v1.0.1, shared by same-named files
 		index_error = nil, -- why buildIndex() failed, if it did
+		files_signature = signature, -- see filesSignature()
 		syn_error = nil, -- why the .syn was left aside, if it was
 		-- The .idx records (see newRecords): offsets and first_keys are the file
 		-- offset and the key of every PAGE_SIZE-th entry.
@@ -180,6 +201,32 @@ function StarDict.get(ifo_path)
 	}, StarDict)
 	instances[ifo_path] = self
 	return self
+end
+
+--- Where the index caches are kept.
+function StarDict.cacheDir()
+	return DataStorage:getDataDir() .. "/cache/dictionaryexplorer/"
+end
+
+--- Removes the index caches (and leftover temporary files) that are not in
+-- `keep` ({ [cache path] = true }): those of dictionaries no longer installed.
+-- @treturn int how many were removed
+function StarDict.removeCachesExcept(keep)
+	local directory = StarDict.cacheDir()
+	local ok, iterator, dir_obj = pcall(lfs.dir, directory)
+	if not ok then
+		return 0
+	end
+	local removed = 0
+	for entry in iterator, dir_obj do
+		local path = directory .. entry
+		if (entry:match("%.lua$") or entry:match("%.tmp$")) and not keep[path] and lfs.attributes(path, "mode") == "file" then
+			if os.remove(path) then
+				removed = removed + 1
+			end
+		end
+	end
+	return removed
 end
 
 --- Lists dictionaries under a StarDict data directory.
