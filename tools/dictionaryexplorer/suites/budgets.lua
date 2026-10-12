@@ -1,6 +1,8 @@
 --[[
 Performance budgets for paging: 150 page turns per dictionary, from five
-starting points, measuring what the plugin does per turn.
+starting points, measuring what the plugin does per turn; with the default
+dictionary appearance, and again with a large font, a small one, and the
+compact header (see VARIANTS).
 
 The budgets only cover counts, which do not depend on how fast the machine is:
 
@@ -35,6 +37,31 @@ local GENERAL = { layouts = 2.5, opens = 3, reads = 60, fill = 50 }
 local START_POINTS = { 0.1, 0.3, 0.5, 0.7, 0.9 }
 local TURNS = 30
 
+-- The dictionary appearance the turns are measured with (see
+-- readingsettings.lua): the defaults, and settings far from them, so that a
+-- change to the layout that only works for the defaults shows. Each variant
+-- starts with its own fit model (the font size and line height are part of
+-- its key), so it also measures how fast a model learns.
+--
+-- Counts per turn grow with how many entries fit a page, so beside the
+-- defaults they are checked per entry shown: definitions read per entry is
+-- about 1 whatever the font (1.00 to 1.08 measured), and above
+-- READS_PER_ENTRY when the read cache stops working (every layout tried then
+-- reads the page again). The fill of the pages is lower with a large font
+-- (each entry is a bigger slice of the page, and the room left at its foot,
+-- since entries are never cut, counts more): `fill_allowance` points less.
+-- Measured (desktop, 2026-10), layouts per turn and fill:
+--   large   pt 1.73 81%   en 1.31 88%   ox 1.15 67%   fixtures 1.1-1.2 68-76%
+--   small   pt 1.79 94%   en 1.69 96%   ox 1.31 83%   fixtures 1.4-1.5 89-94%
+--   compact pt 1.70 88%   en 1.48 94%   ox 1.20 75%   fixtures 1.2-1.4 85-87%
+local VARIANTS = {
+	{ name = "default", settings = {} },
+	{ name = "large", settings = { font_size = 28, line_height = 1.6 }, fill_allowance = 10 },
+	{ name = "small", settings = { font_size = 14, line_height = 1.0, margin = 4 } },
+	{ name = "compact", settings = { compact_header = true } },
+}
+local READS_PER_ENTRY = 1.2
+
 return function(H, ui)
 	H.instrument()
 	local dictionaries = H.dictionaries()
@@ -53,10 +80,23 @@ return function(H, ui)
 		return GENERAL, "general"
 	end
 
+	local ReadingSettings = require("modules/readingsettings")
+	local function useSettings(settings)
+		for name, setting in pairs(ReadingSettings.KEYS) do
+			if settings[name] == nil then
+				G_reader_settings:delSetting(setting)
+			else
+				G_reader_settings:saveSetting(setting, settings[name])
+			end
+		end
+	end
+
+	for _variant_index, variant in ipairs(VARIANTS) do
 	H.step(1, function()
+		useSettings(variant.settings)
 		for _index, dictionary in ipairs(dictionaries.list) do
 			local budget, key = budgetFor(dictionary)
-			local turns, cpu, layouts, reads, opens = 0, 0, 0, 0, 0
+			local turns, cpu, layouts, reads, opens, entries = 0, 0, 0, 0, 0, 0
 			local fills, scrolling, broken = {}, 0, 0
 
 			for _index2, fraction in ipairs(START_POINTS) do
@@ -79,6 +119,7 @@ return function(H, ui)
 					if viewer.first ~= previous_last + 1 then
 						broken = broken + 1
 					end
+					entries = entries + viewer.last - viewer.first + 1
 					local box = viewer.html_widget.htmlbox_widget
 					local used = box:getSinglePageHeight()
 					if used then
@@ -95,15 +136,21 @@ return function(H, ui)
 				sum = sum + fill
 			end
 			local fill = 100 * sum / math.max(#fills, 1)
-			local name = dictionary.name:sub(1, 30) .. " [" .. key .. "]"
+			local name = string.format("%s [%s, %s]", dictionary.name:sub(1, 30), key, variant.name)
 			H.say(string.format("%s: %d turns, %.2f ms CPU per turn (not checked)", name, turns, cpu / turns * 1000))
 			H.check(name .. ": layouts per turn", layouts / turns <= budget.layouts, string.format("%.2f (limit %.1f)", layouts / turns, budget.layouts))
 			H.check(name .. ": files opened per turn", opens / turns <= budget.opens, string.format("%.2f (limit %.1f)", opens / turns, budget.opens))
-			H.check(name .. ": definitions read per turn", reads / turns <= budget.reads, string.format("%.1f (limit %d)", reads / turns, budget.reads))
-			H.check(name .. ": average fill of the pages", fill >= budget.fill, string.format("%.0f%% (at least %d%%; %d of %d pages are a single scrolling entry)", fill, budget.fill, scrolling, turns))
+			if variant.name == "default" then
+				H.check(name .. ": definitions read per turn", reads / turns <= budget.reads, string.format("%.1f (limit %d)", reads / turns, budget.reads))
+			end
+			H.check(name .. ": definitions read per entry shown", reads / entries <= READS_PER_ENTRY, string.format("%.2f (limit %.1f)", reads / entries, READS_PER_ENTRY))
+			local least_fill = budget.fill - (variant.fill_allowance or 0)
+			H.check(name .. ": average fill of the pages", fill >= least_fill, string.format("%.0f%% (at least %d%%; %d of %d pages are a single scrolling entry)", fill, least_fill, scrolling, turns))
 			H.check(name .. ": no entry skipped or repeated", broken == 0, broken .. " breaks")
 		end
+		useSettings({})
 	end)
+	end
 
 	H.finish()
 end

@@ -45,7 +45,7 @@ Pass or fail (`check` runs all of them):
 | `integrity` | Files that are not what they should be, on fixtures only it sees: an `.idx` cut short (with and without `idxfilesize`), a `wordcount` that does not match, a `.dict` or `.dict.dz` cut short, a `.dict.dz` shorter than the `.idx` needs though its last chunk has room, a `.dict.dz` with a malformed chunk table. Each is refused with its reason and without an error, no cache is written, and the plugin stops offering it; a read past the end gives nil, not fewer bytes. A dictionary indexed while whole whose definitions are then cut is refused when its cache is loaded. A damaged `.syn` (cut, wrong `synwordcount`, leading past the last entry) is left aside with its reason, also from the cache, and the dictionary still opens; a `.syn` changed after indexing makes the cache be rebuilt. Also the index cache: two dictionaries with the same file name, size and date get a cache each, a cache that does not add up or was cut short is rebuilt, writing one leaves no temporary file, and the file of older versions goes. |
 | `contract` | The interface a dictionary object must honour for the viewer to work with it (entries with a word and a size known without reading, exact `locate`, `readDefinition` returning `size` bytes, nesting reading sessions, safe `releaseCaches`), on every dictionary found. **This is what a new dictionary format has to pass.** |
 | `regression` | The viewer's behaviour with real gestures: opening centred and highlighted, paging by swipe / key / tap, contiguity in both directions, the breadcrumb (going back by tapping its words) and a footer with no arrows, the selection dock with Go to word and Copy, the dictzip and plain formats, the three text types (`m`, `h`, `x`), the Dispatcher action, and the caches being released. |
-| `budgets` | 150 page turns per dictionary against limits on counts that do not depend on the machine: layouts per turn, files opened, definitions read, how full pages are, and no entry skipped or repeated. See below. |
+| `budgets` | 150 page turns per dictionary, with four dictionary appearances (defaults, large font, small font, compact header), against limits on counts that do not depend on the machine: layouts per turn, files opened, definitions read, how full pages are, and no entry skipped or repeated. See below. |
 | `lookup` | Finding the entry for a word, on Fixture Text (and the Portuguese dictionary when installed): keys in another case, for any letter (`ÁRVORE` → `árvore`, `óbidos` → `Óbidos`, `onu` → `ONU`), the text as given winning when it is a key; words of the `.syn` leading to their entries (inflected forms, accentless spellings, other cases, every generated word across the pages of the fixture's `.syn`, and `abomining` → `abomine` in the Oxford dictionary when installed), a headword winning over the same word in the `.syn`, the trail keeping the word asked for; words typed without their accents (`acao` → `ação`, `obidos` → `Óbidos`, in StarDict and in byte order, and `coracao` → `coração` in the Portuguese dictionary when installed), a headword or a word of the `.syn` winning over them; the suggestions (accented spellings first, at most ten), opened by tapping the notice, shown six a page with ‹ › ✕ at their foot (turning a page keeps the list's size, ✕ closes without a choice), choosing one taking the missed word's place in the trail, closing the list leaving the page as it was; and a word with no entry: the closest entry, with a line on the page saying so (no notification on top), gone with the next page, word or crumb, also when opening from the menu or another plugin. |
 | `resume` | Continuing an exploration, through the plugin, on the fixtures: each page keeps where it is without writing a file or saving the settings to disk; continuing (from the menu, the word dialog's Continue button, the Dispatcher action) reopens the dictionary it was left in on the same page, highlighted entry, trail and current word; there is one exploration, the last one; the latest 50 words of the trail are kept; an exploration saved from another version of the dictionary reopens at its word, and a damaged one is not a crash. With nothing explored yet, continuing says so. |
 | `library` | The dictionaries as one, as the Library sees them (on the fixtures, and the author's dictionaries when installed): the short names (made from the names, a user's one winning, the menu's editor showing the name as it is now); the priority of a word (exact here, exact elsewhere, accented here, accented elsewhere, closest here); a dictionary never prepared not asked by a word, listed as such, and prepared by the menu's Prepare all, which also removes the caches of dictionaries no longer installed; a dictionary installed or removed during the session seen without restarting. |
@@ -81,6 +81,22 @@ They were set with room above what each measured (1.6 / 1.3 / 18 / 90% for the
 Portuguese one). Undoing the read cache makes them fail, which is how they were
 checked. If you improve something for real, lower the limits in
 `suites/budgets.lua`; if a limit has to go up, say why in the commit.
+
+The turns are measured four times, with four dictionary appearances (see
+`VARIANTS` in `suites/budgets.lua`): the defaults, a large font (28, line height
+1.6), a small one (14, line height 1.0, margins 4) and the compact header. The
+limits above hold for all of them but two, which grow with how many entries fit
+a page:
+
+- **definitions read** per turn is checked with the defaults only. For every
+  appearance, **definitions read per entry shown** must stay at or under 1.2:
+  each entry is read once (1.00 to 1.08 measured), whatever the font. Undoing
+  the read cache takes it to 1.2 to 2.0, except where a page hardly ever needs
+  a second layout (the Oxford dictionary, about 1.1 layouts per turn), which no
+  count of reads can tell apart.
+- **fill of the pages** is allowed 10 points less with the large font: each
+  entry is a bigger slice of the page, and the room left at its foot (entries
+  are never cut) counts more.
 
 CPU time is printed but never checked. To compare times, run `benchmark` on the
 same machine before and after a change: a desktop core is many times faster than
