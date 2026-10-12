@@ -198,6 +198,8 @@ DEFAULT_DETAILS_BUTTONS = DETAILS_BUTTONS_BOTH
 -- How long the hint shown by holding a button stays on screen, and how far it
 -- is from the card it is about.
 BUTTON_HINT_TIMEOUT = 5
+-- How long a note shown next to the card (see LookupPreview:notify) stays.
+CARD_NOTE_TIMEOUT = 3
 BUTTON_HINT_GAP = scaleBySize(6)
 
 PLUGIN_ICON_EXTENSIONS = { ".svg", ".png" }

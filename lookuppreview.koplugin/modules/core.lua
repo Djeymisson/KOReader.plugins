@@ -922,7 +922,13 @@ return function(ctx)
 		return { text = _("Loading…") }
 	end
 
+	-- While the carousel is open, messages show next to it, like the buttons'
+	-- hints; otherwise as KOReader's notifications.
 	function LookupPreview:notify(message)
+		local popup = self.current_popup
+		if popup and popup.showNote then
+			return popup:showNote(message)
+		end
 		UIManager:show(Notification:new({ text = message }))
 		return true
 	end

@@ -2,17 +2,22 @@
 The Dictionary card's button for KOReader's Vocabulary Builder, on its real
 database.
 
-  add             the button adds the looked up word, says so, and turns into
-                  a mark that it was added
+  add             the button adds the looked up word, says so next to the
+                  card (not at the top of the screen), and turns into a mark
+                  that it was added
+  undo            tapping the mark takes the word back, says so, and offers
+                  to add it again
   exists          for a word already there, the Vocabulary Builder's own
-                  dialog shows it, with no notification on top
+                  dialog shows it, with no note on top; its mark does not
+                  remove it (that would lose its review progress)
   hidden          not shown with the setting off, when the Vocabulary Builder
                   adds every word by itself, or when nothing was found
 ]]
 
 local PAGE_DICTIONARY = 1
 local ADD = "Add the word to the vocabulary builder"
-local ADDED = "Added to the vocabulary builder"
+local REMOVE = "Remove the word from the vocabulary builder"
+local ALREADY = "Already in the vocabulary builder"
 
 return function(H, ui)
 	if not ui.vocabbuilder then
@@ -41,9 +46,26 @@ return function(H, ui)
 	H.step(0.5, function()
 		H.check("the word is added", H.vocabularyCount("livro") == 1, H.vocabularyCount("livro"))
 		local top = H.topWidget()
-		H.check("a notification says so", top and top.text == "Added to vocabulary builder.", top and top.text)
-		H.check("the button marks it as added", hasButton(ADDED) and not hasButton(ADD))
+		H.check("a note says so", top and top.text == "Added to vocabulary builder.", top and top.text)
+		local card = H.popup().visible_dimen
+		H.check("next to the card, not at the top of the screen", top and top.dimen and top.dimen.y + top.dimen.h <= card.y and top.dimen.y > card.y - 100, top and top.dimen and (top.dimen.y .. " vs card at " .. card.y))
+		H.check("the button marks it as added", hasButton(REMOVE) and not hasButton(ADD))
 		H.check("the carousel stays open", H.popup() ~= nil)
+	end)
+
+	-- ---- undo ----------------------------------------------------------------
+	H.step(3.5, function()
+		H.check("the mark is tapped", H.tapButton(REMOVE))
+	end)
+	H.step(0.5, function()
+		H.check("the word is taken back", H.vocabularyCount("livro") == 0, H.vocabularyCount("livro"))
+		local top = H.topWidget()
+		H.check("a note says so", top and top.text == "Removed from vocabulary builder.", top and top.text)
+		H.check("and the button offers to add it again", hasButton(ADD) and not hasButton(REMOVE))
+		H.tapButton(ADD)
+	end)
+	H.step(0.5, function()
+		H.check("it can be added again", H.vocabularyCount("livro") == 1, H.vocabularyCount("livro"))
 		H.closeCarousel()
 	end)
 
@@ -62,7 +84,12 @@ return function(H, ui)
 			require("ui/uimanager"):close(top)
 		end
 	end)
-	H.step(0.3, function()
+	H.step(0.5, function()
+		H.check("its mark says it was there already", hasButton(ALREADY) and not hasButton(REMOVE), table.concat(H.buttonHints(), " | "))
+		H.tapButton(ALREADY)
+	end)
+	H.step(0.5, function()
+		H.check("and tapping it does not remove it", H.vocabularyCount("livro") == 1, H.vocabularyCount("livro"))
 		H.closeCarousel()
 	end)
 
@@ -72,7 +99,7 @@ return function(H, ui)
 	end)
 	lookUp("casa")
 	H.step(2, function()
-		H.check("with the setting off, no button", not hasButton(ADD) and not hasButton(ADDED))
+		H.check("with the setting off, no button", not hasButton(ADD) and not hasButton(REMOVE) and not hasButton(ALREADY))
 		H.closeCarousel()
 		G_reader_settings:delSetting("lookuppreview_dictionary_vocabulary_button")
 		local settings = G_reader_settings:readSetting("vocabulary_builder") or {}

@@ -5,7 +5,7 @@ Plano de evolução do [Lookup Preview](./lookuppreview.koplugin.md), ordenado p
 **Legenda:** ⬜ pendente · 🟨 em andamento · ✅ concluído · ⏸️ adiado · ❌ descartado
 **Valor:** ★ (baixo) a ★★★★★ (alto) · **Esforço:** Baixo / Médio / Alto
 
-Versão atual: **v1.5.0**
+Versão atual: **v1.6.0**
 
 ## Entregas
 
@@ -21,7 +21,9 @@ Versão atual: **v1.5.0**
 | v1.4.4 | Correção: botão Sentence quando a seleção já é a frase | ✅ |
 | v1.4.5 | Correções da revisão: consultas aninhadas sobrepostas; card oculto | ✅ |
 | v1.5.0 | D.3: localização pt_BR/pt_PT; D.4: seletor de cards no título | ✅ |
-| v1.6.0+ | Fase 4, um item por versão | ⬜ |
+| v1.6.0 | Vocabulary Builder: nota junto ao carrossel e desfazer | ✅ |
+| v1.7.0 | D.5: reorganizar os menus de configuração | ⬜ |
+| v1.8.0+ | Fase 4, um item por versão | ⬜ |
 
 Toda entrega sobe a versão em `main.lua`/`_meta.lua`, no `.md` do plugin (badge e linha de versão) e no `README.md`, e passa no `luacheck` sem avisos.
 
@@ -96,6 +98,7 @@ Fora do plano original; ainda sem fase definida.
 | D.2 | ✅ | **Trocar o modo dos cards laterais com o carrossel aberto** (`refreshVisibleCards` depois de mudar entre cards inteiros e abas): a linha fica mais alta, mas o popup não recalcula a posição, e o card passa da borda inferior. Já existia antes; na prática quase não acontece, porque o menu de configurações abre com o carrossel fechado | ★ | Baixo | v1.3.0 (screenshot) → feito na v1.4.0 |
 | D.3 | ✅ | **Localização pt_BR/pt_PT** no padrão dos outros plugins do repositório (`lookuppreview_l10n.lua`, como `dictionaryexplorer_l10n.lua` e `pageanchor_l10n.lua`): uma tabela com os textos próprios do plugin (menus, ajuda, dicas dos botões, mensagens dos cards), usando o catálogo do KOReader para os termos nativos e para os outros idiomas. Hoje esses textos aparecem em inglês no KOReader em português, porque o catálogo do KOReader não os contém | ★★★★ | Médio | v1.4.2 (pedido do usuário) → feito na v1.5.0 |
 | D.4 | ✅ | **Seletor de cards no título.** Tirar o botão ☰ que fica ao lado do ✎ e abrir a lista de cards tocando no título do card, com um indicador visível de que o título é tocável (por exemplo, `Dictionary ▾`, no padrão do subtítulo que já abre listas). Isso libera espaço no header. A definir na implementação: no card Dictionary o título hoje é a palavra consultada, então o nome do card precisa de um lugar próprio (uma linha pequena acima da palavra, ou a palavra passa para o subtítulo); no modo de abas, onde as abas já fazem esse papel, o título talvez nem precise do indicador | ★★★ | Baixo–médio | v1.4.3 (pedido do usuário) → feito na v1.5.0 |
+| D.5 | ⬜ | **Reorganizar os menus de configuração** para que opções parecidas ou relacionadas fiquem juntas. Hoje, em **Content**, as opções do card Dictionary estão soltas: "Dictionary HTML", "Dictionary buttons" (botões do popup do KOReader e do Dictionary Explorer) e "Show vocabulary builder button" são dois menus para três botões do mesmo card, enquanto a Translation tem um submenu próprio (com "Buttons") e a Wikipedia tem só o idioma, solto. Proposta: em **Content**, ficam no topo as opções gerais ("Cards", "Online card loading"), seguidas de um submenu por card com a mesma estrutura: **Dictionary card** (HTML; Buttons: popup do KOReader / Dictionary Explorer / vocabulário), **Translate card** (idioma de destino; texto de origem; Buttons: copiar / nota) e **Wikipedia card** (idioma). As chaves das configurações não mudam, então nada se perde na migração. Os testes que navegam pelo menu (`H.menuItem`) seguem os novos caminhos | ★★★ | Baixo–médio | v1.5.0 (pedido do usuário) |
 | D.1 | ✅ | **Consultas online canceláveis.** Translate e Wikipedia chamam `Trapper:dismissableRunInSubprocess` fora de `Trapper:wrap`, então rodam bloqueando, no mesmo processo, sem como cancelar com um toque. Envolver em `Trapper:wrap` as torna canceláveis e não trava a interface em rede lenta. Combina com o cache (1.3) | ★★★ | Baixo | v1.1.0 → feito na v1.2.0 |
 
 ---
@@ -196,3 +199,10 @@ Duas correções apontadas em revisão (P2), ambas reproduzidas antes em teste:
 - **D.3 Localização pt_BR/pt_PT.** `lookuppreview_l10n.lua` no padrão de `dictionaryexplorer_l10n.lua`: uma tabela para os dois portugueses, que usa o catálogo do KOReader para os termos nativos e os outros idiomas. As 165 strings do plugin estão cobertas: 148 na tabela e 17 que o catálogo do KOReader já traduz ("Cancelar", "Destacar", "construtor de vocabulário"…), cuja terminologia foi seguida. Diferença do padrão: o `pgettext` também consulta a tabela, porque o plugin usa `C_("Wikipedia", "Full article")`. O `_meta.lua` também usa a tabela. Correção de texto em inglês: "Show source text" dizia que a origem aparece *acima* da tradução; ela aparece abaixo.
 - **Extra (visto no screenshot em pt_BR):** com o KOReader em pt_BR, o idioma de destino vem como `pt_br` e aparecia como "PT_BR". O rótulo agora procura também `pt-BR` e `pt`, e mostra "Português (Brasil)".
 - **Testes:** nova suíte `l10n`, que roda com o KOReader em pt_BR: varre o código-fonte e verifica que todo texto passado a `_()`/`C_()` tem tradução e mantém os `%s`/`%d`; confere menu, título e dicas em português e o nome de `pt_br`. A `reading` cobre o título (nome com ▾, lista abaixo do título, sem título com um card ou com abas), e a `scroll` passou a esperar a posição proporcional ao trocar para abas, porque sem título o conteúdo cabe em menos páginas. O `run.sh` aceita `LP_LANGUAGE=pt_BR` para rodar qualquer suíte num idioma. 226 verificações. Validado por mutação: remover uma tradução ou um placeholder derruba a `l10n`.
+
+### v1.6.0
+
+- **Mensagens junto ao carrossel.** "Adicionada ao construtor de vocabulário" aparecia no topo da tela, como notificação do KOReader. Agora, com o carrossel aberto, as mensagens do plugin aparecem logo acima do card, no mesmo widget das dicas dos botões, por 3 segundos (um toque as fecha antes). Isso vale para todas as mensagens mostradas com o carrossel aberto (por exemplo, "Tradução copiada"), por consistência; com o carrossel fechado, continua a notificação do KOReader.
+- **Desfazer a adição ao Vocabulary Builder.** Tocar no ✓ remove a palavra e o botão volta a oferecer a adição. Só vale para palavras que *o card adicionou nesta consulta*: o plugin pergunta ao banco do Vocabulary Builder (o módulo `db` dele, `hasWord`/`remove`) se a palavra já existia antes de adicionar. Uma palavra que já estava lá mantém o progresso de revisão: o ✓ dela só avisa "Já está no construtor de vocabulário". Essa consulta ao banco substitui o palpite anterior ("abriu uma janela por cima?") para saber se houve adição.
+- **Testes:** a suíte `vocabulary` verifica a posição da nota (acima do card, não no topo), desfazer e adicionar de novo, e que o ✓ de uma palavra pré-existente não a remove (234 verificações). As traduções novas estão na `l10n`.
+- **Planejado:** D.5 (reorganizar os menus) para a v1.7.0; a Fase 4 passa para a v1.8.0+.

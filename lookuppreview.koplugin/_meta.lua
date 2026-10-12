@@ -5,5 +5,5 @@ return {
 	description = _(
 		[[Shows a floating carousel for selected text with dictionary, translation, and Wikipedia previews.]]
 	),
-	version = "v1.5.0",
+	version = "v1.6.0",
 }

@@ -1,4 +1,4 @@
-# Lookup Preview ![Version](https://img.shields.io/badge/version-v1.5.0-blue)
+# Lookup Preview ![Version](https://img.shields.io/badge/version-v1.6.0-blue)
 
 **Lookup Preview** is a KOReader reader plugin that changes the lookup flow for selected text. Instead of opening each native lookup window immediately, it first shows a compact floating carousel with preview cards for **Dictionary**, **Translate**, and **Wikipedia**.
 
@@ -35,6 +35,7 @@ The plugin metadata registers it as `lookuppreview` with the display name **Look
 - Avoids repeating the Translate and Wikipedia tab labels as card titles in tabbed mode, promoting their useful language and result controls to title styling.
 - Uses matching dithered shadows along the right and bottom edges of each card, following the card radius in rounded mode while preserving square shadows in square mode.
 - Is translated into Portuguese (Brazil and Portugal) when KOReader is in Portuguese; other languages use KOReader's own translations for the words it has, and English for the rest.
+- Shows its messages (a word added to the vocabulary builder, a translation copied…) next to the carousel, where button hints appear, while it is open; KOReader's notifications are used when it is closed.
 - Holding any button, the card's title, a clickable subtitle, or a side tab shows a short note saying what it does. The note appears centred on the card, just above it (or below when there is no room), and stays for five seconds after the finger is lifted; a tap or swipe dismisses it sooner.
 - Adds a version entry in the plugin settings menu.
 
@@ -184,7 +185,7 @@ found word · dictionary name
   - **Search**: opens KOReader's full-text search for the selected text;
   - **Details**: opens KOReader's original dictionary popup;
   - **Go to word** (`go_to_dict.svg`): when the [Dictionary Explorer](./dictionaryexplorer.koplugin.md) plugin is installed, opens it at the word of the result being shown. Which of these two buttons appear is set in the plugin settings (both by default);
-  - **Add to vocabulary builder** (`vocabulary.svg`): adds the looked up word to KOReader's Vocabulary builder, with the text around the selection as context, as the button of KOReader's popup does. A notification confirms it and the button turns into a check mark; for a word already there, the Vocabulary builder shows it in its own dialog instead.
+  - **Add to vocabulary builder** (`vocabulary.svg`): adds the looked up word to KOReader's Vocabulary builder, with the text around the selection as context, as the button of KOReader's popup does. A note next to the card confirms it and the button turns into a check mark; tapping the check mark takes the word back out (only a word this card added: one that was already there keeps its review progress, and its check mark just says so). For a word already there, the Vocabulary builder shows it in its own dialog instead.
 - Keeps KOReader's original dictionary result order when opening the native dictionary view from the selected preview result.
 
 ## Translation card
@@ -261,7 +262,7 @@ Each of them opens a new lookup on top of the previous one; the header's back bu
 | Search | Opens KOReader full-text search for the selected text |
 | Details | Opens KOReader's original dictionary popup |
 | Go to word | Opens Dictionary Explorer at the word of the shown result, in that result's dictionary |
-| Add to vocabulary builder | Adds the looked up word to KOReader's Vocabulary builder (when enabled in the settings and in KOReader) |
+| Add to vocabulary builder | Adds the looked up word to KOReader's Vocabulary builder (when enabled in the settings and in KOReader); tapped again (✓), takes back the word it added |
 
 Details and Go to word are the two buttons chosen by **Dictionary buttons** in the settings. Go to word is shown only when Dictionary Explorer is installed and can open the result's dictionary (StarDict with plain text, HTML or XDXF entries). When it can't, for example for a dictionary in another format, the Details button is shown instead even if the setting says Dictionary Explorer only, so there is always a way to the full entry.
 

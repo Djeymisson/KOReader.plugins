@@ -305,9 +305,16 @@ return function(ctx)
 		-- context, which is not the context of a word looked up in the preview.
 		if status == LOAD_DONE and not state.parent and self:showVocabularyButton() then
 			if state.vocabulary_added then
+				-- Tapping it again takes back a word this card added; a word that
+				-- was there before keeps its review progress.
+				local can_undo = state.vocabulary_added_here and self:getVocabularyDB() ~= nil
 				button_specs[#button_specs + 1] = {
 					spec = { icon = ICON_VOCABULARY_ADDED },
-					hint = _("Added to the vocabulary builder"),
+					hint = can_undo and _("Remove the word from the vocabulary builder")
+						or _("Already in the vocabulary builder"),
+					callback = can_undo and function()
+						return self:removeFromVocabularyBuilder(state)
+					end or nil,
 				}
 			else
 				button_specs[#button_specs + 1] = {
@@ -471,6 +478,21 @@ return function(ctx)
 		)
 	end
 
+	-- The Vocabulary Builder's database module, as it loaded it ("db" of
+	-- vocabbuilder.koplugin), when it has what the card uses.
+	function LookupPreview:getVocabularyDB()
+		local db = package.loaded["db"]
+		if type(db) == "table" and type(db.hasWord) == "function" and type(db.remove) == "function" then
+			return db
+		end
+		return nil
+	end
+
+	function vocabularyHasWord(db, word)
+		local ok, item = pcall(db.hasWord, db, word)
+		return ok and item ~= nil and item ~= false
+	end
+
 	-- Adds the looked up word to KOReader's Vocabulary Builder, as the button of
 	-- KOReader's popup does (with the selection around it as context). When the
 	-- word is there already, the Vocabulary Builder shows it in a dialog of its
@@ -482,12 +504,41 @@ return function(ctx)
 		end
 
 		local book_title = self.ui.doc_props and self.ui.doc_props.display_title or _("Dictionary lookup")
+		local db = self:getVocabularyDB()
+		local existed
+		if db then
+			existed = vocabularyHasWord(db, word)
+		end
 		local top_before = UIManager:getTopmostVisibleWidget()
 		self.ui:handleEvent(Event:new("WordLookedUp", word, book_title, true))
 		state.vocabulary_added = true
-		if UIManager:getTopmostVisibleWidget() == top_before then
+		if db then
+			state.vocabulary_added_here = not existed and vocabularyHasWord(db, word)
+		else
+			state.vocabulary_added_here = UIManager:getTopmostVisibleWidget() == top_before
+		end
+		if state.vocabulary_added_here then
 			self:notify(_("Added to vocabulary builder."))
 		end
+		return self:refreshCard(PAGE_DICTIONARY)
+	end
+
+	-- Takes back the word this card added to the Vocabulary Builder.
+	function LookupPreview:removeFromVocabularyBuilder(state)
+		local db = self:getVocabularyDB()
+		local word = trim(state and state.word or "")
+		if not (db and state.vocabulary_added_here and word ~= "") then
+			return true
+		end
+
+		local ok, err = pcall(db.remove, db, { word = word })
+		if not ok then
+			logger.warn("LookupPreview: could not remove the word from the vocabulary builder:", err)
+			return self:notify(_("Could not remove the word from the vocabulary builder."))
+		end
+		state.vocabulary_added = false
+		state.vocabulary_added_here = false
+		self:notify(_("Removed from vocabulary builder."))
 		return self:refreshCard(PAGE_DICTIONARY)
 	end
 

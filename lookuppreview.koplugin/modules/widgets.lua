@@ -132,7 +132,7 @@ return function(ctx)
 
 	-- Shows what a button does, centred on the active card of `popup` and just
 	-- above it (or below). `anchor` is the button's area.
-	local function showButtonHint(hint, anchor, popup)
+	local function showButtonHint(hint, anchor, popup, timeout)
 		if hint and hint ~= "" then
 			if ButtonHint.current then
 				UIManager:close(ButtonHint.current)
@@ -151,6 +151,7 @@ return function(ctx)
 				text = hint,
 				anchor = anchor,
 				bounds = bounds,
+				timeout = timeout,
 			})
 			UIManager:show(ButtonHint.current)
 		end
@@ -2155,6 +2156,12 @@ return function(ctx)
 		end
 
 		return false
+	end
+
+	-- A short message next to the card, where button hints show, instead of
+	-- KOReader's notification at the top of the screen.
+	function LookupPreviewPopup:showNote(text)
+		return showButtonHint(text, nil, self, CARD_NOTE_TIMEOUT)
 	end
 
 	function LookupPreviewPopup:onSpreadCard()
