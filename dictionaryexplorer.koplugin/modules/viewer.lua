@@ -11,6 +11,7 @@ local BD = require("ui/bidi")
 local Blitbuffer = require("ffi/blitbuffer")
 local ButtonDialog = require("ui/widget/buttondialog")
 local ButtonTable = require("ui/widget/buttontable")
+local CenterContainer = require("ui/widget/container/centercontainer")
 local Device = require("device")
 local Event = require("ui/event")
 local Font = require("ui/font")
@@ -370,10 +371,13 @@ end
 function DictionaryExplorerViewer:_buildButtons()
 	local icon_width = Screen:scaleBySize(FOOTER_ICON_BUTTON_WIDTH)
 	local go_to_word = {
-		text = _("Go to word"),
+		text = _("Search"),
 		font_bold = true, -- the only bold label in the row
 		callback = function()
 			self:showGoToDialog()
+		end,
+		hold_callback = function()
+			UIManager:show(InfoMessage:new({ text = _("Searches every dictionary for a word, and lists what each one has."), timeout = 3 }))
 		end,
 	}
 	local close = {
@@ -418,11 +422,33 @@ function DictionaryExplorerViewer:_buildHeader(first_position, last_position)
 		bottom_v_padding = 0, -- the gaps below are set explicitly
 		show_parent = self,
 	})
+	-- The dictionary's name, and, when other dictionaries have the word the
+	-- page is about, how many (see _othersWithEntry()): tapping the header
+	-- lists them. The name gives way when both don't fit, not the mark.
+	local width = self.dimen.w - 2 * Size.padding.large
+	local others = self._header_others -- set by _installPage() for the page it shows
+	self.header_mark = nil
+	if others and others > 0 then
+		self.header_mark = TextWidget:new({
+			text = "  ·  " .. T(_("also in %1 more"), others),
+			face = Font:getFace("NotoSans-Bold.ttf", 15),
+		})
+		width = math.max(width - self.header_mark:getSize().w, math.floor(width / 3))
+	end
 	local dictionary_name = TextWidget:new({
 		text = dictionary.name,
 		face = Font:getFace("NotoSans-Italic.ttf", 18),
-		max_width = self.dimen.w - 2 * Size.padding.large,
+		max_width = width,
 	})
+	if self.header_mark then
+		-- As tall as the name alone: the header's height, which the room for
+		-- the entries is worked out from, never changes.
+		local line_height = dictionary_name:getSize().h
+		dictionary_name = CenterContainer:new({
+			dimen = Geom:new({ w = self.dimen.w, h = line_height }),
+			HorizontalGroup:new({ align = "center", dictionary_name, self.header_mark }),
+		})
+	end
 	return VerticalGroup:new({
 		align = "center",
 		title_bar,
@@ -710,12 +736,12 @@ function DictionaryExplorerViewer:_findElsewhere(word)
 end
 
 function DictionaryExplorerViewer:_getMissNotice()
-	local miss = self.miss or self.also
+	local miss = self.miss
 	if not miss then
 		return nil
 	end
 	local elsewhere = miss.elsewhere
-	local key = (self.also and "also\0" or "") .. miss.word .. "\0" .. (miss.shown or "") .. "\0" .. (elsewhere and elsewhere[1].dictionary.name or "")
+	local key = miss.word .. "\0" .. (miss.shown or "") .. "\0" .. (elsewhere and elsewhere[1].dictionary.name or "")
 	local cached = self._miss_notice
 	if cached and cached.key == key then
 		return cached.widget
@@ -729,18 +755,14 @@ function DictionaryExplorerViewer:_getMissNotice()
 	if elsewhere and #elsewhere > 1 then
 		names = T(_("%1 and %2 more"), names, #elsewhere - 1)
 	end
-	if self.also then
-		text = T(_("“%1” is also in %2."), cutText(miss.word), names) .. " " .. _("Tap here to see it there.")
-	elseif miss.shown then
+	if miss.shown then
 		text = T(_("No entry for “%1”. Showing “%2”."), cutText(miss.word), cutText(miss.shown))
 	elseif elsewhere then
 		text = T(_("No entry for “%1”. It is in %2."), cutText(miss.word), names)
 	else
 		text = T(_("No entry for “%1”. Showing the closest one."), cutText(miss.word))
 	end
-	if not self.also then
-		text = text .. " " .. _("Tap here for suggestions.")
-	end
+	text = text .. " " .. _("Tap here for suggestions.")
 	local face = Font:getFace("NotoSans-Italic.ttf", 16)
 	local line_px = math.floor((1 + TextBoxWidget.line_height) * face.size + 0.5)
 	local widget = VerticalGroup:new({
@@ -928,7 +950,7 @@ function DictionaryExplorerViewer:_chooseSuggestion(position)
 	self:_closeListForChoice("suggestions_dialog")
 	-- The chosen entry takes the place of the word that had none in the trail.
 	local replacing = self:_isOnMissedCrumb()
-	self.miss, self.also = nil, nil
+	self.miss = nil
 	self:_placeInTrail(self.dictionary:getEntry(position).word, position, replacing)
 	self:showAround(position)
 end
@@ -959,6 +981,7 @@ function DictionaryExplorerViewer:_installPage(html_widget, first, last, at_end)
 	end
 
 	local margins = self.side_margins
+	self._header_others = self:_othersWithEntry(first, last)
 	self.header = self:_buildHeader(first, last)
 	local children = { align = "left", self.header }
 	-- The breadcrumb, once the user has started walking through words, sits
@@ -1130,7 +1153,7 @@ end
 -- @bool at_end scroll to the end of the page (used when paging back by scrolling)
 function DictionaryExplorerViewer:showPage(first, last, keep_last, at_end)
 	self:_freeContent()
-	self.miss, self.also = nil, nil -- turning the page leaves the word behind
+	self.miss = nil -- turning the page leaves the word behind
 
 	local range, max_entries
 	if keep_last then
@@ -1332,7 +1355,7 @@ function DictionaryExplorerViewer:goToCrumb(index)
 	end
 	self:_withDictionary(crumb.dictionary, function()
 		self:_checkCrumb(crumb)
-		self.miss, self.also = nil, nil
+		self.miss = nil
 		self.trail_index = index
 		self:_switchDictionary(crumb.dictionary, crumb.position)
 		self:showAround(crumb.position)
@@ -1375,9 +1398,7 @@ end
 -- goes on through it, so going back returns to the dictionary before.
 -- @bool instead_of_missed the word takes the place, in the trail, of the word
 -- with no entry the page is on (when it was found elsewhere)
--- @bool typed the word was typed: when it has an entry here, the page also
--- says which other dictionaries have it
-function DictionaryExplorerViewer:goToWordIn(dictionary, word, instead_of_missed, typed)
+function DictionaryExplorerViewer:goToWordIn(dictionary, word, instead_of_missed)
 	word = util.trim(word or "")
 	if word == "" then
 		return
@@ -1387,7 +1408,6 @@ function DictionaryExplorerViewer:goToWordIn(dictionary, word, instead_of_missed
 		local lookup = dictionary:resolve(word)
 		self:_switchDictionary(dictionary, lookup.position)
 		self.miss = self:_missFrom(lookup) -- said on the page itself, see _getMissNotice
-		self.also = typed and not self.miss and self:_alsoIn(word) or nil
 		if self:_placeInTrail(self:_trailWord(lookup, lookup.position), lookup.position, replacing) and self.miss then
 			self.miss.crumb = self.trail_index -- the crumb a suggestion will take the place of
 		end
@@ -1395,26 +1415,27 @@ function DictionaryExplorerViewer:goToWordIn(dictionary, word, instead_of_missed
 	end)
 end
 
--- For a word typed that has an entry here: the other dictionaries that have
--- it too. Unlike the dock's (see _checkSelection), what is typed may lack its
--- accents ("sofa" for the Portuguese "sofá"), so they are looked for too;
--- still only in the dictionaries already loaded, so nothing is read for it
--- but their pages. Nil when none of them has it.
-function DictionaryExplorerViewer:_alsoIn(word)
-	local known, found = {}, {}
-	for _index, dictionary in ipairs(self:_otherDictionaries()) do
-		if dictionary.idx then
-			local lookup = dictionary:resolve(word)
-			local entry = lookup.kind ~= "closest" and dictionary:getEntry(lookup.position).word
-			known[dictionary] = entry or false
+-- How many other dictionaries have an entry for the highlighted word, when it
+-- is on the page first..last (nil otherwise): asked as the dock asks (see
+-- _checkSelection: the dictionaries already loaded, the word as it is), once
+-- per entry, so turning pages costs nothing.
+function DictionaryExplorerViewer:_othersWithEntry(first, last)
+	local highlighted = self.highlighted
+	if not (highlighted and highlighted >= first and highlighted <= last and self.library) then
+		return nil
+	end
+	self._others_cache = self._others_cache or {}
+	local key = self.dictionary.name .. "\0" .. highlighted
+	if self._others_cache[key] == nil then
+		local count = 0
+		for _dictionary, entry in pairs((self:_checkSelection(self.dictionary:getEntry(highlighted).word))) do
 			if entry then
-				found[#found + 1] = { dictionary = dictionary, entry = entry }
+				count = count + 1
 			end
 		end
+		self._others_cache[key] = count
 	end
-	if #found > 0 then
-		return { word = word, elsewhere = found, known = known }
-	end
+	return self._others_cache[key]
 end
 
 -- The word the page is about: the highlighted entry when it is on the page,
@@ -1724,10 +1745,14 @@ function DictionaryExplorerViewer:onTextSelected(text)
 	UIManager:show(dock, "[ui]")
 end
 
+--- Asks for a word to look for in every dictionary (see searchAll()).
 function DictionaryExplorerViewer:showGoToDialog()
+	local count = 1 + #self:_otherDictionaries()
 	local dialog
 	dialog = InputDialog:new({
-		title = _("Go to word"),
+		title = _("Search all dictionaries"),
+		description = T(_("Looks for the word in every dictionary (%1), this one first, and lists what each one has."), count),
+		input_hint = _("Word"),
 		buttons = {
 			{
 				{
@@ -1738,12 +1763,12 @@ function DictionaryExplorerViewer:showGoToDialog()
 					end,
 				},
 				{
-					text = _("Go"),
+					text = _("Search"),
 					is_enter_default = true,
 					callback = function()
 						local word = dialog:getInputText()
 						UIManager:close(dialog)
-						self:goToWordIn(self.dictionary, word, false, true) -- typed: also says where else it is
+						self:searchAll(word)
 					end,
 				},
 			},
@@ -1751,6 +1776,71 @@ function DictionaryExplorerViewer:showGoToDialog()
 	})
 	UIManager:show(dialog)
 	dialog:onShowKeyboard()
+end
+
+--- Looks for a word in every dictionary, this one first, and lists what each
+-- one has (the entry, also through another case, the .syn or the accents),
+-- six at a time (see _showList()): choosing one goes there. A dictionary whose
+-- index was never prepared can't be asked, so it is listed as such, and
+-- choosing it prepares it first. When none has the word, the list has the
+-- entries closest to it: this dictionary's suggestions, then the others'.
+function DictionaryExplorerViewer:searchAll(word)
+	word = util.trim(word or "")
+	if word == "" or self.search_dialog then
+		return
+	end
+	local dictionaries = { self.dictionary }
+	for _index, dictionary in ipairs(self:_otherDictionaries()) do
+		dictionaries[#dictionaries + 1] = dictionary
+	end
+	local function row(label, dictionary, target)
+		return {
+			{
+				text = label,
+				callback = function()
+					self:_closeListForChoice("search_dialog")
+					self:goToWordIn(dictionary, target)
+				end,
+			},
+		}
+	end
+	local found, unprepared = {}, {}
+	for _index, dictionary in ipairs(dictionaries) do
+		if dictionary == self.dictionary or dictionary:isIndexed() then
+			local lookup = dictionary:resolve(word)
+			if lookup.kind ~= "closest" then
+				found[#found + 1] = row(T("%1 — %2", dictionary:getEntry(lookup.position).word, dictionary.name), dictionary, word)
+			end
+		else
+			unprepared[#unprepared + 1] = row(T(_("%1 (index not prepared yet)"), dictionary.name), dictionary, word)
+		end
+	end
+	local title = T(_("Results for “%1”"), cutText(word))
+	if #found == 0 then
+		-- Nothing has it: what is spelled most like it, here and elsewhere.
+		title = T(_("No entry for “%1”: the closest ones"), cutText(word))
+		for _index, position in ipairs(self.dictionary:suggest(word)) do
+			local entry = self.dictionary:getEntry(position).word
+			found[#found + 1] = row(T("%1 — %2", entry, self.dictionary.name), self.dictionary, entry)
+		end
+		for index = 2, #dictionaries do
+			local dictionary = dictionaries[index]
+			if dictionary:isIndexed() then
+				for _index, position in ipairs(self:_closestIn(dictionary, word)) do
+					local entry = dictionary:getEntry(position).word
+					found[#found + 1] = row(T("%1 — %2", entry, dictionary.name), dictionary, entry)
+				end
+			end
+		end
+	end
+	for _index, entry in ipairs(unprepared) do
+		found[#found + 1] = entry
+	end
+	if #found == 0 then
+		UIManager:show(InfoMessage:new({ text = T(_("Nothing found for “%1”."), cutText(word)) }))
+		return
+	end
+	self:_showList("search_dialog", title, found)
 end
 
 -- Dictionary links are either "bword://word" or just the word.
@@ -1798,11 +1888,7 @@ end
 -- margins, get here.
 function DictionaryExplorerViewer:onTap(_arg, ges)
 	if self:_isOnMissNotice(ges.pos) then
-		if self.also then
-			self:showOtherDictionaries(self.also.word, self.also.known)
-		else
-			self:showSuggestions()
-		end
+		self:showSuggestions()
 		return true
 	end
 	-- The header, at the top: the word on the page in another dictionary.
@@ -1840,7 +1926,7 @@ function DictionaryExplorerViewer:onClose()
 end
 
 function DictionaryExplorerViewer:onCloseWidget()
-	for _index, field in ipairs({ "suggestions_dialog", "dictionaries_dialog" }) do
+	for _index, field in ipairs({ "suggestions_dialog", "dictionaries_dialog", "search_dialog" }) do
 		if self[field] then
 			UIManager:close(self[field])
 		end

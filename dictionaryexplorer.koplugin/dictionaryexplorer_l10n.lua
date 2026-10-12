@@ -64,8 +64,15 @@ local pt = {
 	["No entry for “%1”. It is in %2."] = "Não há verbete para “%1”. Ele está em %2.",
 	["%1 and %2 more"] = "%1 e mais %2",
 	["“%1” in %2"] = "“%1” em %2",
-	["“%1” is also in %2."] = "“%1” também está em %2.",
-	["Tap here to see it there."] = "Toque aqui para ver lá.",
+	["Search"] = "Buscar",
+	["also in %1 more"] = "também em mais %1",
+	["Searches every dictionary for a word, and lists what each one has."] = "Busca uma palavra em todos os dicionários e lista o que cada um tem.",
+	["Search all dictionaries"] = "Buscar em todos os dicionários",
+	["Looks for the word in every dictionary (%1), this one first, and lists what each one has."] = "Procura a palavra em todos os dicionários (%1), começando por este, e lista o que cada um tem.",
+	["Word"] = "Palavra",
+	["Results for “%1”"] = "Resultados para “%1”",
+	["No entry for “%1”: the closest ones"] = "Nenhum verbete para “%1”: os mais próximos",
+	["Nothing found for “%1”."] = "Nada encontrado para “%1”.",
 }
 
 return setmetatable({

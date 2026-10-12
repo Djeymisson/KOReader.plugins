@@ -42,7 +42,8 @@ local EXPECTED = {
 	["going to the word in another dictionary"] = 2,
 	-- Saying which other dictionaries have a missed word is part of the page.
 	["Go to word with no entry, found in another dictionary"] = 1,
-	["Go to word typed, also in another dictionary (said on the page)"] = 1,
+	-- The results of a search: a list, as the suggestions.
+	["searching all dictionaries"] = 2,
 	-- Nothing changes, so nothing may be redrawn.
 	["swiping past the last page"] = 0,
 	["swiping back from the first page"] = 0,
@@ -245,9 +246,11 @@ return function(H, ui)
 				measure("Go to word with no entry, found in another dictionary", function()
 					explored:goToWord(elsewhere)
 				end)
-				measure("Go to word typed, also in another dictionary (said on the page)", function()
-					explored:goToWordIn(explored.dictionary, "casa", false, true)
+				measure("searching all dictionaries", function()
+					explored:searchAll("casa")
 				end)
+				H.check("the page is not redrawn by a search", explored.search_dialog ~= nil and #calls == 2)
+				UIManager:close(explored.search_dialog)
 			end
 			explored:onClose()
 			G_reader_settings:delSetting("dictionaryexplorer_exploration")

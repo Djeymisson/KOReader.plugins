@@ -98,7 +98,7 @@ return function(H, ui)
 		viewer:goToWord("livro")
 		H.check("the breadcrumb appears after the first Go to word", viewer.breadcrumb ~= nil and H.trailText(viewer) == "casa>livro")
 		local footer = H.footer(viewer)
-		H.check("the footer stays Go to word + close: no arrows", #footer == 2 and footer[1].text == "Go to word" and footer[2].icon == "close")
+		H.check("the footer stays Search + close: no arrows", #footer == 2 and footer[1].text == "Search" and footer[2].icon == "close")
 		for _index, word in ipairs(pt_profile.walk) do
 			viewer:goToWord(word)
 		end

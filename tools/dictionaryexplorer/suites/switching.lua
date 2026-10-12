@@ -18,10 +18,11 @@ Going to a word in another dictionary, and the trail through several.
                   dictionaries whose index is ready are asked; for a word no
                   dictionary has, the suggestions end with the closest entries
                   of each other dictionary (3 at most)
-  also there      a word typed in Go to word that has an entry here and in
-                  other dictionaries goes to it here, and the page says which
-                  others have it; tapping that lists them; a word only here,
-                  or one gone to otherwise (selected, a link), says nothing
+  the mark        the header says how many other dictionaries have the word the
+                  page is about, and not once it is off the page
+  search          the footer's Search lists, for a word typed, what every
+                  dictionary has (this one first, with accents too), and
+                  choosing one goes there; with none, the closest entries
   the header      tapping it lists the other dictionaries that have the word
                   the page is about, and goes to it there
   continuing      the exploration is one for all dictionaries: it continues in
@@ -403,81 +404,100 @@ return function(H, ui)
 		G_reader_settings:delSetting(SETTING)
 	end)
 
-	-- ---- also there -----------------------------------------------------------------------
-	local function typeInGoTo(word)
+	-- ---- searching all dictionaries --------------------------------------------------------
+	-- Types `word` in the footer's Search dialog, as a user does.
+	local function search(word)
 		viewer:showGoToDialog()
 		local dialog = H.findInputDialog()
 		dialog:setInputText(word)
 		for _index, button in ipairs(dialog.buttons[1]) do
-			if button.text == "Go" then
+			if button.text == "Search" then
 				button.callback()
 			end
 		end
+		return viewer.search_dialog
+	end
+	-- The dictionary and the entry a result row names ("entry — dictionary").
+	local function results(dialog)
+		local found = {}
+		for _index, choice in ipairs(dialog and dialog.choices or {}) do
+			local entry, name = choice.text:match("^(.-) — (.+)$")
+			found[#found + 1] = { entry = entry, name = name, choice = choice }
+		end
+		return found
 	end
 
 	H.step(0.5, function()
 		close()
 		plugin:openAt(text, "livro")
 		viewer = H.findViewer()
-		local holders = {}
+		H.check("the footer's button is Search", H.footer(viewer)[1].text == "Search")
+		local holders = { text.name }
 		for _index, dictionary in ipairs(viewer:_otherDictionaries()) do
-			if select(2, dictionary:locateText("casa")) then
-				holders[#holders + 1] = dictionary
+			if dictionary:resolve("casa").kind ~= "closest" then
+				holders[#holders + 1] = dictionary.name
 			end
 		end
-		typeInGoTo("casa")
-		local expected = holders[1] and string.format("“casa” is also in %s and %d more.", holders[1].name, #holders - 1)
+		local dialog = search("casa")
+		local found = results(dialog)
+		local names = {}
+		for _index, result in ipairs(found) do
+			names[#names + 1] = result.name
+		end
 		H.check(
-			"a word typed that has an entry here and elsewhere: it is shown here, and the page says where else",
-			#holders >= 2 and viewer.dictionary == text and entryWord() == "casa" and noticeText():find(expected, 1, true) ~= nil,
-			noticeText()
+			"Search lists every dictionary that has the word, this one first, each with its entry",
+			dialog ~= nil and table.concat(names, "|") == table.concat(holders, "|") and found[1].entry == "casa",
+			table.concat(listLabels(dialog), " | ")
 		)
-		UIManager:forceRePaint()
-		local area = viewer.html_widget.dimen
-		H.gesture("tap", area.x + area.w / 2, area.y - 4)
-		local dialog = viewer.dictionaries_dialog
-		H.check("tapping that lists them", dialog ~= nil and #dialog.choices == #holders, table.concat(listLabels(dialog), " | "))
+		H.check("the page stays as it was until a result is chosen", viewer.dictionary == text and entryWord() == "livro")
 		if dialog then
 			UIManager:close(dialog)
 		end
-		viewer:showNext()
-		H.check("turning the page takes it away", viewer.miss_notice == nil)
 
-		-- Typed without its accents: "sofa" here (English), "sofá" in Portuguese.
+		-- Typed without its accents: "sofa" in English, "sofá" in Portuguese.
 		viewer:goToWordIn(html, "house")
-		typeInGoTo("sofa")
-		H.check(
-			"a word typed is also looked for with accents in the others: “sofa” is also in the Portuguese “sofá”",
-			viewer.dictionary == html and entryWord() == "sofa" and viewer.also ~= nil and viewer.also.known[text] == "sofá" and noticeText():find("“sofa” is also in", 1, true) ~= nil,
-			noticeText()
-		)
-		viewer:showOtherDictionaries(viewer.also.word, viewer.also.known)
-		local row = listed(viewer.dictionaries_dialog, text.name)
-		H.check("and the list shows that entry", row ~= nil and row.text == text.name .. " (sofá)", row and row.text)
-		if row then
-			row.callback()
+		found = results(search("sofa"))
+		local sofa
+		for _index, result in ipairs(found) do
+			if result.name == text.name then
+				sofa = result
+			end
 		end
-		H.check("which it goes to", viewer.dictionary == text and entryWord() == "sofá")
+		H.check("with its accents too: “sofa” finds “sofá” in Portuguese", found[1] and found[1].name == html.name and sofa ~= nil and sofa.entry == "sofá", table.concat(listLabels(viewer.search_dialog), " | "))
+		if sofa then
+			sofa.choice.callback()
+		end
+		H.check("choosing a result goes there, the trail going on", viewer.dictionary == text and entryWord() == "sofá" and viewer.search_dialog == nil and viewer.trail[#viewer.trail].dictionary == text)
+
 		local en, pt = by.en, by.pt
 		if en and pt then
 			viewer:goToWordIn(en, "house")
-			typeInGoTo("sofa")
-			H.check("with the author's dictionaries: “sofa” in English–Portuguese is also in the Portuguese one, as “sofá”", viewer.also ~= nil and viewer.also.known[pt] == "sofá", noticeText())
-		end
-		viewer:goToWordIn(text, "livro")
-
-		-- A word only this dictionary has (a made-up one of the fixture).
-		local only
-		for position = 0, text:getCount() - 1 do
-			local word = text:getEntry(position).word
-			if not only and word:sub(1, 1) == "q" and not viewer:_anyFound((viewer:_checkSelection(word))) then
-				only = word
+			found = results(search("sofa"))
+			local in_pt
+			for _index, result in ipairs(found) do
+				if result.name == pt.name then
+					in_pt = result
+				end
+			end
+			H.check("with the author's dictionaries: “sofa” in English–Portuguese also lists “sofá” in Portuguese", found[1] and found[1].name == en.name and in_pt ~= nil and in_pt.entry == "sofá", table.concat(listLabels(viewer.search_dialog), " | "))
+			if viewer.search_dialog then
+				UIManager:close(viewer.search_dialog)
 			end
 		end
-		typeInGoTo(only)
-		H.check("a word typed that only this dictionary has: nothing said", only ~= nil and viewer.miss_notice == nil and entryWord() == only, only)
-		viewer:goToWord("casa") -- as a selection or a link
-		H.check("a word gone to otherwise than typed: nothing said", viewer.miss_notice == nil and entryWord() == "casa")
+
+		-- A word no dictionary has: the closest entries, here and elsewhere.
+		viewer:goToWordIn(text, "livro")
+		dialog = search("casaz")
+		found = results(dialog)
+		local here, in_others = false, false
+		for _index, result in ipairs(found) do
+			here = here or result.name == text.name
+			in_others = in_others or (result.name ~= text.name and result.entry:lower():find("^casa") ~= nil)
+		end
+		H.check("a word no dictionary has lists the closest entries, here and in the others", dialog ~= nil and dialog.title:find("the closest ones", 1, true) ~= nil and here and in_others, table.concat(listLabels(dialog), " | "))
+		if dialog then
+			UIManager:close(dialog)
+		end
 		close()
 		G_reader_settings:delSetting(SETTING)
 	end)
@@ -532,6 +552,42 @@ return function(H, ui)
 			viewer.dictionary == text and entryWord():find("^casa") ~= nil and #viewer.trail == 2 and viewer.trail[2].dictionary == text,
 			H.trailText(viewer)
 		)
+		close()
+		G_reader_settings:delSetting(SETTING)
+	end)
+
+	-- ---- the header's mark ---------------------------------------------------------------
+	-- When other dictionaries have the word the page is about, the header says
+	-- how many, next to the dictionary's name.
+	local function mark()
+		return viewer.header_mark and viewer.header_mark.text or ""
+	end
+	H.step(0.5, function()
+		plugin:openAt(text, "casa")
+		viewer = H.findViewer()
+		local others = 0
+		for _dictionary, entry in pairs((viewer:_checkSelection("casa"))) do
+			if entry then
+				others = others + 1
+			end
+		end
+		H.check("the header says how many other dictionaries have the word", others >= 2 and mark():find(string.format("also in %d more", others), 1, true) ~= nil, mark())
+		viewer:showNext()
+		viewer:showNext()
+		H.check("not once the word's entry is off the page", mark() == "")
+		-- A word only this dictionary has.
+		local only
+		for position = 0, text:getCount() - 1 do
+			local word = text:getEntry(position).word
+			if not only and word:sub(1, 1) == "q" and not viewer:_anyFound((viewer:_checkSelection(word))) then
+				only = word
+			end
+		end
+		viewer:goToWord(only)
+		H.check("nor for a word only this dictionary has", mark() == "", only)
+		viewer:goToWord("casa")
+		H.check("and the page still fits with it", mark() ~= "" and H.fits(viewer) and viewer.column:getSize().h <= require("device").screen:getHeight(),
+			string.format("mark %q, fits %s, %d of %d px", mark(), tostring(H.fits(viewer)), viewer.column:getSize().h, require("device").screen:getHeight()))
 		close()
 		G_reader_settings:delSetting(SETTING)
 	end)

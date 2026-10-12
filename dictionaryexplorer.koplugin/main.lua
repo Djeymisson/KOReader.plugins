@@ -26,7 +26,7 @@ local Dock = require("modules/dock")
 local StarDict = require("modules/stardict")
 local Viewer = require("modules/viewer")
 
-local PLUGIN_VERSION = "v1.5.0"
+local PLUGIN_VERSION = "v1.6.0"
 
 local SETTING_START_DICTIONARY = "dictionaryexplorer_start_dictionary" -- a dictionary name; unset means automatic
 -- Where the exploration was left, as Viewer:explorationState() makes it: one
