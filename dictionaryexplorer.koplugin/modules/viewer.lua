@@ -42,6 +42,7 @@ local Breadcrumb = require("modules/breadcrumb")
 local ChoiceList = require("modules/choicelist")
 local Library = require("modules/library")
 local Notices = require("modules/notices")
+local ReadingSettings = require("modules/readingsettings")
 local Trail = require("modules/trail")
 local Dock = require("modules/dock")
 local FitModel = require("modules/fitmodel")
@@ -49,7 +50,6 @@ local Text = require("modules/text")
 
 local Screen = Device.screen
 
-local DEFAULT_DICT_FONT_SIZE = 20 -- same default as the dictionary popup
 local DEFAULT_SIDE_MARGIN = 16 -- used when the document we came from has no margins to follow
 
 -- Where the fit model (see fitmodel.lua) starts from, as
@@ -57,7 +57,6 @@ local DEFAULT_SIDE_MARGIN = 16 -- used when the document we came from has no mar
 -- many bytes of definition make one letter (markup and multi-byte characters
 -- included) and the lines of rule and spacing around an entry.
 local AVERAGE_GLYPH_WIDTH = 0.5
-local LINE_HEIGHT = 1.3
 local BYTES_PER_CHARACTER = 1.2
 local ENTRY_GAP_LINES = 2
 local HEADING_CHARS_FACTOR = 0.85 -- a bold heading fits this fraction of the letters a line of text does
@@ -145,15 +144,8 @@ local DictionaryExplorerViewer = InputContainer:extend({
 function DictionaryExplorerViewer:init()
 	self.lib = Library.new(self.library)
 	self.dimen = Geom:new({ w = Screen:getWidth(), h = Screen:getHeight() })
-	local default_margin = Screen:scaleBySize(DEFAULT_SIDE_MARGIN)
-	local margins = self.side_margins or { left = default_margin, right = default_margin }
-	-- Guard against a margin so large it would leave no room for text.
-	local max_margin = math.floor(self.dimen.w * 0.3)
-	self.side_margins = {
-		left = math.max(0, math.min(margins.left, max_margin)),
-		right = math.max(0, math.min(margins.right, max_margin)),
-	}
-	self.font_size = G_reader_settings:readSetting("dict_font_size") or DEFAULT_DICT_FONT_SIZE
+	self.book_margins = self.side_margins -- the book's, which the margins follow unless set
+	self:_readSettings()
 	local hold_pan_rate = G_reader_settings:readSetting("hold_pan_rate") or (Screen.low_pan_rate and 5.0 or 30.0)
 	self.ges_events = {
 		Swipe = { GestureRange:new({ ges = "swipe", range = self.dimen }) },
@@ -196,8 +188,60 @@ function DictionaryExplorerViewer:init()
 	self:showAround(self.position)
 end
 
+-- Takes the appearance in use (see readingsettings.lua): font size,
+-- line height, margins, justification, header.
+function DictionaryExplorerViewer:_readSettings()
+	local settings = ReadingSettings.get()
+	self.font_size = settings.font_size
+	self.line_height = settings.line_height
+	self.justify = settings.justify
+	self.compact_header = settings.compact_header
+	local margins
+	if settings.margin then
+		local margin = Screen:scaleBySize(settings.margin)
+		margins = { left = margin, right = margin }
+	else
+		local default_margin = Screen:scaleBySize(DEFAULT_SIDE_MARGIN)
+		margins = self.book_margins or { left = default_margin, right = default_margin }
+	end
+	-- Guard against a margin so large it would leave no room for text.
+	local max_margin = math.floor(self.dimen.w * 0.3)
+	self.side_margins = {
+		left = math.max(0, math.min(margins.left, max_margin)),
+		right = math.max(0, math.min(margins.right, max_margin)),
+	}
+end
+
+--- Lays the page out again with the appearance just applied: once, on
+-- the same entry (the highlighted one when it is on the page, the page's
+-- first otherwise).
+function DictionaryExplorerViewer:applyReadingSettings()
+	self:_readSettings()
+	self.fit_model = nil -- another font, width or line height: another model
+	self._content_height = nil -- the header may be another one
+	if self._miss_notice then
+		self._miss_notice.widget:free() -- as wide as the margins were
+		self._miss_notice = nil
+	end
+	local highlighted = self.highlighted
+	if highlighted and highlighted >= self.first and highlighted <= self.last then
+		self:showAround(highlighted)
+	else
+		self:showPage(self.first, self:_lastEntryFrom(self.first))
+	end
+end
+
+--- The dictionary appearance's dialog, applied to this page when applied.
+function DictionaryExplorerViewer:showReadingSettings()
+	ReadingSettings.showDialog({
+		on_apply = function()
+			self:applyReadingSettings()
+		end,
+	})
+end
+
 function DictionaryExplorerViewer:_getCss()
-	local justify = G_reader_settings:nilOrTrue("dict_justify") and "text-align: justify;" or ""
+	local justify = self.justify and "text-align: justify;" or ""
 	local css = [[
 		@page {
 			margin: 0;
@@ -206,7 +250,7 @@ function DictionaryExplorerViewer:_getCss()
 
 		body {
 			margin: 0;
-			line-height: 1.3;
+			line-height: ]] .. string.format("%.1f", self.line_height) .. [[;
 			]] .. justify .. [[
 		}
 
@@ -292,8 +336,8 @@ function DictionaryExplorerViewer:_getFitModel()
 	if not self.fit_model then
 		local font_px = Screen:scaleBySize(self.font_size)
 		local text_width = self.dimen.w - self.side_margins.left - self.side_margins.right
-		local key = table.concat({ self.dictionary.ifo_path, font_px, text_width }, "|")
-		self.line_px = LINE_HEIGHT * font_px
+		local key = table.concat({ self.dictionary.ifo_path, font_px, text_width, self.line_height }, "|")
+		self.line_px = self.line_height * font_px
 		self.columns = text_width / (AVERAGE_GLYPH_WIDTH * font_px)
 		if not fit_models[key] then
 			local ratio = self:_sampleVisibleRatio(self.position) or (1 / BYTES_PER_CHARACTER)
@@ -384,13 +428,21 @@ function DictionaryExplorerViewer:_buildButtons()
 			self:onClose()
 		end,
 	}
+	-- The dictionary appearance, left of Search.
+	local settings = {
+		icon = "appbar.settings",
+		width = icon_width,
+		callback = function()
+			self:showReadingSettings()
+		end,
+	}
 	-- Pages have no buttons: they turn by swiping, tapping the sides of the
 	-- text, or the page-turn keys. The words walked through are gone back to
 	-- by tapping them in the breadcrumb.
 	return ButtonTable:new({
 		width = self.dimen.w,
 		show_parent = self,
-		buttons = { { go_to_word, close } },
+		buttons = { { settings, go_to_word, close } },
 	})
 end
 
@@ -406,6 +458,9 @@ function DictionaryExplorerViewer:_buildHeader(first_position, last_position)
 	else
 		title = first.word .. " – " .. last.word
 		position_text = T(_("Entries %1–%2 of %3"), first_position + 1, last_position + 1, dictionary:getCount())
+	end
+	if self.compact_header then
+		return self:_buildCompactHeader(title)
 	end
 	local title_bar = TitleBar:new({
 		width = self.dimen.w,
@@ -425,16 +480,8 @@ function DictionaryExplorerViewer:_buildHeader(first_position, last_position)
 	-- (its left half, the previous one). The name gives way when both don't
 	-- fit, not the mark.
 	local width = self.dimen.w - 2 * Size.padding.large
-	local holders = self._header_holders -- set by _installPage() for the page it shows
-	self.header_mark = nil
-	if holders and #holders > 1 then
-		local index = 1
-		for position, holder in ipairs(holders) do
-			if holder.dictionary == dictionary then
-				index = position
-			end
-		end
-		self.header_mark = Notices.headerMark(index, #holders)
+	self.header_mark = self:_headerMark()
+	if self.header_mark then
 		width = math.max(width - self.header_mark:getSize().w, math.floor(width / 3))
 	end
 	local dictionary_name = TextWidget:new({
@@ -462,6 +509,78 @@ function DictionaryExplorerViewer:_buildHeader(first_position, last_position)
 		VerticalSpan:new({ width = Screen:scaleBySize(GAP_ABOVE_DICTIONARY_NAME) }),
 		dictionary_name,
 		VerticalSpan:new({ width = Screen:scaleBySize(GAP_BELOW_DICTIONARY_NAME) }),
+		LineWidget:new({
+			dimen = Geom:new({ w = self.dimen.w, h = Size.line.medium }),
+			background = Blitbuffer.COLOR_BLACK,
+		}),
+	})
+end
+
+-- Which of the dictionaries that have the highlighted word this one is, as
+-- the header's mark ("· ‹ 1/3 ›"), when more than one has it (nil otherwise).
+function DictionaryExplorerViewer:_headerMark()
+	local holders = self._header_holders -- set by _installPage() for the page it shows
+	if not (holders and #holders > 1) then
+		return nil
+	end
+	local index = 1
+	for position, holder in ipairs(holders) do
+		if holder.dictionary == self.dictionary then
+			index = position
+		end
+	end
+	return Notices.headerMark(index, #holders)
+end
+
+-- The compact header: one line, the page's first and last headwords on the
+-- left, the dictionary's short name and the mark on the right, then the
+-- rule. Tapping the right part goes to the word in another dictionary (its
+-- left half the previous one, its right half the next one), the rest lists
+-- them, as the full header's name line and the rest of it do.
+function DictionaryExplorerViewer:_buildCompactHeader(title)
+	local padding = Size.padding.large
+	self.header_mark = self:_headerMark()
+	local name = TextWidget:new({
+		text = self.lib:shortName(self.dictionary),
+		face = Font:getFace("NotoSans-Italic.ttf", 18),
+		max_width = math.floor(self.dimen.w / 3),
+	})
+	local right = self.header_mark and HorizontalGroup:new({ align = "center", name, self.header_mark }) or name
+	local right_width = right:getSize().w
+	local title_widget = TextWidget:new({
+		text = title,
+		face = Font:getFace("tfont"),
+		max_width = self.dimen.w - 3 * padding - right_width,
+	})
+	local fill = self.dimen.w - 2 * padding - title_widget:getSize().w - right_width
+	local line = HorizontalGroup:new({
+		align = "center",
+		HorizontalSpan:new({ width = padding }),
+		title_widget,
+		HorizontalSpan:new({ width = fill }),
+		right,
+		HorizontalSpan:new({ width = padding }),
+	})
+	local top_gap = Screen:scaleBySize(GAP_ABOVE_DICTIONARY_NAME + 4)
+	local bottom_gap = Screen:scaleBySize(GAP_BELOW_DICTIONARY_NAME)
+	-- For taps: the name's part, the whole height above the rule. It is on the
+	-- right, or on the left in a mirrored layout, where HorizontalGroup draws
+	-- its widgets in the other order.
+	local band_left = padding + title_widget:getSize().w + fill
+	if BD.mirroredUILayout() then
+		band_left = padding
+	end
+	self._name_band = {
+		top = 0,
+		bottom = top_gap + line:getSize().h + bottom_gap,
+		left = band_left,
+		right = band_left + right_width,
+	}
+	return VerticalGroup:new({
+		align = "center",
+		VerticalSpan:new({ width = top_gap }),
+		line,
+		VerticalSpan:new({ width = bottom_gap }),
 		LineWidget:new({
 			dimen = Geom:new({ w = self.dimen.w, h = Size.line.medium }),
 			background = Blitbuffer.COLOR_BLACK,
@@ -1761,8 +1880,9 @@ function DictionaryExplorerViewer:onTap(_arg, ges)
 	-- one (as taps on the text turn pages); the rest lists them.
 	if self.header and ges.pos.y < self.header:getSize().h and #self:_otherDictionaries() > 0 then
 		local band = self._name_band
-		if self.header_mark and band and ges.pos.y >= band.top and ges.pos.y < band.bottom then
-			if BD.flipIfMirroredUILayout(ges.pos.x < Screen:getWidth() / 2) then
+		local left, right = band and band.left or 0, band and band.right or Screen:getWidth()
+		if self.header_mark and band and ges.pos.y >= band.top and ges.pos.y < band.bottom and ges.pos.x >= left and ges.pos.x < right then
+			if BD.flipIfMirroredUILayout(ges.pos.x < (left + right) / 2) then
 				self:showPreviousDictionary()
 			else
 				self:showNextDictionary()

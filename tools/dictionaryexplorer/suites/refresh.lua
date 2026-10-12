@@ -47,6 +47,13 @@ local EXPECTED = {
 	-- The next dictionary that has the word, from the header: a page.
 	["the next dictionary from the header"] = 1,
 	["the previous dictionary from the header"] = 1,
+	-- The dictionary appearance: the dialog painted and refreshed in its area;
+	-- a value changed redraws the dialog only; Apply lays the page out once
+	-- (the dialog going with it); Cancel refreshes the dialog's area only.
+	["opening the dictionary appearance"] = 2,
+	["changing the appearance"] = 4,
+	["applying the dictionary appearance"] = 2,
+	["cancelling the dictionary appearance"] = 2,
 	-- Nothing changes, so nothing may be redrawn.
 	["swiping past the last page"] = 0,
 	["swiping back from the first page"] = 0,
@@ -262,6 +269,47 @@ return function(H, ui)
 					measure("the previous dictionary from the header", function()
 						explored:showPreviousDictionary()
 					end)
+				end
+				local ReadingSettings = require("modules/readingsettings")
+				local function pages()
+					local count = 0
+					for _index, call in ipairs(calls) do
+						if call:find("^partial") then
+							count = count + 1
+						end
+					end
+					return count
+				end
+				local function stepFont()
+					for _index, settings_row in ipairs(ReadingSettings.shown.buttons) do
+						if (settings_row[1].text or ""):find("^Font size") then
+							settings_row[3].callback()
+						end
+					end
+				end
+				measure("opening the dictionary appearance", function()
+					explored:showReadingSettings()
+				end)
+				measure("changing the appearance", function()
+					stepFont()
+				end)
+				H.check("a changed value does not redraw the page", pages() == 0, table.concat(calls, "; "))
+				local function pressLast(index)
+					local foot = ReadingSettings.shown.buttons[#ReadingSettings.shown.buttons]
+					foot[index].callback()
+				end
+				measure("cancelling the dictionary appearance", function()
+					pressLast(2)
+				end)
+				H.check("Cancel does not redraw the page", pages() == 0, table.concat(calls, "; "))
+				explored:showReadingSettings()
+				stepFont()
+				measure("applying the dictionary appearance", function()
+					pressLast(3)
+				end)
+				H.check("Apply redraws the page once", pages() == 1, table.concat(calls, "; "))
+				for _name, key in pairs(ReadingSettings.KEYS) do
+					G_reader_settings:delSetting(key)
 				end
 			end
 			explored:onClose()

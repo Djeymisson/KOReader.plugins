@@ -24,10 +24,11 @@ local T = ffiUtil.template
 
 local Dock = require("modules/dock")
 local Library = require("modules/library")
+local ReadingSettings = require("modules/readingsettings")
 local StarDict = require("modules/stardict")
 local Viewer = require("modules/viewer")
 
-local PLUGIN_VERSION = "v1.7.1"
+local PLUGIN_VERSION = "v1.8.0"
 
 local SETTING_START_DICTIONARY = "dictionaryexplorer_start_dictionary" -- a dictionary name; unset means automatic
 local SETTING_SHORT_NAMES = "dictionaryexplorer_short_names" -- { [dictionary name] = short name } set by the user (see Library)
@@ -129,6 +130,15 @@ function DictionaryExplorer:addToMainMenu(menu_items)
 				help_text = _("Which dictionary “Open dictionary at a word” opens."),
 				sub_item_table_func = function()
 					return self:getStartDictionaryMenu()
+				end,
+			},
+			{
+				text = _("Dictionary appearance…"),
+				help_text = _(
+					"Font size, line height, margins, justification and the header of the dictionary viewer. Until you set them, they follow the system (KOReader's dictionary settings) and the book. The same dialog opens from the gear left of Search, in the viewer."
+				),
+				callback = function()
+					ReadingSettings.showDialog()
 				end,
 			},
 			{

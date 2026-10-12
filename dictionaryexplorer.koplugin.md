@@ -1,4 +1,4 @@
-# Dictionary Explorer ![Version](https://img.shields.io/badge/version-v1.7.1-blue)
+# Dictionary Explorer ![Version](https://img.shields.io/badge/version-v1.8.0-blue)
 
 **Dictionary Explorer** adds a **Go to dictionary** button to KOReader's dictionary popup. It opens the dictionary at the word you looked up, in a full-screen viewer where you can keep paging through the neighbouring entries like a book, similar to the Kindle's "go to dictionary". While each page shows one dictionary, finding a word works as if all your dictionaries were one: a word missing from the one on screen is looked for in the others.
 
@@ -30,6 +30,7 @@ dictionaryexplorer.koplugin/
     ├── inflate.lua
     ├── library.lua
     ├── notices.lua
+    ├── readingsettings.lua
     ├── spelling.lua
     ├── stardict.lua
     ├── text.lua
@@ -89,13 +90,29 @@ The viewer opens on a page with the word's entry in the middle of the screen, hi
 
 In large bold type, the first and last headword of the page, then the entry numbers ("Entries 14390–14396 of 45866") and, in italics on a line of its own, the name of the dictionary. After the name, when other dictionaries have the highlighted word too, which of them this one is: "· ‹ 1/3 ›" (see **All the dictionaries as one**). The header is also tappable: the name's line goes to the same word in another dictionary, the rest lists the dictionaries that have it.
 
+The **compact header** (in the dictionary appearance, below) is one line instead: the page's headwords on the left, and on the right the dictionary's short name ("PT") with "‹ 1/3 ›", leaving two lines more for the entries. Tapping the name's part goes to the word in another dictionary (its left half the previous one, its right half the next one); tapping the headwords lists the dictionaries. In a mirrored (right-to-left) layout the two parts swap sides, and so do the places to tap.
+
 ### The buttons at the bottom
 
-One row: **Search**, the only bold label (hold it to see what it does), which takes all the width the other button leaves, and a narrow **✕** that closes the viewer. There are no back and forward buttons (the breadcrumb is for that) and no page buttons.
+One row: a gear for the **dictionary appearance** (below), **Search**, the only bold label (hold it to see what it does), which takes all the width the other buttons leave, and a narrow **✕** that closes the viewer. There are no back and forward buttons (the breadcrumb is for that) and no page buttons.
+
+### Dictionary appearance
+
+The gear left of **Search**, or **Tools > Dictionary Explorer > Dictionary appearance…**, opens one dialog for how the dictionary looks:
+
+| Setting | Unless set | Steps |
+|---|---|---|
+| **Font size** | follows the system (KOReader's dictionary settings) | − / +, 12 to 40 |
+| **Line height** | 1.3 | − / +, 1.0 to 2.0 |
+| **Margins** (left and right) | follow the book (see below) | − / +, 0 to 60 |
+| **Justified** | follows the system | tap: follows the system, yes, no |
+| **Header** | full | tap: full, compact (one line) |
+
+Changing a value redraws only the dialog; nothing else changes until **Apply**, which keeps the values and lays the page out once more with them, on the same entry. **Cancel** leaves everything as it was, and **Defaults** goes back to what each follows. A margin so large it would leave little room for the text is held at 30% of the screen's width on each side.
 
 ### Margins
 
-The left and right margins of the book you were reading are applied to the dictionary text, so it lines up with your book. Only EPUB, TXT, HTML and other documents that KOReader lays out itself (crengine) have such margins. For PDF, CBZ and other fixed-layout documents, or when the dictionary is opened from the file browser, a small default margin is used. The title bar and buttons always use the full screen width.
+Unless set in the dictionary appearance, the left and right margins of the book you were reading are applied to the dictionary text, so it lines up with your book. Only EPUB, TXT, HTML and other documents that KOReader lays out itself (crengine) have such margins. For PDF, CBZ and other fixed-layout documents, or when the dictionary is opened from the file browser, a small default margin is used. The title bar and buttons always use the full screen width.
 
 ## Finding words
 
@@ -181,6 +198,7 @@ Open the top menu and go to **Tools > Dictionary Explorer**:
 
 - **Open dictionary at a word…** and **Continue exploring**: see **Opening the viewer**.
 - **Starting dictionary**: which dictionary **Open dictionary at a word…** opens.
+- **Dictionary appearance…**: font size, line height, margins, justification and the header (see **Dictionary appearance**).
 - **Prepare all dictionaries**: prepares the index of every enabled dictionary that has none, so that the search for a word asks them all, and removes the indexes of dictionaries no longer installed.
 - **Short names of the dictionaries**: the names the breadcrumb and the lists give them; tap one to change it, or leave it empty for the one made from its name.
 - **Show dock shadow**: shows or hides the dithered shadow of the selection dock. It is on by default, and is independent of the Selection Toolbar's own shadow setting.
@@ -204,7 +222,7 @@ Open the top menu and go to **Tools > Dictionary Explorer**:
 - **Nothing runs in the background.** The plugin has no timers, polling or listeners beyond KOReader's own events; when the viewer is closed it costs nothing but the memory of what was loaded (about 120 KB of code and, per dictionary opened, the index below).
 - **First use of a dictionary** scans its `.idx` once and caches a compact index (`cache/dictionaryexplorer/`). On a desktop that takes about 70 ms for a dictionary with 860 thousand entries (the time on an e-reader is dominated by reading the file); afterwards loading the cache takes a few milliseconds.
 - **Opening the viewer or going to a word** costs a few milliseconds of CPU on a desktop, and a page turn about 2 to 3. A word missing from the dictionary on screen also asks the others (a millisecond or two each), loading their caches the first time in a session. The exception is a very long entry (the Oxford entry for `house` has 186 KB of HTML), which takes the layout engine a fraction of a second: the whole entry is laid out.
-- **The screen is refreshed once per action** (page turn, going to a word, going to the same word in another dictionary, scrolling the breadcrumb, with no repeated refreshes), which is what an e-ink display costs the most battery for. Lists refresh only their own area. Closing the viewer does one full refresh, as KOReader does when closing a document.
+- **The screen is refreshed once per action** (page turn, going to a word, going to the same word in another dictionary, scrolling the breadcrumb, applying the dictionary appearance, with no repeated refreshes), which is what an e-ink display costs the most battery for. Lists and the dictionary appearance's dialog refresh only their own area. Closing the viewer does one full refresh, as KOReader does when closing a document.
 - While a page is being built, the definitions file is opened once and each entry's HTML is read once, however many layouts are tried; the file and the inflated chunks of compressed dictionaries are released when the viewer closes or goes to another dictionary.
 
 ## Known limitations

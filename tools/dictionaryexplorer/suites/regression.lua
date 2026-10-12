@@ -60,7 +60,7 @@ return function(H, ui)
 		end
 		viewer = H.newViewer(pt, "casa")
 		require("ui/uimanager"):show(viewer)
-		H.check("no breadcrumb at the start, and the footer is Go to word + close", viewer.breadcrumb == nil and #H.footer(viewer) == 2)
+		H.check("no breadcrumb at the start, and the footer is settings + Search + close", viewer.breadcrumb == nil and #H.footer(viewer) == 3 and H.footer(viewer)[1].icon == "appbar.settings" and H.footer(viewer)[2].text == "Search")
 	end)
 	H.step(1, function()
 		if not viewer then
@@ -98,7 +98,7 @@ return function(H, ui)
 		viewer:goToWord("livro")
 		H.check("the breadcrumb appears after the first Go to word", viewer.breadcrumb ~= nil and H.trailText(viewer) == "casa>livro")
 		local footer = H.footer(viewer)
-		H.check("the footer stays Search + close: no arrows", #footer == 2 and footer[1].text == "Search" and footer[2].icon == "close")
+		H.check("the footer stays settings + Search + close: no arrows", #footer == 3 and footer[1].icon == "appbar.settings" and footer[2].text == "Search" and footer[3].icon == "close")
 		for _index, word in ipairs(pt_profile.walk) do
 			viewer:goToWord(word)
 		end
