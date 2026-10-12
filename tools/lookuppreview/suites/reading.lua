@@ -105,12 +105,12 @@ return function(H, ui)
 
 	-- ---- side previews -------------------------------------------------------
 	H.step(0.5, function()
-		H.menuItem("Appearance", "Side card previews", "Tabs").callback()
+		H.menuItem("Appearance", "Display style", "Tabs").callback()
 	end)
 	H.step(0.5, function()
 		local area = H.popup().visible_dimen
 		H.check("switching to tabs keeps the carousel inside the screen", area.y + area.h <= Screen:getHeight(), area.y .. "+" .. area.h .. " of " .. Screen:getHeight())
-		H.menuItem("Appearance", "Side card previews", "Full cards").callback()
+		H.menuItem("Appearance", "Display style", "Carousel").callback()
 	end)
 	-- A new carousel is drawn on the next refresh; a tap before that would land
 	-- on buttons not placed yet, which no finger can do.

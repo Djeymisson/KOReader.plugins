@@ -12,10 +12,11 @@ language set to pt_BR).
 
 local PAGE_DICTIONARY = 1
 
--- Names that stay as they are.
+-- Names that stay as they are, and words spelled the same in Portuguese.
 local SAME = {
 	["Lookup Preview"] = true,
 	["Dictionary Explorer"] = true,
+	["Manual"] = true,
 }
 
 return function(H)

@@ -93,9 +93,9 @@ return function(ctx)
 		local card_corners_item = {
 			text_func = function()
 				local mode = self:useRoundedCards() and _("Rounded") or _("Square")
-				return string.format("%s: %s", _("Card corners"), mode)
+				return string.format("%s: %s", _("Corner style"), mode)
 			end,
-			help_text = _("Choose square or rounded corners for the preview cards."),
+			help_text = _("Choose square or rounded corners for the cards."),
 			sub_item_table = {
 				{
 					text = _("Square"),
@@ -223,13 +223,13 @@ return function(ctx)
 
 		local side_previews_item = {
 			text_func = function()
-				local mode = self:useTabsMode() and _("Tabs") or _("Full cards")
-				return string.format("%s: %s", _("Side card previews"), mode)
+				local mode = self:useTabsMode() and _("Tabs") or _("Carousel")
+				return string.format("%s: %s", _("Display style"), mode)
 			end,
-			help_text = _("Choose how the other available cards (dictionary, translation, Wikipedia) are shown beside the active one."),
+			help_text = _("Choose whether the cards are shown as a carousel, with the other cards beside the active one, or as tabs."),
 			sub_item_table = {
 				{
-					text = _("Full cards"),
+					text = _("Carousel"),
 					radio = true,
 					checked_func = function()
 						return not self:useTabsMode()
@@ -253,10 +253,11 @@ return function(ctx)
 
 		local online_loading_item = {
 			text_func = function()
-				local mode = self:useManualOnlineCardLoading() and _("Manual only") or _("Automatic")
+				local mode = self:useManualOnlineCardLoading() and _("Manual") or _("Automatic")
 				return string.format("%s: %s", _("Online card loading"), mode)
 			end,
 			help_text = _("Choose whether translation and Wikipedia cards load automatically or only when you open them."),
+			separator = true,
 			sub_item_table = {
 				{
 					text = _("Automatic"),
@@ -269,7 +270,7 @@ return function(ctx)
 					end,
 				},
 				{
-					text = _("Manual only"),
+					text = _("Manual"),
 					radio = true,
 					checked_func = function()
 						return self:useManualOnlineCardLoading()
@@ -311,59 +312,121 @@ return function(ctx)
 			},
 		}
 
-		local details_buttons_item = {
-			text_func = function()
-				local labels = {
-					[DETAILS_BUTTONS_BOTH] = _("Both"),
-					[DETAILS_BUTTONS_KOREADER] = _("KOReader popup"),
-					[DETAILS_BUTTONS_EXPLORER] = _("Dictionary Explorer"),
-				}
-				return string.format("%s: %s", _("Dictionary buttons"), labels[self:getDetailsButtonsMode()])
-			end,
+		-- The buttons that open the full dictionary, one checkbox each. One of
+		-- them always stays, so there is always a way to the full entry; and
+		-- without Dictionary Explorer, KOReader's popup is that one.
+		local function fullDictionaryButtons()
+			local mode = self:getDetailsButtonsMode()
+			return mode ~= DETAILS_BUTTONS_EXPLORER, mode ~= DETAILS_BUTTONS_KOREADER
+		end
+
+		local function setFullDictionaryButtons(show_koreader, show_explorer)
+			local mode = (show_koreader and show_explorer and DETAILS_BUTTONS_BOTH)
+				or (show_explorer and DETAILS_BUTTONS_EXPLORER)
+				or DETAILS_BUTTONS_KOREADER
+			self:setDetailsButtonsMode(mode)
+			self:refreshCurrentPage(PAGE_DICTIONARY)
+		end
+
+		local koreader_button_item = {
+			text = _("Show KOReader popup button"),
 			help_text = _(
-				"Choose which buttons open the full dictionary from the dictionary card: KOReader's original popup, the Dictionary Explorer at the word, or both. Dictionary Explorer must be installed; without it, or for a dictionary it can't open, the KOReader popup button is shown."
+				"Shows the button that opens KOReader's original dictionary popup. It is also shown, whatever this says, for a dictionary Dictionary Explorer can't open, so there is always a way to the full entry."
 			),
-			sub_item_table_func = function()
-				local items = {}
-				local options = {
-					{ mode = DETAILS_BUTTONS_KOREADER, label = _("KOReader popup only") },
-					{ mode = DETAILS_BUTTONS_EXPLORER, label = _("Dictionary Explorer only"), needs_explorer = true },
-					{ mode = DETAILS_BUTTONS_BOTH, label = _("Both"), needs_explorer = true },
-				}
-				for option_index = 1, #options do
-					local option = options[option_index]
-					items[#items + 1] = {
-						text = option.label,
-						radio = true,
-						enabled_func = function()
-							return not option.needs_explorer or self:getDictionaryExplorer() ~= nil
-						end,
-						checked_func = function()
-							return self:getDetailsButtonsMode() == option.mode
-						end,
-						callback = function()
-							self:setDetailsButtonsMode(option.mode)
-							self:refreshCurrentPage(PAGE_DICTIONARY)
-						end,
-					}
-				end
-				if not self:getDictionaryExplorer() then
-					items[#items + 1] = {
-						text = _("Dictionary Explorer is not installed or is too old."),
-						enabled = false,
-					}
-				end
-				return items
+			enabled_func = function()
+				local show_koreader, show_explorer = fullDictionaryButtons()
+				return not show_koreader or (show_explorer and self:getDictionaryExplorer() ~= nil)
+			end,
+			checked_func = function()
+				return (fullDictionaryButtons())
+			end,
+			callback = function()
+				local show_koreader, show_explorer = fullDictionaryButtons()
+				setFullDictionaryButtons(not show_koreader, show_explorer)
 			end,
 		}
 
-		local translation_item = {
-			text = _("Translation"),
-			help_text = _("Choose the target language, whether the original text is shown, and which card buttons appear."),
+		local explorer_button_item = {
+			text = _("Show Dictionary Explorer button"),
+			help_text = _(
+				"Shows the button that opens Dictionary Explorer at the word. Dictionary Explorer must be installed (v2026.07 or newer KOReader)."
+			),
+			enabled_func = function()
+				local show_koreader, show_explorer = fullDictionaryButtons()
+				return self:getDictionaryExplorer() ~= nil and (not show_explorer or show_koreader)
+			end,
+			checked_func = function()
+				return select(2, fullDictionaryButtons())
+			end,
+			callback = function()
+				local show_koreader, show_explorer = fullDictionaryButtons()
+				setFullDictionaryButtons(show_koreader, not show_explorer)
+			end,
+		}
+
+		local vocabulary_button_item = {
+			text = _("Show vocabulary builder button"),
+			help_text = _(
+				"Shows a button on the dictionary card that adds the word to KOReader's vocabulary builder, like the one in KOReader's dictionary popup. It is not shown when the vocabulary builder adds every looked up word by itself."
+			),
+			enabled_func = function()
+				return self:getVocabularyBuilder() ~= nil
+			end,
+			checked_func = function()
+				return G_reader_settings:nilOrTrue(SETTING_DICTIONARY_VOCABULARY_BUTTON)
+			end,
+			callback = function()
+				G_reader_settings:saveSetting(
+					SETTING_DICTIONARY_VOCABULARY_BUTTON,
+					not G_reader_settings:nilOrTrue(SETTING_DICTIONARY_VOCABULARY_BUTTON)
+				)
+				self:refreshCurrentPage(PAGE_DICTIONARY)
+			end,
+		}
+
+		-- Content has the general options, then one submenu per card with the
+		-- same shape: the card's options, and its buttons in Buttons.
+		local dictionary_card_item = {
+			text = _("Dictionary"),
+			help_text = _("Choose how the Dictionary card shows entries and which buttons it offers."),
+			sub_item_table = {
+				dictionary_html_item,
+				{
+					text = _("Buttons"),
+					help_text = _("Choose which buttons the Dictionary card offers."),
+					sub_item_table = {
+						koreader_button_item,
+						explorer_button_item,
+						vocabulary_button_item,
+					},
+				},
+			},
+		}
+
+		local wikipedia_card_item = {
+			text = _("Wikipedia"),
+			help_text = _("Choose the language of the Wikipedia card."),
 			sub_item_table = {
 				{
 					text_func = function()
-						return string.format("%s: %s", _("Target language"), self:getTranslationTargetLang())
+						return string.format("%s: %s", _("Language"), self:getWikipediaLanguageLabel(self:getWikipediaLang()))
+					end,
+					help_text = _("Choose the language Wikipedia articles are shown in."),
+					sub_item_table_func = function()
+						return self:getWikipediaLanguageMenuItems(self.current_state)
+					end,
+				},
+			},
+		}
+
+		local translate_card_item = {
+			text = _("Translate"),
+			help_text = _("Choose the Translate card's target language, whether it shows the original text, and its buttons."),
+			sub_item_table = {
+				{
+					text_func = function()
+						local lang = self:getTranslationTargetLang()
+						return string.format("%s: %s", _("Target language"), self:getTranslatorLanguageLabel(Translator, lang))
 					end,
 					help_text = _("Choose the language translations are shown in."),
 					sub_item_table_func = function()
@@ -386,7 +449,7 @@ return function(ctx)
 				},
 				{
 					text = _("Buttons"),
-					help_text = _("Choose which action buttons appear on the translation card."),
+					help_text = _("Choose which buttons the Translate card offers."),
 					sub_item_table = {
 						{
 							text = _("Show copy button"),
@@ -438,8 +501,8 @@ return function(ctx)
 					text = _("Appearance"),
 					help_text = _("Choose the card corner style, side card previews, shadows, and custom icon filenames."),
 					sub_item_table = {
-						card_corners_item,
 						side_previews_item,
+						card_corners_item,
 						card_height_item,
 						text_size_item,
 						{
@@ -465,42 +528,14 @@ return function(ctx)
 				},
 				{
 					text = _("Content"),
-					help_text = _("Choose how online cards load, dictionary HTML rendering, and Wikipedia/translation language and buttons."),
+					help_text = _("Choose which cards are shown and how online cards load, then the options of each card."),
 					separator = true,
 					sub_item_table = {
 						cards_item,
 						online_loading_item,
-						dictionary_html_item,
-						details_buttons_item,
-						{
-							text = _("Show vocabulary builder button"),
-							help_text = _(
-								"Shows a button on the dictionary card that adds the word to KOReader's vocabulary builder, like the one in KOReader's dictionary popup. It is not shown when the vocabulary builder adds every looked up word by itself."
-							),
-							enabled_func = function()
-								return self:getVocabularyBuilder() ~= nil
-							end,
-							checked_func = function()
-								return G_reader_settings:nilOrTrue(SETTING_DICTIONARY_VOCABULARY_BUTTON)
-							end,
-							callback = function()
-								G_reader_settings:saveSetting(
-									SETTING_DICTIONARY_VOCABULARY_BUTTON,
-									not G_reader_settings:nilOrTrue(SETTING_DICTIONARY_VOCABULARY_BUTTON)
-								)
-								self:refreshCurrentPage(PAGE_DICTIONARY)
-							end,
-						},
-						{
-							text_func = function()
-								return string.format("%s: %s", _("Wikipedia language"), self:getWikipediaLang())
-							end,
-							help_text = _("Choose the language Wikipedia articles are shown in."),
-							sub_item_table_func = function()
-								return self:getWikipediaLanguageMenuItems(self.current_state)
-							end,
-						},
-						translation_item,
+						dictionary_card_item,
+						translate_card_item,
+						wikipedia_card_item,
 					},
 				},
 				{

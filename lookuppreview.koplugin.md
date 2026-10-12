@@ -1,4 +1,4 @@
-# Lookup Preview ![Version](https://img.shields.io/badge/version-v1.6.0-blue)
+# Lookup Preview ![Version](https://img.shields.io/badge/version-v1.7.1-blue)
 
 **Lookup Preview** is a KOReader reader plugin that changes the lookup flow for selected text. Instead of opening each native lookup window immediately, it first shows a compact floating carousel with preview cards for **Dictionary**, **Translate**, and **Wikipedia**.
 
@@ -118,8 +118,8 @@ The menu contains:
 
 - **Enable lookup preview**: turns the preview behavior on or off.
 - **Appearance**:
-  - **Card corners**: switches between square and rounded card corners;
-  - **Side card previews**: switches between full side cards and tabs;
+  - **Display style**: **Carousel** (the default: the other cards are shown beside the active one) or **Tabs**;
+  - **Corner style**: **Square** (the default) or **Rounded** card corners;
   - **Show card shadows**: enables or disables the dithered right and bottom shadows;
   - **Card height**: **Compact** (the default, about a third of the screen) or **Expanded** (three quarters of it). A two-finger spread on a card expands it and a pinch makes it compact again, for that lookup;
   - **Text size**: the size of the cards' content, from 14 to 24 (18 by default);
@@ -128,17 +128,22 @@ The menu contains:
   - **Cards**:
     - **Show and order cards**: shows, hides and orders the Dictionary, Translate and Wikipedia cards, in KOReader's sort dialog. A hidden card's action is left to KOReader: Translate hidden means Translate opens KOReader's own translator, and so on. At least one card stays shown;
     - **Open on the dictionary card** (the default) or **Open on the last card used**: which card a lookup from the book (a long press on a word) opens on. Translate and Wikipedia chosen in the selection menu always open on their own card;
-  - **Online card loading**: switches between automatic and manual online loading;
-  - **Dictionary HTML**: selects formatted or fast/raw dictionary rendering;
-  - **Dictionary buttons**: chooses which buttons open the full dictionary from the dictionary card: **KOReader popup only**, **Dictionary Explorer only**, or **Both** (the default). The Dictionary Explorer choices need that plugin (v2026.07 or newer KOReader) and are disabled without it;
-  - **Show vocabulary builder button**: shows or hides the **Add to vocabulary builder** button of the dictionary card (shown by default). It needs KOReader's Vocabulary builder plugin enabled, and is not shown when that plugin adds every looked up word by itself;
-  - **Wikipedia language**: selects the language used by the Wikipedia card;
-  - **Translation**:
+  - **Online card loading**: **Automatic** (the default) or **Manual**;
+  - **Dictionary**:
+    - **Dictionary HTML**: selects formatted or fast/raw dictionary rendering;
+    - **Buttons**, one checkbox each, all shown by default:
+      - **Show KOReader popup button** and **Show Dictionary Explorer button**: the two buttons that open the full dictionary. One of them always stays checked, so there is always a way to the full entry; without Dictionary Explorer (it needs v2026.07 or newer KOReader), its checkbox is disabled and KOReader's popup cannot be unchecked. KOReader's popup is also shown for a dictionary Dictionary Explorer can't open;
+      - **Show vocabulary builder button**: the **Add to vocabulary builder** button. It needs KOReader's Vocabulary builder plugin enabled, and is not shown when that plugin adds every looked up word by itself;
+  - **Translate**:
     - **Target language**: selects the target language used by the Translate card;
     - **Show source text**: shows or hides the original selected text below the translation;
     - **Buttons**:
       - **Show copy button**: shows or hides the copy button;
-      - **Show note button**: shows or hides the note button.
+      - **Show note button**: shows or hides the note button;
+  - **Wikipedia**:
+    - **Language**: selects the language used by the Wikipedia card.
+
+  The general options come first; then each card has a submenu named after it, of the same shape: its own options and, in **Buttons**, the buttons it offers. Languages are shown by their names.
 - **Version**: displays the version declared in `_meta.lua`.
 
 By default, Lookup Preview and card shadows are enabled, the carousel uses square card corners, optional translation buttons follow the saved plugin settings, and Translate/Wikipedia languages are read from KOReader or plugin settings when available.
@@ -196,7 +201,7 @@ found word · dictionary name
 - Makes the subtitle clickable:
   - tap `Source → Target ▾` to open the target language menu;
   - selecting a new language saves the target language and refreshes the translation.
-- Adds a matching target language option to the plugin settings menu, keeping the settings menu consistent with the Wikipedia language option.
+- Has its target language in the plugin settings too, under **Content → Translate**, as the Wikipedia card has its language under **Content → Wikipedia**.
 - Supports optional source text display below the translation.
 - Lets you choose the language to translate from, for this lookup: the card's language menu (tap the subtitle) starts with **Translate from**, which lists KOReader's setting (automatic detection by default), automatic detection, and the common languages. KOReader's own setting is not changed.
 - Offers a sentence button (`translate_sentence.svg`), which translates the whole sentence around the selected text and shows it below the translation; while it does, the button shows `translate_selection.svg`, and tapping it goes back to the selection. It is offered in reflowable books, for the lookup that opened the carousel (a lookup made inside it has no place in the book), and only when the sentence is more than the selection: a selection that is already the sentence, but for its punctuation, spaces or case, gets no sentence button. The sentence ends at `.`, `!`, `?`, `…` and their CJK forms, so an abbreviation such as "Mr." can cut it short.
@@ -264,7 +269,7 @@ Each of them opens a new lookup on top of the previous one; the header's back bu
 | Go to word | Opens Dictionary Explorer at the word of the shown result, in that result's dictionary |
 | Add to vocabulary builder | Adds the looked up word to KOReader's Vocabulary builder (when enabled in the settings and in KOReader); tapped again (✓), takes back the word it added |
 
-Details and Go to word are the two buttons chosen by **Dictionary buttons** in the settings. Go to word is shown only when Dictionary Explorer is installed and can open the result's dictionary (StarDict with plain text, HTML or XDXF entries). When it can't, for example for a dictionary in another format, the Details button is shown instead even if the setting says Dictionary Explorer only, so there is always a way to the full entry.
+Details and Go to word are the two buttons chosen in **Content → Dictionary → Buttons** in the settings. Go to word is shown only when Dictionary Explorer is installed and can open the result's dictionary (StarDict with plain text, HTML or XDXF entries). When it can't, for example for a dictionary in another format, the Details button is shown instead even if the setting says Dictionary Explorer only, so there is always a way to the full entry.
 
 ### Translation buttons
 
@@ -378,7 +383,7 @@ The centered card is kept as an active widget in the UI tree so scrollable conte
 The card can use either square or rounded corners. Square corners are the default. Rounded corners can be enabled from:
 
 ```text
-Lookup preview → Card corners → Rounded
+Lookup preview → Appearance → Corner style → Rounded
 ```
 
 ## Performance notes
