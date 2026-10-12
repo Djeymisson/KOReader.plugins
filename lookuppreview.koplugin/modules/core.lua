@@ -9,32 +9,12 @@ return function(ctx)
 		end
 	end
 
-	local function schedulePreviewLoad(plugin, state, page_index)
-		if not plugin:useAutomaticOnlineCardLoading() then
-			return
-		end
-
-		if page_index == PAGE_TRANSLATION then
-			UIManager:scheduleIn(0.05, function()
-				plugin:loadTranslation(state)
-			end)
-		elseif page_index == PAGE_WIKIPEDIA then
-			UIManager:scheduleIn(0.05, function()
-				plugin:loadWikipedia(state)
-			end)
-		end
-	end
-
 	local function refreshTranslationPayloadIfLoaded(plugin)
 		local state = plugin.current_state
-		if state and state.translation_text_main then
+		if state and state.translation_payload then
 			state.translation_payload = plugin:buildTranslationPayload(state)
 			plugin:refreshCurrentPage(PAGE_TRANSLATION)
 		end
-	end
-
-	local function normalizeLeftAction(action)
-		return LEFT_ACTION_BY_ID[action] and action or DEFAULT_LEFT_ACTION
 	end
 
 	local DETAILS_BUTTONS_MODES = {
@@ -76,12 +56,8 @@ return function(ctx)
 	local function applyDictionaryHtmlMode(plugin, mode)
 		plugin:setDictionaryHtmlMode(mode)
 		local state = plugin.current_state
-		if state then
-			state.dictionary_payload = nil
-			state.dictionary_payload_cache = nil
-			if plugin.updateDictionaryPayload then
-				plugin:updateDictionaryPayload(state, state.dictionary_index)
-			end
+		if state and getLoadStatus(state, PAGE_DICTIONARY) == LOAD_DONE then
+			plugin:updateDictionaryPayload(state, state.dictionary_index)
 		end
 		return plugin:refreshVisibleCards()
 	end
@@ -255,7 +231,8 @@ return function(ctx)
 					{ mode = DETAILS_BUTTONS_EXPLORER, label = _("Dictionary Explorer only"), needs_explorer = true },
 					{ mode = DETAILS_BUTTONS_BOTH, label = _("Both"), needs_explorer = true },
 				}
-				for _index, option in ipairs(options) do
+				for option_index = 1, #options do
+					local option = options[option_index]
 					items[#items + 1] = {
 						text = option.label,
 						radio = true,
@@ -497,10 +474,6 @@ return function(ctx)
 		return self:getDictionaryHtmlMode() == DICTIONARY_HTML_FAST_RAW
 	end
 
-	function LookupPreview:useRawDictionaryHtml()
-		return self:useFastRawDictionaryHtml()
-	end
-
 	function LookupPreview:setDictionaryHtmlMode(mode)
 		if mode ~= DICTIONARY_HTML_FAST_RAW then
 			mode = DICTIONARY_HTML_FORMATTED
@@ -542,14 +515,6 @@ return function(ctx)
 
 		lang = tostring(lang or "en"):lower()
 		return lang ~= "" and lang or "en"
-	end
-
-	function LookupPreview:getLeftButtonAction()
-		return normalizeLeftAction(G_reader_settings:readSetting(SETTING_LEFT_ACTION) or DEFAULT_LEFT_ACTION)
-	end
-
-	function LookupPreview:setLeftButtonAction(action)
-		G_reader_settings:saveSetting(SETTING_LEFT_ACTION, normalizeLeftAction(action))
 	end
 
 	-- Dictionary Explorer, when installed and recent enough to be opened from
@@ -626,39 +591,6 @@ return function(ctx)
 		return { text = _("Loading…") }
 	end
 
-	function LookupPreview:getLeftButtonSpec(action_id)
-		action_id = normalizeLeftAction(action_id or self:getLeftButtonAction())
-
-		if action_id == LEFT_ACTION_SEARCH_BOOK then
-			return { icon = ICON_SEARCH }
-		end
-
-		local plugin_icon = self:getPluginIconFile(action_id)
-		if plugin_icon then
-			return { icon_file = plugin_icon }
-		end
-
-		return { text = LEFT_ACTION_BY_ID[action_id].label }
-	end
-
-	-- Kept for compatibility with older menu layouts that exposed a configurable left action.
-	function LookupPreview:genLeftButtonActionMenu()
-		local items = {}
-		for _, action in ipairs(LEFT_ACTIONS) do
-			items[#items + 1] = {
-				text = action.label,
-				radio = true,
-				checked_func = function()
-					return self:getLeftButtonAction() == action.id
-				end,
-				callback = function()
-					self:setLeftButtonAction(action.id)
-				end,
-			}
-		end
-		return items
-	end
-
 	function LookupPreview:notify(message)
 		UIManager:show(Notification:new({ text = message }))
 		return true
@@ -667,6 +599,9 @@ return function(ctx)
 	function LookupPreview:destroy()
 		self:closeLanguageMenu()
 		self:closeCurrentPopup(true)
+		if self.endDictionaryCapture then
+			self:endDictionaryCapture()
+		end
 
 		if self.patched_highlight and self.patched_highlight._lookuppreview_highlight_patched == self then
 			if self.original_highlight_lookupDict then
@@ -721,6 +656,13 @@ return function(ctx)
 
 		local plugin = self
 		dictionary.showDict = function(dict_self, word, results, boxes, link, dict_close_callback)
+			-- The lookup the dictionary card asked for (see loadDictionary). Any
+			-- other word is a lookup of its own and goes the usual way.
+			local capture = plugin.dictionary_capture
+			if capture and word == capture.word and not plugin.opening_original_popup then
+				return plugin:receiveDictionaryResults(capture, dict_self, word, results)
+			end
+
 			if not plugin:isPreviewEnabled() or plugin.opening_original_popup or not results or not results[1] then
 				return plugin.original_showDict(dict_self, word, results, boxes, link, dict_close_callback)
 			end
@@ -902,12 +844,8 @@ return function(ctx)
 			dict_self = nil,
 			highlight_self = highlight,
 			word = text,
-			results = {
-				{
-					word = text,
-					no_result = true,
-				},
-			},
+			-- The dictionary card looks the text up when it is first shown.
+			results = {},
 			preview_results = {},
 			boxes = nil,
 			link = nil,
@@ -918,6 +856,7 @@ return function(ctx)
 			translation_source_text = text,
 			selection_bounds = self:getHighlightSelectionBounds(highlight),
 			dialog = highlight and highlight.dialog or (self.ui and self.ui.highlight and self.ui.highlight.dialog),
+			load = { [PAGE_DICTIONARY] = { status = LOAD_IDLE } },
 		}
 
 		state.dict_close_callback = function()
@@ -928,7 +867,6 @@ return function(ctx)
 			end
 		end
 
-		state.dictionary_payload = self:buildDictionaryPayload(text, state.results[1], 1, 0)
 		return state
 	end
 
@@ -946,7 +884,7 @@ return function(ctx)
 		end
 
 		self:showCarousel(state, active_index or PAGE_DICTIONARY)
-		schedulePreviewLoad(self, state, active_index)
+		self:scheduleCardLoad(state, state.active_index)
 
 		return true
 	end
@@ -1256,62 +1194,5 @@ return function(ctx)
 		end)
 
 		return true
-	end
-
-	function LookupPreview:lookupWikipedia(dict_self, search_text)
-		local highlight = self:restoreSelection(dict_self)
-
-		if
-			highlight
-			and type(highlight.lookupWikipedia) == "function"
-			and (highlight.selected_text or highlight.hold_pos)
-		then
-			UIManager:scheduleIn(0.05, function()
-				local ok, err = pcall(function()
-					if
-						not highlight.selected_text
-						and highlight.hold_pos
-						and type(highlight.highlightFromHoldPos) == "function"
-					then
-						highlight:highlightFromHoldPos()
-					end
-					highlight:lookupWikipedia()
-					self.selection_snapshot = nil
-				end)
-
-				if not ok then
-					logger.warn("LookupPreview: Wikipedia action failed:", err)
-				end
-			end)
-			return true
-		end
-
-		search_text = trim(search_text)
-		if search_text ~= "" and self.ui and self.ui.handleEvent then
-			self.ui:handleEvent(Event:new("LookupWikipedia", search_text))
-			return true
-		end
-
-		return self:notify(_("No selection to look up."))
-	end
-
-	function LookupPreview:runLeftButtonAction(action, state, search_text)
-		if not state then
-			return true
-		end
-
-		action = normalizeLeftAction(action)
-		self:closeCurrentPopup(true)
-		self.current_state = nil
-
-		if action == LEFT_ACTION_HIGHLIGHT then
-			return self:highlightSelection(state.dict_self, state.dict_close_callback)
-		end
-
-		self.selection_snapshot = nil
-		self:clearOriginalHighlight(state.dict_self)
-		self:clearSelection()
-		callIfPresent(state.dict_close_callback)
-		return self:showSearchDialog(search_text)
 	end
 end

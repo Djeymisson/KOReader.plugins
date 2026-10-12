@@ -166,27 +166,12 @@ SETTING_SIDE_PREVIEW_MODE = "lookuppreview_side_preview_mode"
 SETTING_ONLINE_CARD_LOAD_MODE = "lookuppreview_online_card_load_mode"
 SETTING_DICTIONARY_HTML_MODE = "lookuppreview_dictionary_html_mode"
 SETTING_WIKI_LANG = "lookuppreview_wikipedia_lang"
-SETTING_LEFT_ACTION = "lookuppreview_dictionary_left_action"
 SETTING_DICTIONARY_DETAILS_BUTTONS = "lookuppreview_dictionary_details_buttons"
 SETTING_TRANSLATION_SHOW_SOURCE = "lookuppreview_translation_show_source"
 SETTING_TRANSLATION_SHOW_COPY_BUTTON = "lookuppreview_translation_show_copy_button"
 SETTING_TRANSLATION_SHOW_NOTE_BUTTON = "lookuppreview_translation_show_note_button"
 
 -- Actions and icons ---------------------------------------------------------
-LEFT_ACTION_HIGHLIGHT = "highlight"
-LEFT_ACTION_SEARCH_BOOK = "search_book"
-DEFAULT_LEFT_ACTION = LEFT_ACTION_SEARCH_BOOK
-
-LEFT_ACTIONS = {
-	{ id = LEFT_ACTION_HIGHLIGHT, label = _("Highlight") },
-	{ id = LEFT_ACTION_SEARCH_BOOK, label = _("Fulltext search") },
-}
-
-LEFT_ACTION_BY_ID = {}
-for _, action in ipairs(LEFT_ACTIONS) do
-	LEFT_ACTION_BY_ID[action.id] = action
-end
-
 -- Which buttons open the full dictionary from the dictionary card: KOReader's
 -- original popup, Dictionary Explorer's "go to word", or both.
 DETAILS_BUTTONS_BOTH = "both"
@@ -200,6 +185,7 @@ BUTTON_HINT_TIMEOUT = 5
 BUTTON_HINT_GAP = scaleBySize(6)
 
 PLUGIN_ICON_EXTENSIONS = { ".svg", ".png" }
+ICON_HIGHLIGHT = "highlight"
 ICON_SEARCH = "appbar.search"
 ICON_PREVIOUS = "chevron.left"
 ICON_NEXT = "chevron.right"
@@ -214,7 +200,7 @@ ICON_MENU = "menu"
 
 PLUGIN_ICON_DEFINITIONS = {
 	{
-		id = LEFT_ACTION_HIGHLIGHT,
+		id = ICON_HIGHLIGHT,
 		label = _("Highlight"),
 		basenames = { "highlight", "lookuppreview.highlight", "dictionarypreview.highlight" },
 	},
@@ -285,6 +271,15 @@ PAGE_TITLES = {
 	[PAGE_TRANSLATION] = _("Translate"),
 	[PAGE_WIKIPEDIA] = _("Wikipedia"),
 }
+
+-- Where the content of a card stands, kept per card in state.load (see
+-- getLoadStatus in carousel.lua). Idle is "not looked up yet", which is not the
+-- same as empty, "looked up and nothing found".
+LOAD_IDLE = "idle"
+LOAD_LOADING = "loading"
+LOAD_DONE = "done"
+LOAD_EMPTY = "empty"
+LOAD_ERROR = "error"
 
 -- Languages -----------------------------------------------------------------
 COMMON_TARGET_LANGUAGES = {

@@ -37,10 +37,9 @@ return function(ctx)
 	local function resetTranslationState(state, target_lang)
 		state.translation_target_lang = target_lang
 		state.translation_payload = nil
-		state.translation_error = nil
-		state.translation_loading = nil
 		state.translation_text_main = nil
 		state.translation_source_lang = nil
+		setLoadStatus(state, PAGE_TRANSLATION, LOAD_IDLE)
 	end
 
 	local function scheduleTranslationReload(plugin, state)
@@ -154,15 +153,17 @@ return function(ctx)
 		}
 	end
 
+	-- Copy and Note only when there is a translation; the native view is always
+	-- offered, as it may show more than the card.
 	function LookupPreview:buildTranslationButtons(state)
-		if not state or not state.translation_text_main then
+		if not state then
 			return nil
 		end
 
 		local buttons = {}
 		local text_main = state.translation_text_main
 
-		if self.clipboard_available and self:showTranslationCopyButton() then
+		if text_main and self.clipboard_available and self:showTranslationCopyButton() then
 			buttons[#buttons + 1] = {
 				spec = { plugin_icon = ICON_COPY, text = _("Copy") },
 				hint = _("Copy the translation to the clipboard"),
@@ -172,7 +173,7 @@ return function(ctx)
 			}
 		end
 
-		if self:showTranslationNoteButton() then
+		if text_main and self:showTranslationNoteButton() then
 			buttons[#buttons + 1] = {
 				spec = { plugin_icon = ICON_ADD_NOTE, text = _("Note") },
 				hint = _("Save the translation as a note on the highlight"),
@@ -214,24 +215,22 @@ return function(ctx)
 		}
 	end
 
+	-- What the Load and Retry buttons do: show the card loading, then query.
 	function LookupPreview:requestTranslationLoad(state)
 		state = state or self.current_state
-		if not state or state ~= self.current_state or state.translation_loading then
+		if not state or state ~= self.current_state or getLoadStatus(state, PAGE_TRANSLATION) == LOAD_LOADING then
 			return true
 		end
 
 		state.translation_payload = nil
-		state.translation_error = nil
 		state.translation_text_main = nil
-		state.translation_loading = true
-		self:refreshCurrentPage(PAGE_TRANSLATION)
+		setLoadStatus(state, PAGE_TRANSLATION, LOAD_LOADING)
+		self:refreshCard(PAGE_TRANSLATION)
 
-		UIManager:scheduleIn(0.05, function()
-			if state ~= self.current_state then
-				return
+		UIManager:scheduleIn(TRANSLATION_RELOAD_DELAY, function()
+			if state == self.current_state then
+				self:queryTranslation(state)
 			end
-			state.translation_loading = nil
-			self:loadTranslation(state, true)
 		end)
 		return true
 	end
@@ -365,7 +364,7 @@ return function(ctx)
 		end
 
 		resetTranslationState(state, target_lang)
-		self:showCarousel(state, PAGE_TRANSLATION, true)
+		self:showCarousel(state, PAGE_TRANSLATION)
 		scheduleTranslationReload(self, state)
 		return true
 	end
@@ -383,29 +382,34 @@ return function(ctx)
 		return tostring(lang or "?")
 	end
 
-	function LookupPreview:loadTranslation(state, force)
+	-- Loads the card when it is shown, unless online cards wait for the Load
+	-- button.
+	function LookupPreview:loadTranslation(state)
 		if not state or state ~= self.current_state then
 			return true
 		end
-		if not force and self:useManualOnlineCardLoading() then
-			return self:refreshCurrentPage(PAGE_TRANSLATION)
+		if self:useManualOnlineCardLoading() then
+			return self:refreshCard(PAGE_TRANSLATION)
 		end
-		if state.translation_loading or state.translation_payload or state.translation_error then
+		if getLoadStatus(state, PAGE_TRANSLATION) ~= LOAD_IDLE then
 			return true
 		end
 
+		setLoadStatus(state, PAGE_TRANSLATION, LOAD_LOADING)
+		return self:queryTranslation(state)
+	end
+
+	-- Queries the translation service for a card already marked as loading.
+	function LookupPreview:queryTranslation(state)
 		local text = state.search_text or ""
 		if text == "" then
-			state.translation_error = _("No text to translate.")
-			return self:refreshCurrentPage(PAGE_TRANSLATION)
+			setLoadStatus(state, PAGE_TRANSLATION, LOAD_ERROR, _("No text to translate."))
+			return self:refreshCard(PAGE_TRANSLATION)
 		end
 
-		state.translation_loading = true
-
 		if isNetworkUnavailable() then
-			state.translation_error = _("Network unavailable.")
-			state.translation_loading = false
-			return self:refreshCurrentPage(PAGE_TRANSLATION)
+			setLoadStatus(state, PAGE_TRANSLATION, LOAD_ERROR, _("Network unavailable."))
+			return self:refreshCard(PAGE_TRANSLATION)
 		end
 
 		local ok, err = pcall(function()
@@ -417,11 +421,11 @@ return function(ctx)
 			end, _("Querying translation service…"))
 
 			if not completed then
-				state.translation_error = _("Translation interrupted.")
+				setLoadStatus(state, PAGE_TRANSLATION, LOAD_ERROR, _("Translation interrupted."))
 				return
 			end
 			if type(result) ~= "table" then
-				state.translation_error = _("Translation failed.")
+				setLoadStatus(state, PAGE_TRANSLATION, LOAD_ERROR, _("Translation failed."))
 				return
 			end
 
@@ -429,24 +433,23 @@ return function(ctx)
 				source_lang = result[3]
 			end
 
-			local text_main = extractMainTranslation(result)
-			if text_main == "" then
-				text_main = _("No translation found.")
-			end
-
-			state.translation_text_main = text_main
 			state.translation_source_text = text
 			state.translation_source_lang = source_lang
 			state.translation_target_lang = target_lang
+
+			-- With nothing found the payload says so, and its subtitle still
+			-- chooses another target language.
+			local text_main = extractMainTranslation(result)
+			state.translation_text_main = text_main ~= "" and text_main or nil
 			state.translation_payload = self:buildTranslationPayload(state)
+			setLoadStatus(state, PAGE_TRANSLATION, state.translation_text_main and LOAD_DONE or LOAD_EMPTY)
 		end)
 
 		if not ok then
 			logger.warn("LookupPreview: translation failed:", err)
-			state.translation_error = onlineLookupError(err, _("Translation failed."))
+			setLoadStatus(state, PAGE_TRANSLATION, LOAD_ERROR, onlineLookupError(err, _("Translation failed.")))
 		end
 
-		state.translation_loading = false
-		return self:refreshCurrentPage(PAGE_TRANSLATION)
+		return self:refreshCard(PAGE_TRANSLATION)
 	end
 end

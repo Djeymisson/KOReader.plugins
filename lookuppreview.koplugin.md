@@ -1,4 +1,4 @@
-# Lookup Preview ![Version](https://img.shields.io/badge/version-v1.0.22-blue)
+# Lookup Preview ![Version](https://img.shields.io/badge/version-v1.1.0-blue)
 
 **Lookup Preview** is a KOReader reader plugin that changes the lookup flow for selected text. Instead of opening each native lookup window immediately, it first shows a compact floating carousel with preview cards for **Dictionary**, **Translate**, and **Wikipedia**.
 
@@ -20,6 +20,8 @@ The plugin metadata registers it as `lookuppreview` with the display name **Look
 - Uses `menu.svg` for the card selector button in the header; tapping it opens the same card list used by the previous page indicators.
 - Keeps KOReader's original native lookup widgets available through compact action buttons.
 - Uses lazy loading for Translate and Wikipedia cards, avoiding unnecessary network requests until those cards are opened.
+- Looks the selected text up in the dictionary when the Dictionary card is first shown, also when the carousel was opened from Translate or Wikipedia, so every card works whichever action opened it.
+- Keeps each card where it was scrolled to while the lookup is open: each dictionary result, each translation language and each Wikipedia article has its own place, also shown on the side cards.
 - Reuses the current popup while switching content, reducing unnecessary carousel rebuilds.
 - Supports square and rounded card corners from the plugin settings.
 - In tabbed mode, uses a square upper-left junction while Dictionary is active, restoring the rounded card corner and extending the Dictionary tab border to meet it on the other tabs.
@@ -133,9 +135,14 @@ The original KOReader widgets remain available. Each card has a compact details/
 
 Translate and Wikipedia are loaded lazily. This means the plugin does not query the translation service or Wikipedia until the corresponding card is opened. This keeps dictionary lookup fast and avoids unnecessary network calls.
 
+The dictionary is loaded the same way when the carousel was opened from Translate or Wikipedia: the selected text is looked up when the Dictionary card is first shown (by swiping, a tab or the card selector), whatever the online loading setting, since the dictionary is local. The lookup goes through KOReader's own, so fuzzy search, the dictionaries enabled for the book and the lookup history behave as for a lookup from the book; the result fills the card instead of opening KOReader's window.
+
+Each card can be in one of these states: not looked up yet, loading, showing its content, nothing found, or failed (with a **Retry** button).
+
 ## Dictionary card
 
 - Shows the selected word or text and the current dictionary name.
+- When the carousel was opened from Translate or Wikipedia, looks the selected text up the first time the card is shown. While it looks up, the card says so; a word in no dictionary shows **No definition found.**, and a lookup that did not finish offers **Retry**.
 - Displays the dictionary definition inside a scrollable preview area.
 - Supports multiple dictionary results.
 - Shows the current dictionary result count in regular text between the Previous and Next footer arrows when more than one result is available, without dividers inside that navigation group. Highlight comes before the navigation group, followed by Search and the buttons that open the full dictionary (see below).
@@ -321,6 +328,8 @@ Lookup Preview keeps the carousel lightweight in several ways:
 - Dictionary result switching reuses the current popup instead of closing and recreating the whole carousel.
 - When possible, only the active card is rebuilt after content changes.
 - Side cards remain intact while navigating between dictionary results.
+- Restoring a card's scroll position costs no extra rendering: the page is chosen before the card is first drawn. When the card has a different number of pages (a side card, which has no buttons, or another dictionary HTML mode), the same proportion of the content is shown.
+- When Translate, Wikipedia or a dictionary lookup finishes after you moved to another card, the side card showing it is refreshed too.
 - The plugin caches icon lookups for custom button icons.
 - The preview uses compact payload objects to separate card content from widget rendering.
 - Carousel tab widgets are measured with a direct method reference instead of a temporary wrapper function on every repaint.
@@ -336,8 +345,13 @@ These optimizations are especially useful on e-ink devices, where recreating the
 - The compact translation preview shows the main translation only. Extended translator details remain available through KOReader's original translator view.
 - The compact Wikipedia preview shows article introductions. Full articles remain available through the **Full article** button or KOReader's original Wikipedia widget.
 - The **Highlight** and **Note** actions depend on KOReader's current highlight state.
+- When the Dictionary card looks up text selected for Translate or Wikipedia and nothing is found, it shows **No definition found.** instead of KOReader's **No results found** dialog with its fuzzy search option; the card's KOReader button still opens KOReader's own window. If dictionary lookups are set to open in an external app (Android), the card says so instead of looking up.
 - Clipboard support depends on the device and KOReader build.
 - Floating carousel positioning depends on the selection position reported by KOReader. If that position is unavailable, the carousel falls back to a safe default position.
+
+## Tests
+
+The plugin's behaviour is checked inside a real KOReader, without a window, by [`tools/lookuppreview/`](./tools/lookuppreview/README.md): `tools/lookuppreview/run.sh check`.
 
 ## Uninstalling
 

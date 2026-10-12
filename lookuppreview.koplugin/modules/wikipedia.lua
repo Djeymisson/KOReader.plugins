@@ -51,29 +51,10 @@ return function(ctx)
 	local function resetWikipediaSearchState(state, lang)
 		state.wikipedia_lang = normalizeWikipediaLang(lang)
 		state.wikipedia_payload = nil
-		state.wikipedia_error = nil
-		state.wikipedia_loading = nil
-		state.wikipedia_full_loading = nil
 		state.wikipedia_pages = nil
 		state.wikipedia_count = nil
 		state.wikipedia_index = 1
-	end
-
-	local function getBestPage(pages)
-		local best
-		if type(pages) ~= "table" then
-			return nil
-		end
-
-		for _, page in pairs(pages) do
-			if type(page) == "table" then
-				if not best or tonumber(page.index or 999999) < tonumber(best.index or 999999) then
-					best = page
-				end
-			end
-		end
-
-		return best
+		setLoadStatus(state, PAGE_WIKIPEDIA, LOAD_IDLE)
 	end
 
 	function LookupPreview:getWikipediaLanguageLabel(lang)
@@ -141,7 +122,7 @@ return function(ctx)
 		end
 
 		resetWikipediaSearchState(state, lang)
-		self:showCarousel(state, PAGE_WIKIPEDIA, true)
+		self:showCarousel(state, PAGE_WIKIPEDIA)
 		if self:useAutomaticOnlineCardLoading() then
 			UIManager:scheduleIn(0.05, function()
 				self:loadWikipedia(state)
@@ -215,7 +196,7 @@ return function(ctx)
 		return showMenu(self, _("Wikipedia"), self:getWikipediaArticleMenuItems(state))
 	end
 
-	function LookupPreview:buildWikipediaPayload(state, page, _page_index, _page_count, is_full_article)
+	function LookupPreview:buildWikipediaPayload(state, page)
 		state = state or self.current_state or {}
 		page = page or {}
 
@@ -224,14 +205,10 @@ return function(ctx)
 		local extract = trim(page.extract or "")
 
 		if extract == "" then
-			extract = is_full_article and _("No full article found.") or _("No introduction found.")
+			extract = _("No introduction found.")
 		end
 
-		local subtitle = title .. " · " .. lang
-		if is_full_article then
-			subtitle = subtitle .. " · " .. _("Full article")
-		end
-		subtitle = subtitle .. " ▾"
+		local subtitle = title .. " · " .. lang .. " ▾"
 
 		return {
 			page_type = PAGE_WIKIPEDIA,
@@ -261,7 +238,7 @@ return function(ctx)
 			return nil
 		end
 
-		state.wikipedia_payload = self:buildWikipediaPayload(state, page, state.wikipedia_index, page_count, false)
+		state.wikipedia_payload = self:buildWikipediaPayload(state, page)
 		return state.wikipedia_payload
 	end
 
@@ -272,7 +249,7 @@ return function(ctx)
 		end
 
 		self:updateWikipediaPayload(state, index)
-		return self:showCarousel(state, PAGE_WIKIPEDIA, true)
+		return self:showCarousel(state, PAGE_WIKIPEDIA)
 	end
 
 	function LookupPreview:buildWikipediaLanguageButton(state)
@@ -330,27 +307,24 @@ return function(ctx)
 		}
 	end
 
+	-- What the Load and Retry buttons do: show the card loading, then query.
 	function LookupPreview:requestWikipediaLoad(state)
 		state = state or self.current_state
-		if not state or state ~= self.current_state or state.wikipedia_loading then
+		if not state or state ~= self.current_state or getLoadStatus(state, PAGE_WIKIPEDIA) == LOAD_LOADING then
 			return true
 		end
 
 		state.wikipedia_payload = nil
-		state.wikipedia_error = nil
-		state.wikipedia_full_loading = nil
 		state.wikipedia_pages = nil
 		state.wikipedia_count = nil
 		state.wikipedia_index = 1
-		state.wikipedia_loading = true
-		self:refreshCurrentPage(PAGE_WIKIPEDIA)
+		setLoadStatus(state, PAGE_WIKIPEDIA, LOAD_LOADING)
+		self:refreshCard(PAGE_WIKIPEDIA)
 
 		UIManager:scheduleIn(0.05, function()
-			if state ~= self.current_state then
-				return
+			if state == self.current_state then
+				self:queryWikipedia(state)
 			end
-			state.wikipedia_loading = nil
-			self:loadWikipedia(state, true)
 		end)
 		return true
 	end
@@ -471,7 +445,7 @@ return function(ctx)
 			return true
 		end
 
-		local search_text = state.search_text or state.wikipedia_search_text or ""
+		local search_text = state.search_text or ""
 		return openNativeWikipedia(
 			self,
 			state,
@@ -500,104 +474,34 @@ return function(ctx)
 		)
 	end
 
-	function LookupPreview:loadFullWikipediaArticle(state)
-		state = state or self.current_state
-		if state ~= self.current_state then
+	-- Loads the card when it is shown, unless online cards wait for the Load
+	-- button.
+	function LookupPreview:loadWikipedia(state)
+		if not state or state ~= self.current_state then
 			return true
 		end
-		if not state or state.wikipedia_full_loading then
+		if self:useManualOnlineCardLoading() then
+			return self:refreshCard(PAGE_WIKIPEDIA)
+		end
+		if getLoadStatus(state, PAGE_WIKIPEDIA) ~= LOAD_IDLE then
 			return true
 		end
 
-		local pages = state.wikipedia_pages or {}
-		local entry = pages[state.wikipedia_index or 1]
-		local title = getPageTitle(entry, state.search_text or "")
-		if title == "" then
-			return self:notify(_("No Wikipedia article found."))
-		end
-
-		state.wikipedia_full_loading = true
-		local loading_payload = self:buildWikipediaPayload(
-			state,
-			entry and entry.page or { title = title },
-			state.wikipedia_index or 1,
-			state.wikipedia_count or #pages,
-			false
-		)
-		loading_payload.html_body = '<p class="lp-muted">'
-			.. htmlEscape(_("Querying full Wikipedia article…"))
-			.. "</p>"
-		state.wikipedia_payload = loading_payload
-		self:refreshCurrentPage(PAGE_WIKIPEDIA)
-
-		if isNetworkUnavailable() then
-			state.wikipedia_error = _("Network unavailable.")
-			state.wikipedia_full_loading = false
-			return self:refreshCurrentPage(PAGE_WIKIPEDIA)
-		end
-
-		local ok, err = pcall(function()
-			local Wikipedia = require("ui/wikipedia")
-			local lang = state.wikipedia_lang or self:getWikipediaLang()
-			setWikipediaTrapWidget(Wikipedia, _("Querying Wikipedia…"))
-
-			local full_page = getBestPage(Wikipedia:getFullPage(title, lang))
-			resetWikipediaTrapWidget()
-
-			if not full_page then
-				state.wikipedia_error = _("No Wikipedia article found.")
-				return
-			end
-
-			state.wikipedia_payload = self:buildWikipediaPayload(
-				state,
-				full_page,
-				state.wikipedia_index or 1,
-				state.wikipedia_count or #pages,
-				true
-			)
-		end)
-
-		if not ok then
-			logger.warn("LookupPreview: full Wikipedia article lookup failed:", err)
-			resetWikipediaTrapWidget()
-			state.wikipedia_error = onlineLookupError(err, _("Wikipedia lookup failed."))
-		end
-
-		state.wikipedia_full_loading = false
-		return self:refreshCurrentPage(PAGE_WIKIPEDIA)
+		setLoadStatus(state, PAGE_WIKIPEDIA, LOAD_LOADING)
+		return self:queryWikipedia(state)
 	end
 
-	function LookupPreview:pickBestWikipediaPage(pages)
-		return getBestPage(pages)
-	end
-
-	function LookupPreview:loadWikipedia(state, force)
-		if state ~= self.current_state then
-			return true
-		end
-		if not state then
-			return true
-		end
-		if not force and self:useManualOnlineCardLoading() then
-			return self:refreshCurrentPage(PAGE_WIKIPEDIA)
-		end
-		if state.wikipedia_loading or state.wikipedia_payload or state.wikipedia_error then
-			return true
-		end
-
-		state.wikipedia_loading = true
+	-- Searches Wikipedia for a card already marked as loading.
+	function LookupPreview:queryWikipedia(state)
 		local text = state.search_text or ""
 		if text == "" then
-			state.wikipedia_error = _("No text to search on Wikipedia.")
-			state.wikipedia_loading = false
-			return self:refreshCurrentPage(PAGE_WIKIPEDIA)
+			setLoadStatus(state, PAGE_WIKIPEDIA, LOAD_ERROR, _("No text to search on Wikipedia."))
+			return self:refreshCard(PAGE_WIKIPEDIA)
 		end
 
 		if isNetworkUnavailable() then
-			state.wikipedia_error = _("Network unavailable.")
-			state.wikipedia_loading = false
-			return self:refreshCurrentPage(PAGE_WIKIPEDIA)
+			setLoadStatus(state, PAGE_WIKIPEDIA, LOAD_ERROR, _("Network unavailable."))
+			return self:refreshCard(PAGE_WIKIPEDIA)
 		end
 
 		local ok, err = pcall(function()
@@ -610,7 +514,7 @@ return function(ctx)
 			resetWikipediaTrapWidget()
 
 			if #wikipedia_results == 0 then
-				state.wikipedia_error = _("No Wikipedia article found.")
+				setLoadStatus(state, PAGE_WIKIPEDIA, LOAD_EMPTY, _("No Wikipedia article found."))
 				return
 			end
 
@@ -618,15 +522,15 @@ return function(ctx)
 			state.wikipedia_count = #wikipedia_results
 			state.wikipedia_index = normalizeResultIndex(state.wikipedia_index or 1, state.wikipedia_count)
 			self:updateWikipediaPayload(state, state.wikipedia_index)
+			setLoadStatus(state, PAGE_WIKIPEDIA, LOAD_DONE)
 		end)
 
 		if not ok then
 			logger.warn("LookupPreview: Wikipedia lookup failed:", err)
 			resetWikipediaTrapWidget()
-			state.wikipedia_error = onlineLookupError(err, _("Wikipedia lookup failed."))
+			setLoadStatus(state, PAGE_WIKIPEDIA, LOAD_ERROR, onlineLookupError(err, _("Wikipedia lookup failed.")))
 		end
 
-		state.wikipedia_loading = false
-		return self:refreshCurrentPage(PAGE_WIKIPEDIA)
+		return self:refreshCard(PAGE_WIKIPEDIA)
 	end
 end

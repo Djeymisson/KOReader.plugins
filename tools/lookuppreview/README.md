@@ -1,0 +1,49 @@
+# Lookup Preview tools
+
+Tests for [`lookuppreview.koplugin`](../../lookuppreview.koplugin.md). They run
+inside a real KOReader (crengine, the real widgets, real gestures, the real
+`sdcv` dictionary lookup), without a window, in a temporary profile: your
+KOReader settings, history and dictionaries are not touched.
+
+```sh
+tools/lookuppreview/run.sh check          # every suite
+tools/lookuppreview/run.sh entry scroll   # some of them
+tools/lookuppreview/run.sh --help
+```
+
+The exit status is 0 when everything passed, 1 when a check failed or a suite
+did not finish, so it can gate a commit or a CI job.
+
+## What you need
+
+- A KOReader install that can run on this machine: `/usr/lib/koreader` by
+  default, or `--koreader DIR` / `KOREADER_DIR`. On macOS, use the
+  `Contents/koreader` folder of `KOReader.app` (GNU `timeout`, from Homebrew's
+  coreutils, is used when it is there).
+- Nothing else. Every run makes the synthetic StarDict dictionaries of
+  [`tools/dictionaryexplorer/fixtures/make.lua`](../dictionaryexplorer/fixtures/make.lua)
+  and a small book with words they have (`livro`, `casa`, `house`) and one
+  none of them has (`qqqzzzz`). The translation service and Wikipedia are
+  replaced by stand-ins (`H.stubOnline`), so no suite needs the network.
+
+## The suites
+
+| Suite | What it checks |
+|---|---|
+| `entry` | How a lookup reaches the carousel, with real gestures on the book: the plugin replaces `ReaderDictionary.showDict` and ReaderHighlight's `lookupDict`, `translate` and `lookupWikipedia`; a long press on a word opens the carousel on the Dictionary card with its entry and no dictionary window; Translate and Wikipedia on a selection open it on their card with one query for the selected text, and nothing else is queried; a tap outside closes it and forgets the lookup; with the preview off, KOReader's own window opens; destroying the plugin puts KOReader's functions back. |
+| `dictionary` | The Dictionary card of a carousel opened from Translate or Wikipedia: idle until it is shown, then looked up through KOReader's own lookup (real `sdcv` on the fixtures), with no dictionary window and no "No results" dialog, and without querying Translate again; its button opening KOReader's window on the same word; a word in no dictionary saying so, also with fuzzy search off; closing the carousel while looking up opening nothing when the results arrive; results arriving after swiping away filling the side card; an interrupted lookup offering Retry, which looks up again. |
+| `scroll` | Each card keeping where it was scrolled to (with real swipes) while the lookup is open: after going to another card and back; on the side card, in proportion; per dictionary result and per translation language (a new one starting at the top); across a change of appearance (tabs) or dictionary HTML; and a new lookup, even of the same word, starting at the top. |
+
+Run one with `run.sh NAME`; several at once with `run.sh NAME NAME`;
+`--keep` keeps the temporary profile (it is printed) to read KOReader's log.
+
+## Adding a check
+
+Suites are plain Lua in `suites/`, run on KOReader's event loop one step after
+another (`H.step(delay, fn)`, so the UI gets to run in between). The helpers
+are in [`lib/harness.lua`](./lib/harness.lua): `H.lookUpWord(word)` and
+`H.holdWord(word)` press on a word of the book, `H.popup()` is the carousel,
+`H.status(page)` the load status of a card, `H.activePage()` the page of its
+content shown, `H.tapButton(hint)` taps a card's button by the hint it shows
+when held. When a reported bug can be reproduced here, add its check before
+fixing it, see it fail, and keep it.

@@ -27,7 +27,7 @@ return function(ctx)
 	local function addDictionaryRuntimeFields(plugin, payload, state)
 		payload = copyTable(payload)
 
-		if state.preview_count and state.preview_count > 1 then
+		if getLoadStatus(state, PAGE_DICTIONARY) == LOAD_DONE and state.preview_count and state.preview_count > 1 then
 			payload.subtitle_callback = function()
 				return plugin:showDictionaryMenu(state)
 			end
@@ -40,8 +40,23 @@ return function(ctx)
 	end
 
 	local function getDictionaryPayload(plugin, state, is_active)
-		local payload = state.dictionary_payload
-			or plugin:makeLoadingPayload(_("Dictionary"), _("No definition found."), PAGE_DICTIONARY)
+		local status, message = getLoadStatus(state, PAGE_DICTIONARY)
+		local payload
+		if status == LOAD_IDLE then
+			-- An idle active card is looked up right away (scheduleCardLoad).
+			payload = plugin:makeLoadingPayload(
+				_("Dictionary"),
+				is_active and _("Looking up the dictionary…") or _("Swipe to open the dictionary."),
+				PAGE_DICTIONARY
+			)
+		elseif status == LOAD_LOADING then
+			payload = plugin:makeLoadingPayload(_("Dictionary"), _("Looking up the dictionary…"), PAGE_DICTIONARY)
+		elseif status == LOAD_ERROR or (status == LOAD_EMPTY and not state.dictionary_payload) then
+			payload = textPayload(_("Dictionary"), state.search_text, message or _("No definition found."), PAGE_DICTIONARY)
+		else
+			payload = state.dictionary_payload
+				or plugin:makeLoadingPayload(_("Dictionary"), _("No definition found."), PAGE_DICTIONARY)
+		end
 
 		if not is_active then
 			return payload
@@ -57,7 +72,9 @@ return function(ctx)
 	end
 
 	local function getTranslationPayload(plugin, state, is_active)
-		if state.translation_payload then
+		local status, message = getLoadStatus(state, PAGE_TRANSLATION)
+
+		if (status == LOAD_DONE or status == LOAD_EMPTY) and state.translation_payload then
 			if not is_active then
 				return state.translation_payload
 			end
@@ -67,7 +84,7 @@ return function(ctx)
 			return payload
 		end
 
-		if state.translation_loading then
+		if status == LOAD_LOADING then
 			local payload = plugin:makeLoadingPayload(
 				_("Translate"),
 				_("Querying translation service…"),
@@ -79,8 +96,8 @@ return function(ctx)
 			return payload
 		end
 
-		if state.translation_error then
-			local payload = textPayload(_("Translate"), state.search_text, state.translation_error, PAGE_TRANSLATION)
+		if status == LOAD_ERROR then
+			local payload = textPayload(_("Translate"), state.search_text, message, PAGE_TRANSLATION)
 			if is_active then
 				payload.card_buttons = plugin:buildTranslationManualLoadButtons(state, _("Retry"))
 			end
@@ -121,7 +138,9 @@ return function(ctx)
 	end
 
 	local function getWikipediaPayload(plugin, state, is_active)
-		if state.wikipedia_payload then
+		local status, message = getLoadStatus(state, PAGE_WIKIPEDIA)
+
+		if status == LOAD_DONE and state.wikipedia_payload then
 			if not is_active then
 				return state.wikipedia_payload
 			end
@@ -131,7 +150,7 @@ return function(ctx)
 			return payload
 		end
 
-		if state.wikipedia_loading then
+		if status == LOAD_LOADING then
 			local payload = plugin:makeLoadingPayload(
 				_("Wikipedia"),
 				_("Querying Wikipedia…"),
@@ -144,11 +163,12 @@ return function(ctx)
 			return payload
 		end
 
-		if state.wikipedia_error then
+		-- Nothing found and a failed lookup both offer another language and Retry.
+		if status == LOAD_ERROR or status == LOAD_EMPTY then
 			local payload = textPayload(
 				_("Wikipedia"),
 				state.search_text,
-				state.wikipedia_error,
+				message,
 				PAGE_WIKIPEDIA,
 				getWikipediaLanguageCallback(plugin, state)
 			)

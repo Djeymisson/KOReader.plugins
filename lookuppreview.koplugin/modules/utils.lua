@@ -60,6 +60,55 @@ return function(ctx)
 		return copy
 	end
 
+	-- Card load status ---------------------------------------------------------
+	-- Each card keeps where its content stands in state.load[page]: one of the
+	-- LOAD_* values of context.lua, and the message to show for an empty or
+	-- failed lookup.
+
+	function getLoadStatus(state, page)
+		local load = state and state.load and state.load[page]
+		if load then
+			return load.status, load.message
+		end
+		return LOAD_IDLE
+	end
+
+	function setLoadStatus(state, page, status, message)
+		state.load = state.load or {}
+		state.load[page] = { status = status, message = message }
+	end
+
+	-- Scroll positions ---------------------------------------------------------
+	-- Where each card was scrolled to, for as long as the lookup is open:
+	-- state.scroll_positions[key] = { page = n, count = pages }, the key naming
+	-- the card and the result it shows (see LookupPreview:getCardScrollKey).
+
+	function getScrollPosition(state, key)
+		return key and state and state.scroll_positions and state.scroll_positions[key] or nil
+	end
+
+	function saveScrollPosition(state, key, page, count)
+		if not (key and state) then
+			return
+		end
+		state.scroll_positions = state.scroll_positions or {}
+		state.scroll_positions[key] = { page = page, count = count }
+	end
+
+	-- Forgets the positions of one card, when its results are replaced.
+	function forgetScrollPositions(state, page)
+		local positions = state and state.scroll_positions
+		if not positions then
+			return
+		end
+		local prefix = tostring(page) .. ":"
+		for key in pairs(positions) do
+			if key:sub(1, #prefix) == prefix then
+				positions[key] = nil
+			end
+		end
+	end
+
 	-- Network helpers ----------------------------------------------------------
 	-- Shared by translation.lua and wikipedia.lua, which both need to skip a
 	-- blocking online lookup when the device has no connectivity, and to turn

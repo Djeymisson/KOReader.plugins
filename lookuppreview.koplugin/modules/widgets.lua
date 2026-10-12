@@ -81,7 +81,7 @@ return function(ctx)
 		self.dimen = Geom:new({ x = x, y = y, w = size.w, h = size.h })
 	end
 
-	function ButtonHint:paintTo(bb, x, y)
+	function ButtonHint:paintTo(bb)
 		self.frame:paintTo(bb, self.dimen.x, self.dimen.y)
 	end
 
@@ -1424,7 +1424,8 @@ return function(ctx)
 		end
 
 		local payload = popup.plugin:getPagePayload(popup.state, index, is_active)
-		local card = popup:makeCard(payload, self.card_width, self.card_height)
+		local scroll_key = popup.plugin:getCardScrollKey(popup.state, index)
+		local card = popup:makeCard(payload, self.card_width, self.card_height, scroll_key, is_active)
 		self.cards[index] = card
 
 		return card
@@ -1696,7 +1697,7 @@ return function(ctx)
 		return popupShowsCardShadows(self)
 	end
 
-	function LookupPreviewPopup:getCardDimensions(card_width, card_height, header, buttons, page_type)
+	function LookupPreviewPopup:getCardDimensions(card_height, header, buttons, page_type)
 		local header_height = getWidgetSize(header).h or Screen:scaleBySize(46)
 		local button_height = page_type == PAGE_TRANSLATION and TRANSLATION_BUTTON_HEIGHT or DICTIONARY_BUTTON_HEIGHT
 		local button_gap = page_type == PAGE_TRANSLATION and TRANSLATION_BUTTON_GAP or DICTIONARY_BUTTON_GAP
@@ -1723,13 +1724,37 @@ return function(ctx)
 		return CARD_RADIUS
 	end
 
-	function LookupPreviewPopup:makeCard(payload, card_width, card_height)
+	-- Puts a newly built card's content back where it was scrolled to. The page
+	-- is set before the first paint, so it costs no extra rendering; if the card
+	-- now has a different number of pages (another card height or font), the
+	-- same proportion of the content is shown.
+	local function restoreScroll(html_widget, saved)
+		local box = html_widget.htmlbox_widget
+		local count = box and box.page_count or 0
+		if not saved or saved.page <= 1 or count <= 1 then
+			return
+		end
+
+		local page = saved.page
+		if saved.count ~= count then
+			page = 1 + math.floor((saved.page - 1) * count / math.max(1, saved.count))
+		end
+		page = clamp(page, 1, count)
+		if page ~= box.page_number then
+			box:setPageNumber(page)
+			html_widget:_updateScrollBar()
+		end
+	end
+
+	-- `scroll_key` names the card and result being shown (see getCardScrollKey);
+	-- the active card remembers each scroll under it.
+	function LookupPreviewPopup:makeCard(payload, card_width, card_height, scroll_key, is_active)
 		payload = payload or {}
 		local content_width = math.max(1, card_width - 2 * CARD_PADDING_H - 2 * CARD_BORDER_SIZE)
 		local header = self:makeHeader(payload, content_width)
 		local buttons = self:makeDictionaryButtons(payload, content_width)
 		local html_height, buttons_gap =
-			self:getCardDimensions(card_width, card_height, header, buttons, payload.page_type)
+			self:getCardDimensions(card_height, header, buttons, payload.page_type)
 
 		local html_widget = ScrollHtmlWidget:new({
 			html_body = payload.html_body or "",
@@ -1744,6 +1769,19 @@ return function(ctx)
 			dialog = self.dialog,
 			highlight_text_selection = false,
 		})
+		if scroll_key then
+			local state = self.state
+			local ok, err = pcall(restoreScroll, html_widget, getScrollPosition(state, scroll_key))
+			if not ok then
+				logger.warn("LookupPreview: could not restore the scroll position:", err)
+			end
+			if is_active then
+				html_widget.scroll_callback = function()
+					local box = html_widget.htmlbox_widget
+					saveScrollPosition(state, scroll_key, box.page_number, box.page_count)
+				end
+			end
+		end
 
 		local content_items = {
 			VerticalSpan:new({ width = CARD_PADDING_TOP }),
@@ -1771,7 +1809,7 @@ return function(ctx)
 		content_items[#content_items + 1] = VerticalSpan:new({ width = CARD_PADDING_BOTTOM })
 
 		local card_radius = self:getCardRadius()
-		return LookupCardFrame:new({
+		local card = LookupCardFrame:new({
 			background = Blitbuffer.COLOR_WHITE,
 			bordersize = CARD_BORDER_SIZE,
 			color = CARD_BORDER_COLOR,
@@ -1783,8 +1821,9 @@ return function(ctx)
 			margin = 0,
 			padding = 0,
 			VerticalGroup:new(content_items),
-		}),
-			Geom:new({ w = card_width, h = card_height })
+		})
+		card.html_widget = html_widget
+		return card, Geom:new({ w = card_width, h = card_height })
 	end
 
 	function LookupPreviewPopup:makeRow(card_width, card_height)

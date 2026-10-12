@@ -218,10 +218,11 @@ return function(ctx)
 		end
 
 		search_text = search_text or state.dictionary_search_text or state.search_text or ""
+		local status = getLoadStatus(state, PAGE_DICTIONARY)
 
 		local button_specs = {
 			{
-				spec = self:getLeftButtonSpec(LEFT_ACTION_HIGHLIGHT),
+				spec = { plugin_icon = ICON_HIGHLIGHT, text = _("Highlight") },
 				hint = _("Highlight the selected text"),
 				callback = function()
 					self:closeCurrentPopup(true)
@@ -231,7 +232,7 @@ return function(ctx)
 			},
 		}
 
-		if state.preview_count and state.preview_count > 1 then
+		if status == LOAD_DONE and state.preview_count and state.preview_count > 1 then
 			local current_index = state.dictionary_index or 1
 			button_specs[#button_specs + 1] = {
 				spec = { icon = ICON_PREVIOUS },
@@ -260,13 +261,33 @@ return function(ctx)
 		end
 
 		button_specs[#button_specs + 1] = {
-			spec = self:getLeftButtonSpec(LEFT_ACTION_SEARCH_BOOK),
+			spec = { icon = ICON_SEARCH },
 			hint = _("Search the selected text in the book"),
 			callback = function()
 				closePreviewBeforeExternalAction(self, state)
 				return self:showSearchDialog(search_text)
 			end,
 		}
+
+		if status == LOAD_LOADING then
+			button_specs[#button_specs + 1] = {
+				spec = self:getLoadingButtonSpec(),
+				hint = _("Loading…"),
+			}
+			return button_specs
+		elseif status == LOAD_ERROR then
+			button_specs[#button_specs + 1] = {
+				spec = { text = _("Retry") },
+				hint = _("Look the text up in the dictionary again"),
+				callback = function()
+					return self:loadDictionary(state, true)
+				end,
+			}
+			return button_specs
+		elseif status == LOAD_IDLE or not state.dict_self then
+			-- Nothing to open in the full dictionary yet.
+			return button_specs
+		end
 
 		local show_koreader, show_explorer = self:getDetailsButtonKinds(getCurrentResult(state))
 		if show_explorer then
@@ -316,7 +337,7 @@ return function(ctx)
 		end
 
 		self:updateDictionaryPayload(state, index)
-		return self:showCarousel(state, PAGE_DICTIONARY, true)
+		return self:showCarousel(state, PAGE_DICTIONARY)
 	end
 
 	local function getFoundWord(self, state, result)
@@ -435,6 +456,164 @@ return function(ctx)
 
 		closePreviewBeforeExternalAction(self, state)
 		explorer:openWord(dict_name, word, definition)
+		return true
+	end
+
+	-- Whether KOReader's results are definitions, nothing found, or a lookup
+	-- that did not finish (results.lookup_cancelled, or a first result saying so).
+	local function getResultsStatus(results)
+		local first = type(results) == "table" and results[1] or nil
+		if not first then
+			return LOAD_EMPTY
+		end
+		if results.lookup_cancelled or first.lookup_cancelled then
+			return LOAD_ERROR, first.definition
+		end
+		for index = 1, #results do
+			if not results[index].no_result then
+				return LOAD_DONE
+			end
+		end
+		return LOAD_EMPTY
+	end
+
+	-- Puts the results of a dictionary lookup in the state, whether KOReader
+	-- showed them to us (a lookup started from the book) or the card asked for
+	-- them (see loadDictionary). `dict_self` is the ReaderDictionary, needed to
+	-- open its own popup from the card.
+	function LookupPreview:setDictionaryResults(state, dict_self, word, results)
+		local preview_results = buildPreviewResults(results)
+		local first_entry = preview_results[1] or {}
+		local first_result = first_entry.result or (results and results[1]) or {}
+
+		state.dict_self = dict_self
+		state.word = word
+		state.results = results or {}
+		state.preview_results = preview_results
+		state.preview_count = #preview_results
+		state.dictionary_index = 1
+		state.dictionary_search_text = self:getSearchText(word, first_result)
+		state.dictionary_payload = nil
+		forgetScrollPositions(state, PAGE_DICTIONARY)
+
+		local status, message = getResultsStatus(results)
+		setLoadStatus(state, PAGE_DICTIONARY, status, message)
+		if status ~= LOAD_ERROR then
+			state.dictionary_payload =
+				self:buildDictionaryPayload(word, first_result, 1, #preview_results)
+		end
+		return status
+	end
+
+	-- KOReader's "No results" dialog offers a fuzzy search in an input box. The
+	-- card says "No definition found" instead, and its native button still leads
+	-- to KOReader's own window, so the dialog is skipped while the card looks up.
+	local function skipNoResultsDialog(dictionary)
+		dictionary:dismissLookupInfo()
+		return false
+	end
+
+	function LookupPreview:endDictionaryCapture(capture)
+		capture = capture or self.dictionary_capture
+		if not capture or self.dictionary_capture ~= capture then
+			return
+		end
+		self.dictionary_capture = nil
+
+		local dictionary = capture.dictionary
+		if dictionary and rawget(dictionary, "showNoResultsDialog") == skipNoResultsDialog then
+			dictionary.showNoResultsDialog = capture.no_results_dialog
+		end
+		if dictionary and type(dictionary.dismissLookupInfo) == "function" then
+			pcall(dictionary.dismissLookupInfo, dictionary)
+		end
+	end
+
+	-- Called by the patched showDict with the results of the lookup the card
+	-- asked for.
+	function LookupPreview:receiveDictionaryResults(capture, dict_self, word, results)
+		self:endDictionaryCapture(capture)
+		local state = capture.state
+		if state ~= self.current_state then
+			-- The carousel was closed while looking up.
+			return true
+		end
+
+		self:setDictionaryResults(state, dict_self, word, results)
+		return self:refreshCard(PAGE_DICTIONARY)
+	end
+
+	-- Looks the selected text up for a carousel opened from Translate or
+	-- Wikipedia, when its dictionary card is first shown. It goes through
+	-- KOReader's own lookup, so fuzzy search, the dictionaries enabled for the
+	-- book and the lookup history are the same as for a lookup from the book;
+	-- its showDict is caught (receiveDictionaryResults) and fills the card
+	-- instead of opening a window.
+	function LookupPreview:loadDictionary(state, force)
+		if not state or state ~= self.current_state then
+			return true
+		end
+		local status = getLoadStatus(state, PAGE_DICTIONARY)
+		if status == LOAD_LOADING or (status ~= LOAD_IDLE and not force) then
+			return true
+		end
+
+		local dictionary = self.ui and self.ui.dictionary
+		if not (dictionary and type(dictionary.onLookupWord) == "function") then
+			setLoadStatus(state, PAGE_DICTIONARY, LOAD_ERROR, _("The dictionary is not available."))
+			return self:refreshCard(PAGE_DICTIONARY)
+		end
+		if Device:canExternalDictLookup() and G_reader_settings:isTrue("external_dict_lookup") then
+			setLoadStatus(state, PAGE_DICTIONARY, LOAD_EMPTY, _("Dictionary lookups open in an external app."))
+			return self:refreshCard(PAGE_DICTIONARY)
+		end
+
+		local text = state.search_text or ""
+		local ok_clean, word = pcall(dictionary.cleanSelection, dictionary, text, false)
+		word = ok_clean and word or text
+
+		self:endDictionaryCapture()
+		local capture = {
+			state = state,
+			word = word,
+			dictionary = dictionary,
+			no_results_dialog = rawget(dictionary, "showNoResultsDialog"),
+		}
+		self.dictionary_capture = capture
+		dictionary.showNoResultsDialog = skipNoResultsDialog
+
+		setLoadStatus(state, PAGE_DICTIONARY, LOAD_LOADING)
+		self:refreshCard(PAGE_DICTIONARY)
+
+		-- KOReader calls this instead of showDict when the lookup is cancelled
+		-- right after it started.
+		local function onCancelled()
+			if self.dictionary_capture ~= capture then
+				return
+			end
+			self:endDictionaryCapture(capture)
+			if state == self.current_state then
+				setLoadStatus(state, PAGE_DICTIONARY, LOAD_ERROR, _("Dictionary lookup interrupted."))
+				self:refreshCard(PAGE_DICTIONARY)
+			end
+		end
+
+		local ok, err = pcall(
+			dictionary.onLookupWord,
+			dictionary,
+			word,
+			true,
+			nil,
+			state.highlight_self,
+			nil,
+			onCancelled
+		)
+		if not ok then
+			logger.warn("LookupPreview: dictionary lookup failed:", err)
+			self:endDictionaryCapture(capture)
+			setLoadStatus(state, PAGE_DICTIONARY, LOAD_ERROR, _("Dictionary lookup failed."))
+			return self:refreshCard(PAGE_DICTIONARY)
+		end
 		return true
 	end
 end
