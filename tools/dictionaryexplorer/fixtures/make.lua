@@ -197,12 +197,13 @@ local function writeDictionary(directory, base, spec)
 	end)
 
 	local idx, dict, offset = {}, {}, 0
-	local index_of = {}
+	local indexes_of = {} -- every entry of a key, homographs too
 	for index, entry in ipairs(spec.entries) do
 		idx[#idx + 1] = entry[1] .. "\0" .. uint32BE(offset) .. uint32BE(#entry[2])
 		dict[#dict + 1] = entry[2]
 		offset = offset + #entry[2]
-		index_of[entry[1]] = index_of[entry[1]] or index - 1
+		indexes_of[entry[1]] = indexes_of[entry[1]] or {}
+		table.insert(indexes_of[entry[1]], index - 1)
 	end
 	local files = { idx = table.concat(idx), dict = table.concat(dict) }
 
@@ -218,8 +219,11 @@ local function writeDictionary(directory, base, spec)
 			return spec.less(a[1], b[1])
 		end)
 		local syn = {}
+		-- { word, target } leads to the target's first entry; { word, target, n }
+		-- to its n-th (a homograph).
 		for _index, synonym in ipairs(spec.synonyms) do
-			syn[#syn + 1] = synonym[1] .. "\0" .. uint32BE(assert(index_of[synonym[2]], synonym[2]))
+			local targets = assert(indexes_of[synonym[2]], synonym[2])
+			syn[#syn + 1] = synonym[1] .. "\0" .. uint32BE(assert(targets[synonym[3] or 1], synonym[2]))
 		end
 		files.syn = table.concat(syn)
 		table.insert(ifo, 3, { "synwordcount", tostring(#spec.synonyms) })
@@ -284,6 +288,7 @@ local function textDictionary()
 	local synonyms = {
 		{ "casas", "casa" }, { "livros", "livro" }, { "gatos", "gato" }, { "arvore", "árvore" },
 		{ "bancos", "banco" }, { "mesa", "gato" }, { "Lisboa", "Óbidos" },
+		{ "cofre", "banco", 2 }, -- the second "banco" (money), not the first (a seat)
 	}
 	for index, word in ipairs(fillerWords(7, 1200)) do
 		-- Every 97th entry is longer than a screen, so it gets a scrolling page.

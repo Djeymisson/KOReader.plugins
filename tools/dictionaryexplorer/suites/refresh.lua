@@ -44,6 +44,9 @@ local EXPECTED = {
 	["Go to word with no entry, found in another dictionary"] = 1,
 	-- The results of a search: a list, as the suggestions.
 	["searching all dictionaries"] = 2,
+	-- The next dictionary that has the word, from the header: a page.
+	["the next dictionary from the header"] = 1,
+	["the previous dictionary from the header"] = 1,
 	-- Nothing changes, so nothing may be redrawn.
 	["swiping past the last page"] = 0,
 	["swiping back from the first page"] = 0,
@@ -251,6 +254,15 @@ return function(H, ui)
 				end)
 				H.check("the page is not redrawn by a search", explored.search_dialog ~= nil and #calls == 2)
 				UIManager:close(explored.search_dialog)
+				explored:goToWordIn(explored.lib:holders("casa", explored.dictionary)[1].dictionary, "casa")
+				if explored.header_mark then
+					measure("the next dictionary from the header", function()
+						explored:showNextDictionary()
+					end)
+					measure("the previous dictionary from the header", function()
+						explored:showPreviousDictionary()
+					end)
+				end
 			end
 			explored:onClose()
 			G_reader_settings:delSetting("dictionaryexplorer_exploration")

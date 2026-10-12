@@ -5,12 +5,13 @@ What the viewer's page says about a word, above the entries or in its header.
                                  MAX_CHARS characters, so a pasted paragraph
                                  can't crowd out the page
   Notices.missText(miss)         the line for a word with no entry of its own
-                                 (miss: { word, shown, elsewhere }, see the
-                                 viewer's _missFrom())
+                                 here (miss: { word, shown, from, found }, see
+                                 the viewer's _missFrom())
   Notices.build(text, width, left)
                                  that line as a widget: a gap above it, at most
                                  MAX_LINES lines, `left` pixels in
-  Notices.headerMark(count)      "· also in N more", after the dictionary's name
+  Notices.headerMark(index, count)
+                                 "· ‹ 2/3 ›", after the dictionary's name
 ]]
 
 local Font = require("ui/font")
@@ -40,21 +41,19 @@ function Notices.cut(text)
 	return text
 end
 
---- The line for a word with no entry of its own: what is shown instead, or
--- which other dictionaries have it, or that the closest entry is shown; and
--- that tapping it gives suggestions.
+--- The line for a word with no entry of its own here: the dictionary it was
+-- found in instead (just said: the word was found), or the spelling shown
+-- instead, or that the closest entry is shown; and, for those two, that
+-- tapping it gives suggestions.
 function Notices.missText(miss)
 	local cut = Notices.cut
-	local elsewhere = miss.elsewhere
 	local text
-	if miss.shown then
+	if miss.from and miss.shown then
+		return T(_("No entry for “%1” in %2. Showing “%3” from %4."), cut(miss.word), miss.from, cut(miss.shown), miss.found)
+	elseif miss.from then
+		return T(_("No entry for “%1” in %2. Found in %3."), cut(miss.word), miss.from, miss.found)
+	elseif miss.shown then
 		text = T(_("No entry for “%1”. Showing “%2”."), cut(miss.word), cut(miss.shown))
-	elseif elsewhere then
-		local names = elsewhere[1].dictionary.name
-		if #elsewhere > 1 then
-			names = T(_("%1 and %2 more"), names, #elsewhere - 1)
-		end
-		text = T(_("No entry for “%1”. It is in %2."), cut(miss.word), names)
 	else
 		text = T(_("No entry for “%1”. Showing the closest one."), cut(miss.word))
 	end
@@ -83,12 +82,14 @@ function Notices.build(text, width, left, gap)
 	})
 end
 
---- The header's mark: how many other dictionaries have the word the page is
--- about. Smaller than the dictionary's name, so it never makes the header
--- taller (the viewer also keeps the line's height).
-function Notices.headerMark(count)
+--- The header's mark: which of the dictionaries that have the word the page
+-- is about this one is ("· ‹ 2/3 ›"; tapping the line goes to the previous or
+-- the next). Smaller than
+-- the dictionary's name, so it never makes the header taller (the viewer also
+-- keeps the line's height).
+function Notices.headerMark(index, count)
 	return TextWidget:new({
-		text = "  ·  " .. T(_("also in %1 more"), count),
+		text = string.format("  ·  ‹ %d/%d ›", index, count),
 		face = Font:getFace("NotoSans-Bold.ttf", 15),
 	})
 end

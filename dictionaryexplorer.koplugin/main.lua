@@ -23,12 +23,14 @@ local ffiUtil = require("ffi/util")
 local T = ffiUtil.template
 
 local Dock = require("modules/dock")
+local Library = require("modules/library")
 local StarDict = require("modules/stardict")
 local Viewer = require("modules/viewer")
 
-local PLUGIN_VERSION = "v1.6.1"
+local PLUGIN_VERSION = "v1.7.0"
 
 local SETTING_START_DICTIONARY = "dictionaryexplorer_start_dictionary" -- a dictionary name; unset means automatic
+local SETTING_SHORT_NAMES = "dictionaryexplorer_short_names" -- { [dictionary name] = short name } set by the user (see Library)
 -- Where the exploration was left, as Viewer:explorationState() makes it: one
 -- for all dictionaries, since a trail can go through several.
 local SETTING_EXPLORATION = "dictionaryexplorer_exploration"
@@ -127,6 +129,24 @@ function DictionaryExplorer:addToMainMenu(menu_items)
 				help_text = _("Which dictionary “Open dictionary at a word” opens."),
 				sub_item_table_func = function()
 					return self:getStartDictionaryMenu()
+				end,
+			},
+			{
+				text = _("Prepare all dictionaries"),
+				help_text = _(
+					"Words are looked for in all the dictionaries, as if they were one; a dictionary whose index was never prepared (one never opened here) is left out until it is. This prepares them all now, one after the other. It is only needed once for each."
+				),
+				callback = function()
+					self:prepareAll()
+				end,
+			},
+			{
+				text = _("Short names of the dictionaries"),
+				help_text = _(
+					"The names the breadcrumb and the lists give the dictionaries, made from their names (the languages they mention: “EN-PT”). Tap one to change it; leave it empty for the one made from its name."
+				),
+				sub_item_table_func = function()
+					return self:getShortNamesMenu()
 				end,
 				separator = true,
 			},
@@ -270,9 +290,13 @@ function DictionaryExplorer:showStartWordDialog()
 	dialog:onShowKeyboard()
 end
 
-function DictionaryExplorer:openAt(dictionary, word)
+-- Opens the viewer at `word` as if all the dictionaries were one (see
+-- Library:resolve()): in `dictionary` when it has it, in the one that has it
+-- otherwise, saying so.
+function DictionaryExplorer:openAt(dictionary, word, hint)
 	self:withIndex(dictionary, function()
-		self:showViewer(dictionary, dictionary:resolve(word))
+		local lookup = Library.new(self:getLibrary()):resolve(word, dictionary, hint)
+		self:showViewer(lookup.dictionary, lookup)
 	end)
 end
 
@@ -316,6 +340,106 @@ function DictionaryExplorer:getLibrary()
 			self:withIndex(dictionary, callback)
 		end,
 	}
+end
+
+--- Prepares the index of every enabled dictionary that has none yet, one
+-- after the other, saying which one it is on. Words are looked for in all the
+-- dictionaries, but only those whose index is ready can be asked.
+function DictionaryExplorer:prepareAll()
+	local pending = {}
+	for _index, dictionary in ipairs(self:getLibrary().list()) do
+		if not dictionary:isIndexed() then
+			pending[#pending + 1] = dictionary
+		end
+	end
+	if #pending == 0 then
+		UIManager:show(InfoMessage:new({ text = _("All the dictionaries are ready.") }))
+		return
+	end
+	local index, failed, notice = 0, 0, nil
+	local function step()
+		if notice then
+			UIManager:close(notice)
+		end
+		index = index + 1
+		local dictionary = pending[index]
+		if not dictionary then
+			UIManager:show(InfoMessage:new({
+				text = failed == 0 and T(_("%1 dictionaries prepared."), #pending)
+					or T(_("%1 of %2 dictionaries prepared; the others' files look incomplete."), #pending - failed, #pending),
+			}))
+			return
+		end
+		notice = InfoMessage:new({ text = T(_("Preparing dictionary %1 of %2…\n%3"), index, #pending, dictionary.name) })
+		UIManager:show(notice)
+		UIManager:forceRePaint()
+		UIManager:scheduleIn(0.1, function()
+			if not dictionary:buildIndex() then
+				failed = failed + 1
+			end
+			step()
+		end)
+	end
+	step()
+end
+
+-- The menu of the short names: each enabled dictionary, with its short name,
+-- to change it.
+function DictionaryExplorer:getShortNamesMenu()
+	local items = {}
+	for _index, dictionary in ipairs(self:getLibrary().list()) do
+		table.insert(items, {
+			text_func = function()
+				return T("%1: %2", dictionary.name, Library.new(self:getLibrary()):shortName(dictionary))
+			end,
+			keep_menu_open = true,
+			callback = function(touchmenu_instance)
+				-- Read now: it may have been changed since the menu was made.
+				local current = Library.new(self:getLibrary()):shortName(dictionary)
+				self:editShortName(dictionary, current, function()
+					if touchmenu_instance then
+						touchmenu_instance:updateItems()
+					end
+				end)
+			end,
+		})
+	end
+	return items
+end
+
+function DictionaryExplorer:editShortName(dictionary, current, done)
+	local dialog
+	dialog = InputDialog:new({
+		title = _("Short name"),
+		description = dictionary.name,
+		input = current or "",
+		input_hint = _("Empty: made from its name"),
+		buttons = {
+			{
+				{
+					text = _("Cancel"),
+					id = "close",
+					callback = function()
+						UIManager:close(dialog)
+					end,
+				},
+				{
+					text = _("Save"),
+					is_enter_default = true,
+					callback = function()
+						local name = util.trim(dialog:getInputText())
+						local saved = G_reader_settings:readSetting(SETTING_SHORT_NAMES) or {}
+						saved[dictionary.name] = name ~= "" and name or nil
+						G_reader_settings:saveSetting(SETTING_SHORT_NAMES, saved)
+						UIManager:close(dialog)
+						done()
+					end,
+				},
+			},
+		},
+	})
+	UIManager:show(dialog)
+	dialog:onShowKeyboard()
 end
 
 --- Keeps where the exploration is, to continue it later. It only changes the
@@ -408,9 +532,7 @@ function DictionaryExplorer:openWord(name, word, hint)
 		UIManager:show(InfoMessage:new({ text = _("This dictionary can't be opened as a book.") }))
 		return false
 	end
-	self:withIndex(dictionary, function()
-		self:showViewer(dictionary, dictionary:resolve(word, hint))
-	end)
+	self:openAt(dictionary, word, hint)
 	return true
 end
 

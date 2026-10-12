@@ -420,13 +420,21 @@ function DictionaryExplorerViewer:_buildHeader(first_position, last_position)
 		show_parent = self,
 	})
 	-- The dictionary's name, and, when other dictionaries have the word the
-	-- page is about, how many (see _othersWithEntry()): tapping the header
-	-- lists them. The name gives way when both don't fit, not the mark.
+	-- page is about too, which of them this one is ("· ‹ 1/3 ›", see
+	-- _holdersOf()): tapping the name's line goes to the word in the next one
+	-- (its left half, the previous one). The name gives way when both don't
+	-- fit, not the mark.
 	local width = self.dimen.w - 2 * Size.padding.large
-	local others = self._header_others -- set by _installPage() for the page it shows
+	local holders = self._header_holders -- set by _installPage() for the page it shows
 	self.header_mark = nil
-	if others and others > 0 then
-		self.header_mark = Notices.headerMark(others)
+	if holders and #holders > 1 then
+		local index = 1
+		for position, holder in ipairs(holders) do
+			if holder.dictionary == dictionary then
+				index = position
+			end
+		end
+		self.header_mark = Notices.headerMark(index, #holders)
 		width = math.max(width - self.header_mark:getSize().w, math.floor(width / 3))
 	end
 	local dictionary_name = TextWidget:new({
@@ -443,6 +451,11 @@ function DictionaryExplorerViewer:_buildHeader(first_position, last_position)
 			HorizontalGroup:new({ align = "center", dictionary_name, self.header_mark }),
 		})
 	end
+	-- Where the name's line is, for taps (the header is at the top of the screen).
+	self._name_band = {
+		top = title_bar:getSize().h,
+		bottom = title_bar:getSize().h + Screen:scaleBySize(GAP_ABOVE_DICTIONARY_NAME) + dictionary_name:getSize().h + Screen:scaleBySize(GAP_BELOW_DICTIONARY_NAME),
+	}
 	return VerticalGroup:new({
 		align = "center",
 		title_bar,
@@ -663,18 +676,27 @@ function DictionaryExplorerViewer:_trailWord(lookup, position)
 	return self.dictionary:getEntry(position).word
 end
 
--- What the page says about a word that has no entry of its own (nil when it
--- has). `crumb` is set to the trail item the word got, if it got one.
--- `elsewhere` lists the other dictionaries that have it; the page names them
--- when there is nothing close to it here (not when it shows the word with
--- its accents), and the suggestions list them either way.
+-- What the page says about a word that has no entry of its own here (nil when
+-- it has). `crumb` is set to the trail item the word got, if it got one. A
+-- word found in another dictionary than the one it was looked for in says
+-- both (`from`, `found`: short names). Since every dictionary was asked (see
+-- Library:resolve()), a word with nothing but a closest entry has none in
+-- any of them.
 function DictionaryExplorerViewer:_missFrom(lookup)
-	if lookup and lookup.kind ~= "exact" then
+	if not lookup then
+		return nil
+	end
+	local shown = lookup.kind == "accent" and self.dictionary:getEntry(lookup.position).word or nil
+	if lookup.from and lookup.from ~= self.dictionary then
 		return {
 			word = lookup.word,
-			shown = lookup.kind == "accent" and self.dictionary:getEntry(lookup.position).word or nil,
-			elsewhere = self:_findElsewhere(lookup.word),
+			shown = shown,
+			from = self.lib:shortName(lookup.from),
+			found = self.lib:shortName(self.dictionary),
 		}
+	end
+	if lookup.kind ~= "exact" then
+		return { word = lookup.word, shown = shown }
 	end
 end
 
@@ -683,18 +705,12 @@ function DictionaryExplorerViewer:_closestIn(dictionary, word)
 	return self.lib:closest(dictionary, word)
 end
 
--- The other dictionaries that have `word`: see Library:elsewhere().
-function DictionaryExplorerViewer:_findElsewhere(word)
-	return self.lib:elsewhere(word, self.dictionary)
-end
-
 function DictionaryExplorerViewer:_getMissNotice()
 	local miss = self.miss
 	if not miss then
 		return nil
 	end
-	local elsewhere = miss.elsewhere
-	local key = miss.word .. "\0" .. (miss.shown or "") .. "\0" .. (elsewhere and elsewhere[1].dictionary.name or "")
+	local key = table.concat({ miss.word, miss.shown or "", miss.from or "", miss.found or "" }, "\0")
 	local cached = self._miss_notice
 	if cached and cached.key == key then
 		return cached.widget
@@ -742,64 +758,86 @@ function DictionaryExplorerViewer:_closeListForChoice(field)
 	end
 end
 
+-- Rows of a list, one per word, out of entries found in one dictionary or
+-- another ({ dictionary =, entry =, position =, trail = } each, in the order
+-- to show them: `entry` the headword shown, `position` where it is, `trail`
+-- the word the breadcrumb is to show, the word of the .syn that led to it if
+-- one did): a word found in several dictionaries is one row, which names them
+-- by their short names ("sofa · EN-PT, EN") when the list has more than one
+-- dictionary. Choosing a row calls choose(found) with the entry of the first
+-- dictionary that has it (in the order given), as found: its position, not
+-- its headword looked for again, which could be another entry (a homograph).
+function DictionaryExplorerViewer:_groupedRows(entries, choose)
+	local groups, by_word, dictionaries = {}, {}, {}
+	for _index, found in ipairs(entries) do
+		local group = by_word[found.entry]
+		if not group then
+			group = { word = found.entry, dictionaries = {}, seen = {} }
+			by_word[found.entry] = group
+			groups[#groups + 1] = group
+		end
+		if not group.seen[found.dictionary] then
+			group.seen[found.dictionary] = true
+			group.dictionaries[#group.dictionaries + 1] = found.dictionary
+			group.found = group.found or found
+		end
+		dictionaries[found.dictionary] = true
+	end
+	local several = next(dictionaries) ~= nil and next(dictionaries, (next(dictionaries))) ~= nil
+	local names = several and self.lib:shortNames() or {}
+	local rows = {}
+	for _index, group in ipairs(groups) do
+		local label = group.word
+		if several then
+			local tags = {}
+			for _index2, dictionary in ipairs(group.dictionaries) do
+				tags[#tags + 1] = names[dictionary] or self.lib:shortName(dictionary)
+			end
+			label = T("%1 · %2", group.word, table.concat(tags, ", "))
+		end
+		rows[#rows + 1] = {
+			{
+				text = label,
+				callback = function()
+					choose(group.found)
+				end,
+			},
+		}
+	end
+	return rows
+end
+
 --- Offers, in a list, the entries a word with no entry may have been meant
--- for: first the other dictionaries that have it, then its accented
--- spellings here and the entries around where it would be, then the entries
--- closest to it in each other dictionary. The list refreshes only its own
--- area; choosing an entry redraws the page once, with the list gone, and the
--- entry takes the place of the missed word in the trail.
+-- for, one row per word (see _groupedRows()): its accented spellings here
+-- and the entries around where it would be, then the entries closest to it
+-- in each other dictionary. The list refreshes only its own area; choosing a word redraws
+-- the page once, with the list gone, and the word takes the place of the
+-- missed one in the trail.
 function DictionaryExplorerViewer:showSuggestions()
 	local miss = self.miss
-	if not miss or self.suggestions_dialog then
+	-- A word found in another dictionary needs none: the others that have it
+	-- are a tap away in the header.
+	if not miss or miss.from or self.suggestions_dialog then
 		return
 	end
-	local rows = {}
-	local function addElsewhere(dictionary, entry, word)
-		rows[#rows + 1] = {
-			{
-				text = T(_("“%1” in %2"), entry, dictionary.name),
-				callback = function()
-					self:_closeListForChoice("suggestions_dialog")
-					self:goToWordIn(dictionary, word, true)
-				end,
-			},
-		}
-	end
-	local has_it = {}
-	for _index, found in ipairs(miss.elsewhere or {}) do
-		has_it[found.dictionary] = true
-		addElsewhere(found.dictionary, found.entry, miss.word)
-	end
+	local entries = {}
 	for _index, position in ipairs(self.dictionary:suggest(miss.word)) do
-		rows[#rows + 1] = {
-			{
-				text = self.dictionary:getEntry(position).word,
-				callback = function()
-					self:_chooseSuggestion(position)
-				end,
-			},
-		}
+		entries[#entries + 1] = { dictionary = self.dictionary, entry = self.dictionary:getEntry(position).word, position = position }
 	end
 	for _index, dictionary in ipairs(self:_otherDictionaries()) do
-		if not has_it[dictionary] and dictionary:isIndexed() then
+		if dictionary:isIndexed() then
 			for _index2, position in ipairs(self:_closestIn(dictionary, miss.word)) do
-				local entry = dictionary:getEntry(position).word
-				addElsewhere(dictionary, entry, entry)
+				entries[#entries + 1] = { dictionary = dictionary, entry = dictionary:getEntry(position).word, position = position }
 			end
 		end
 	end
+	local rows = self:_groupedRows(entries, function(found)
+		self:_closeListForChoice("suggestions_dialog")
+		self:_goToFound(found, true)
+	end)
 	if #rows > 0 then
 		self:_showList("suggestions_dialog", T(_("Suggestions for “%1”"), Notices.cut(miss.word)), rows)
 	end
-end
-
-function DictionaryExplorerViewer:_chooseSuggestion(position)
-	self:_closeListForChoice("suggestions_dialog")
-	-- The chosen entry takes the place of the word that had none in the trail.
-	local replacing = self:_isOnMissedCrumb()
-	self.miss = nil
-	self:_placeInTrail(self.dictionary:getEntry(position).word, position, replacing)
-	self:showAround(position)
 end
 
 -- Whether the trail is on the item of the word that has no entry, which a
@@ -828,7 +866,7 @@ function DictionaryExplorerViewer:_installPage(html_widget, first, last, at_end)
 	end
 
 	local margins = self.side_margins
-	self._header_others = self:_othersWithEntry(first, last)
+	self._header_holders = self:_holdersOf(first, last)
 	self.header = self:_buildHeader(first, last)
 	local children = { align = "left", self.header }
 	-- The breadcrumb, once the user has started walking through words, sits
@@ -1083,9 +1121,24 @@ function DictionaryExplorerViewer:showAround(target)
 	self:_installPage(html_widget, first, last)
 end
 
+-- The breadcrumb shows the trail's words; when the trail goes through more
+-- than one dictionary, each with its dictionary's short name ("house · EN-PT
+-- › casa · PT"), since the viewer goes from one to the other by itself.
 function DictionaryExplorerViewer:_buildBreadcrumb()
+	local shown = self.trail
+	local crossing = false
+	for _index, crumb in ipairs(self.trail) do
+		crossing = crossing or crumb.dictionary ~= self.trail[1].dictionary
+	end
+	if crossing then
+		local names = self.lib:shortNames()
+		shown = {}
+		for index, crumb in ipairs(self.trail) do
+			shown[index] = { word = T("%1 · %2", crumb.word, names[crumb.dictionary] or self.lib:shortName(crumb.dictionary)) }
+		end
+	end
 	return Breadcrumb:new({
-		trail = self.trail,
+		trail = shown,
 		current_index = self.trail_index,
 		width = self.dimen.w,
 		end_index = self.crumb_end,
@@ -1175,13 +1228,20 @@ function DictionaryExplorerViewer:showPrevious(at_end)
 	return true
 end
 
---- Jumps to a word typed by the user or tapped as a link.
+--- Goes to a word as if all the dictionaries were one (see Library:resolve()):
+-- to its entry here, or in the dictionary that has it, saying so. The word
+-- selected and gone to from the dock, a link tapped in an entry.
 function DictionaryExplorerViewer:goToWord(word)
-	self:goToWordIn(self.dictionary, word)
+	word = util.trim(word or "")
+	if word == "" then
+		return
+	end
+	self:_goToLookup(self.lib:resolve(word, self.dictionary))
 end
 
---- Jumps to a word in a dictionary, which becomes the one shown: the trail
--- goes on through it, so going back returns to the dictionary before.
+--- Jumps to a word in a given dictionary, which becomes the one shown (a
+-- dictionary chosen in a list): the trail goes on through it, so going back
+-- returns to the dictionary before.
 -- @bool instead_of_missed the word takes the place, in the trail, of the word
 -- with no entry the page is on (when it was found elsewhere)
 function DictionaryExplorerViewer:goToWordIn(dictionary, word, instead_of_missed)
@@ -1192,36 +1252,85 @@ function DictionaryExplorerViewer:goToWordIn(dictionary, word, instead_of_missed
 	local replacing = instead_of_missed and self:_isOnMissedCrumb()
 	self:_withDictionary(dictionary, function()
 		local lookup = dictionary:resolve(word)
-		self:_switchDictionary(dictionary, lookup.position)
-		self.miss = self:_missFrom(lookup) -- said on the page itself, see _getMissNotice
-		if self:_placeInTrail(self:_trailWord(lookup, lookup.position), lookup.position, replacing) and self.miss then
-			self.miss.crumb = self.trail_index -- the crumb a suggestion will take the place of
-		end
-		self:showAround(lookup.position)
+		lookup.dictionary = dictionary
+		self:_goToLookup(lookup, replacing)
 	end)
 end
 
--- How many other dictionaries have an entry for the highlighted word, when it
--- is on the page first..last (nil otherwise): asked as the dock asks (see
--- _checkSelection: the dictionaries already loaded, the word as it is), once
--- per entry, so turning pages costs nothing.
-function DictionaryExplorerViewer:_othersWithEntry(first, last)
+-- Goes to the entry a list row found (see _groupedRows()): its dictionary
+-- and position as found, its word of the .syn in the trail.
+function DictionaryExplorerViewer:_goToFound(found, instead_of_missed)
+	local replacing = instead_of_missed and self:_isOnMissedCrumb()
+	self:_withDictionary(found.dictionary, function()
+		local entry = found.dictionary:getEntry(found.position).word
+		self:_goToLookup({
+			dictionary = found.dictionary,
+			position = found.position,
+			kind = "exact",
+			word = found.trail or entry,
+			synonym = found.trail ~= entry and found.trail or nil,
+		}, replacing)
+	end)
+end
+
+-- Shows what a lookup found (see Library:resolve()), in its dictionary.
+function DictionaryExplorerViewer:_goToLookup(lookup, replacing)
+	self:_switchDictionary(lookup.dictionary, lookup.position)
+	self.miss = self:_missFrom(lookup) -- said on the page itself, see _getMissNotice
+	if self:_placeInTrail(self:_trailWord(lookup, lookup.position), lookup.position, replacing) and self.miss then
+		self.miss.crumb = self.trail_index -- the crumb a suggestion will take the place of
+	end
+	self:showAround(lookup.position)
+end
+
+-- The dictionaries that have the highlighted word, this one among them, when
+-- it is on the page first..last (nil otherwise): see Library:holders(). Asked
+-- once per entry, so turning pages costs nothing.
+function DictionaryExplorerViewer:_holdersOf(first, last)
 	local highlighted = self.highlighted
 	if not (highlighted and highlighted >= first and highlighted <= last and self.lib:hasProvider()) then
 		return nil
 	end
-	self._others_cache = self._others_cache or {}
+	self._holders_cache = self._holders_cache or {}
 	local key = self.dictionary.name .. "\0" .. highlighted
-	if self._others_cache[key] == nil then
-		local count = 0
-		for _dictionary, entry in pairs((self:_checkSelection(self.dictionary:getEntry(highlighted).word))) do
-			if entry then
-				count = count + 1
-			end
-		end
-		self._others_cache[key] = count
+	if self._holders_cache[key] == nil then
+		self._holders_cache[key] = self.lib:holders(self.dictionary:getEntry(highlighted).word, self.dictionary)
 	end
-	return self._others_cache[key]
+	return self._holders_cache[key]
+end
+
+--- Goes to the word the page is about in the next dictionary that has it
+-- (KOReader's order, from the last back to the first): the same word, so it
+-- takes the place of the current item of the trail rather than adding one.
+function DictionaryExplorerViewer:showNextDictionary()
+	self:_stepDictionary(1)
+end
+
+--- The same, to the previous dictionary that has the word (from the first
+-- back to the last).
+function DictionaryExplorerViewer:showPreviousDictionary()
+	self:_stepDictionary(-1)
+end
+
+function DictionaryExplorerViewer:_stepDictionary(step)
+	local holders = self._header_holders
+	if not (holders and #holders > 1) then
+		return
+	end
+	local index = 1
+	for position, holder in ipairs(holders) do
+		if holder.dictionary == self.dictionary then
+			index = position
+		end
+	end
+	local next_holder = holders[(index - 1 + step) % #holders + 1]
+	local crumb = self.trail[self.trail_index]
+	self:_withDictionary(next_holder.dictionary, function()
+		self.miss = nil
+		self:_switchDictionary(next_holder.dictionary, next_holder.position)
+		Trail.replace(self.trail, self.trail_index, { word = crumb.word, position = next_holder.position, dictionary = next_holder.dictionary })
+		self:showAround(next_holder.position)
+	end)
 end
 
 -- The word the page is about: the highlighted entry when it is on the page,
@@ -1243,24 +1352,20 @@ end
 -- case, the .syn or its accents), with that entry when it is spelled
 -- otherwise; a dictionary whose index was never prepared can't be asked, so
 -- it is listed as such.
--- @tparam table known optional: what _checkSelection() found out already, so
--- those dictionaries are not asked again
-function DictionaryExplorerViewer:showOtherDictionaries(word, known)
+function DictionaryExplorerViewer:showOtherDictionaries(word)
 	word = util.trim(word or "")
 	if word == "" or self.dictionaries_dialog then
 		return
 	end
 	local rows = {}
+	local names = self.lib:shortNames()
 	for _index, dictionary in ipairs(self:_otherDictionaries()) do
 		local label
-		local checked = known and known[dictionary]
-		if checked ~= nil then
-			label = checked and (checked == word and dictionary.name or T("%1 (%2)", dictionary.name, checked)) or nil
-		elseif dictionary:isIndexed() then
+		if dictionary:isIndexed() then
 			local lookup = dictionary:resolve(word)
 			if lookup.kind ~= "closest" then
-				local entry = dictionary:getEntry(lookup.position).word
-				label = entry == word and dictionary.name or T("%1 (%2)", dictionary.name, entry)
+				-- As in every list: the word, then the dictionary's short name.
+				label = T("%1 · %2", dictionary:getEntry(lookup.position).word, names[dictionary] or self.lib:shortName(dictionary))
 			end
 		else
 			label = T(_("%1 (index not prepared yet)"), dictionary.name)
@@ -1460,17 +1565,6 @@ function DictionaryExplorerViewer:onTextSelected(text)
 		self:_closeSelectionDock()
 		self:goToWord(selected)
 	end))
-	-- The same word in another dictionary, last: an icon, like the
-	-- vocabulary builder's, as there is no room for its name. Only when one
-	-- of them has it, or might.
-	local known, unknown = self:_checkSelection(selected)
-	if unknown or self:_anyFound(known) then
-		table.insert(row, dockIconButton(Dock.iconPath("other_dictionary"), _("See in another dictionary"), function()
-			self:_closeSelectionDock()
-			self:_clearSelection()
-			self:showOtherDictionaries(selected, known)
-		end))
-	end
 
 	self:_closeSelectionDock()
 	local show_shadow = Dock.showShadow()
@@ -1543,10 +1637,12 @@ end
 
 --- Looks for a word in every dictionary, this one first, and lists what each
 -- one has (the entry, also through another case, the .syn or the accents),
--- six at a time (see _showList()): choosing one goes there. A dictionary whose
--- index was never prepared can't be asked, so it is listed as such, and
--- choosing it prepares it first. When none has the word, the list has the
--- entries closest to it: this dictionary's suggestions, then the others'.
+-- one row per word with the dictionaries that have it (see _groupedRows()),
+-- six at a time: choosing one goes there, in the first of them (this one if
+-- it has it); the header's "· 1/3 ›" then goes to the others. A dictionary
+-- whose index was never prepared can't be asked, so it is listed as such,
+-- and choosing it prepares it first. When none has the word, the list has
+-- the entries closest to it: this dictionary's suggestions, then the others'.
 function DictionaryExplorerViewer:searchAll(word)
 	word = util.trim(word or "")
 	if word == "" or self.search_dialog then
@@ -1556,54 +1652,60 @@ function DictionaryExplorerViewer:searchAll(word)
 	for _index, dictionary in ipairs(self:_otherDictionaries()) do
 		dictionaries[#dictionaries + 1] = dictionary
 	end
-	local function row(label, dictionary, target)
-		return {
-			{
-				text = label,
-				callback = function()
-					self:_closeListForChoice("search_dialog")
-					self:goToWordIn(dictionary, target)
-				end,
-			},
-		}
+	local function choose(found)
+		self:_closeListForChoice("search_dialog")
+		self:_goToFound(found)
 	end
-	local found, unprepared = {}, {}
+	local entries, unprepared = {}, {}
 	for _index, dictionary in ipairs(dictionaries) do
 		if dictionary == self.dictionary or dictionary:isIndexed() then
 			local lookup = dictionary:resolve(word)
 			if lookup.kind ~= "closest" then
-				found[#found + 1] = row(T("%1 — %2", dictionary:getEntry(lookup.position).word, dictionary.name), dictionary, word)
+				entries[#entries + 1] = {
+					dictionary = dictionary,
+					entry = dictionary:getEntry(lookup.position).word,
+					position = lookup.position,
+					trail = lookup.synonym,
+				}
 			end
 		else
-			unprepared[#unprepared + 1] = row(T(_("%1 (index not prepared yet)"), dictionary.name), dictionary, word)
+			unprepared[#unprepared + 1] = {
+				{
+					text = T(_("%1 (index not prepared yet)"), dictionary.name),
+					callback = function()
+						-- Not asked yet: once prepared, the word is looked for there.
+						self:_closeListForChoice("search_dialog")
+						self:goToWordIn(dictionary, word)
+					end,
+				},
+			}
 		end
 	end
 	local title = T(_("Results for “%1”"), Notices.cut(word))
-	if #found == 0 then
+	if #entries == 0 then
 		-- Nothing has it: what is spelled most like it, here and elsewhere.
 		title = T(_("No entry for “%1”: the closest ones"), Notices.cut(word))
 		for _index, position in ipairs(self.dictionary:suggest(word)) do
-			local entry = self.dictionary:getEntry(position).word
-			found[#found + 1] = row(T("%1 — %2", entry, self.dictionary.name), self.dictionary, entry)
+			entries[#entries + 1] = { dictionary = self.dictionary, entry = self.dictionary:getEntry(position).word, position = position }
 		end
 		for index = 2, #dictionaries do
 			local dictionary = dictionaries[index]
 			if dictionary:isIndexed() then
 				for _index, position in ipairs(self:_closestIn(dictionary, word)) do
-					local entry = dictionary:getEntry(position).word
-					found[#found + 1] = row(T("%1 — %2", entry, dictionary.name), dictionary, entry)
+					entries[#entries + 1] = { dictionary = dictionary, entry = dictionary:getEntry(position).word, position = position }
 				end
 			end
 		end
 	end
-	for _index, entry in ipairs(unprepared) do
-		found[#found + 1] = entry
+	local rows = self:_groupedRows(entries, choose)
+	for _index, row in ipairs(unprepared) do
+		rows[#rows + 1] = row
 	end
-	if #found == 0 then
+	if #rows == 0 then
 		UIManager:show(InfoMessage:new({ text = T(_("Nothing found for “%1”."), Notices.cut(word)) }))
 		return
 	end
-	self:_showList("search_dialog", title, found)
+	self:_showList("search_dialog", title, rows)
 end
 
 -- Dictionary links are either "bword://word" or just the word.
@@ -1651,12 +1753,23 @@ end
 -- margins, get here.
 function DictionaryExplorerViewer:onTap(_arg, ges)
 	if self:_isOnMissNotice(ges.pos) then
-		self:showSuggestions()
+		self:showSuggestions() -- nothing when the line only says where the word was found
 		return true
 	end
-	-- The header, at the top: the word on the page in another dictionary.
+	-- The header, at the top: the dictionary's name goes to the word in the
+	-- next dictionary that has it ("‹ 1/3 ›"), its left half to the previous
+	-- one (as taps on the text turn pages); the rest lists them.
 	if self.header and ges.pos.y < self.header:getSize().h and #self:_otherDictionaries() > 0 then
-		self:showOtherDictionaries(self:_currentWord())
+		local band = self._name_band
+		if self.header_mark and band and ges.pos.y >= band.top and ges.pos.y < band.bottom then
+			if BD.flipIfMirroredUILayout(ges.pos.x < Screen:getWidth() / 2) then
+				self:showPreviousDictionary()
+			else
+				self:showNextDictionary()
+			end
+		else
+			self:showOtherDictionaries(self:_currentWord())
+		end
 		return true
 	end
 	if not self:_isInTextBand(ges.pos) then

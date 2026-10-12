@@ -18,15 +18,33 @@ may be in the others. There are two ways of asking, by what they cost:
   library:others(current)      the dictionaries other than `current`
   library:quick(word, current) { [dictionary] = its entry, or false }, and
                                whether one not loaded yet might have it
-  library:elsewhere(word, current)
-                               { { dictionary =, entry = } ... } (full), or nil
   library:closest(dictionary, word)
                                the entries of `dictionary` closest to a word it
                                has none for (its accented spellings, then the
                                ones spelled most like it)
   library:find(name), library:prepare(dictionary, callback)
   Library.anyFound(known)      whether a quick() answer found it anywhere
+
+As if they were one big dictionary, a word is looked for in all of them:
+
+  library:resolve(word, current, hint)
+                               where `word` leads, by priority: an exact entry
+                               in `current` (any case, the .syn), then an exact
+                               entry in another dictionary (KOReader's order),
+                               then an accented spelling in `current`, then one
+                               in another; else the closest entry in `current`.
+                               StarDict:resolve()'s answer, with `dictionary`
+                               (where it leads) and `from` (`current`, when
+                               that is another one)
+  library:holders(word, current)
+                               the dictionaries with an exact entry for it, in
+                               KOReader's order, `current` among them if it is
+  library:shortName(dictionary)
+                               a short name, for the breadcrumb and the lists:
+                               "EN-PT", "PT", "EN" (see shortNames())
 ]]
+
+local Spelling = require("modules/spelling")
 
 local CLOSEST_ELSEWHERE = 3 -- entries of each other dictionary among the suggestions for a missed word
 local CLOSEST_SHARED = 2 -- letters they must begin with as the word does
@@ -85,22 +103,6 @@ function Library.anyFound(known)
 	return false
 end
 
---- The dictionaries other than `current` that have `word`, also through its
--- accents (full); only the ones whose index is ready, so nothing is prepared.
--- @treturn table { { dictionary =, entry = } ... } in KOReader's order, or nil
-function Library:elsewhere(word, current)
-	local found = {}
-	for _index, dictionary in ipairs(self:others(current)) do
-		if dictionary:isIndexed() then
-			local lookup = dictionary:resolve(word)
-			if lookup.kind ~= "closest" then
-				found[#found + 1] = { dictionary = dictionary, entry = dictionary:getEntry(lookup.position).word }
-			end
-		end
-	end
-	return #found > 0 and found or nil
-end
-
 --- The entries of `dictionary` closest to a word it has no entry for: its
 -- accented spellings first, then the ones spelled most like it (see
 -- StarDict:nearest()), if they begin as it does: entries that only happen to
@@ -122,6 +124,164 @@ function Library:closest(dictionary, word)
 		add(position)
 	end
 	return positions
+end
+
+--- Where `word` leads among all the dictionaries (see the top of this file).
+-- Only dictionaries whose index is ready are asked (their cache is loaded on
+-- the first word that needs them), so nothing is prepared for it.
+-- @treturn table StarDict:resolve()'s answer, with `dictionary` and `from`
+function Library:resolve(word, current, hint)
+	local here = current:resolve(word, hint)
+	here.dictionary = current
+	if here.kind == "exact" then
+		return here
+	end
+	local exact, accent
+	for _index, dictionary in ipairs(self:others(current)) do
+		if dictionary:isIndexed() then
+			local lookup = dictionary:resolve(word)
+			if lookup.kind == "exact" then
+				exact = { lookup = lookup, dictionary = dictionary }
+				break
+			elseif lookup.kind == "accent" and not accent then
+				accent = { lookup = lookup, dictionary = dictionary }
+			end
+		end
+	end
+	local elsewhere = exact or (here.kind ~= "accent" and accent)
+	if elsewhere then
+		local lookup = elsewhere.lookup
+		lookup.dictionary, lookup.from = elsewhere.dictionary, current
+		return lookup
+	end
+	return here
+end
+
+--- The dictionaries with an exact entry for `word` (any case, the .syn), in
+-- KOReader's order, `current` among them where it is in that order. Only the
+-- ones whose index is ready.
+-- @treturn table { { dictionary =, position =, entry = } ... }
+function Library:holders(word, current)
+	local dictionaries = self.provider and self.provider.list() or { current }
+	local found, has_current = {}, false
+	for _index, dictionary in ipairs(dictionaries) do
+		if dictionary == current or dictionary:isIndexed() then
+			local position, exact = dictionary:locateText(word)
+			if exact then
+				found[#found + 1] = { dictionary = dictionary, position = position, entry = dictionary:getEntry(position).word }
+				has_current = has_current or dictionary == current
+			end
+		end
+	end
+	if not has_current then
+		-- The viewer's own dictionary may be disabled in KOReader's settings.
+		local position, exact = current:locateText(word)
+		if exact then
+			table.insert(found, 1, { dictionary = current, position = position, entry = current:getEntry(position).word })
+		end
+	end
+	return found
+end
+
+-- The languages a dictionary's name may mention, by their ISO 639-1 code.
+local LANGUAGES = {
+	EN = { "english", "inglês", "ingles", "anglais", "englisch", "inglés" },
+	PT = { "portuguese", "português", "portugues", "portuguesa", "portugais", "portugiesisch", "portugués" },
+	ES = { "spanish", "español", "espanol", "espanhol", "espagnol", "spanisch" },
+	FR = { "french", "français", "francais", "francês", "frances", "französisch", "francés" },
+	DE = { "german", "deutsch", "alemão", "alemao", "allemand", "alemán" },
+	IT = { "italian", "italiano", "italien", "italienisch" },
+	RU = { "russian", "русский", "russo", "russe", "russisch", "ruso" },
+	LA = { "latin", "latim", "latín", "latein" },
+	NL = { "dutch", "nederlands", "holandês", "néerlandais", "niederländisch" },
+	JA = { "japanese", "japonês", "japonais", "japanisch", "japonés" },
+	ZH = { "chinese", "chinês", "chinois", "chinesisch", "chino" },
+}
+local LANGUAGE_OF = {}
+for code, names in pairs(LANGUAGES) do
+	for _index, name in ipairs(names) do
+		LANGUAGE_OF[name] = code
+	end
+end
+-- Words a dictionary's name has that say nothing about which one it is.
+local FILLERS = {}
+for _index, word in ipairs({
+	"dictionary", "dicionário", "dicionario", "diccionario", "dictionnaire", "wörterbuch", "словарь",
+	"da", "de", "do", "of", "the", "la", "le", "der", "língua", "lingua", "language", "ed", "edition", "edição", "and", "e", "y",
+}) do
+	FILLERS[word] = true
+end
+
+-- What a name is made of: its words (in their case), and the languages it
+-- mentions, as codes, in order.
+local function nameParts(name)
+	local words, codes = {}, {}
+	for token in name:gmatch("[%w\128-\255]+") do
+		local lower = Spelling.changeCase(token, true)
+		local code = LANGUAGE_OF[lower]
+		if code then
+			codes[#codes + 1] = code
+		elseif not FILLERS[lower] and not lower:match("^%d") and #Spelling.characters(token) > 1 then
+			words[#words + 1] = token
+		end
+	end
+	return words, codes
+end
+
+-- The short names a dictionary may get, shortest first.
+local function candidates(dictionary)
+	local words, codes = nameParts(dictionary.name)
+	local languages = table.concat(codes, "-")
+	local first, second = words[1] or dictionary.name, words[2]
+	return {
+		languages ~= "" and languages or first,
+		languages ~= "" and (first .. " " .. languages) or (second and (first .. " " .. second) or first),
+		dictionary.name,
+	}
+end
+
+--- Short names for the dictionaries, made from their names: the languages
+-- they mention ("Priberam English - Portuguese Dictionary" is "EN-PT"), or,
+-- when that doesn't tell them apart (or there is none), a word of the name
+-- too ("Oxford EN"), or two words; else the whole name. One set in the
+-- plugin's settings (dictionaryexplorer_short_names, by name) wins.
+-- @treturn table { [dictionary] = short name }
+function Library:shortNames()
+	local dictionaries = self.provider and self.provider.list() or {}
+	local names = {}
+	for level = 1, 3 do
+		local counts, taken = {}, {}
+		for _dictionary, name in pairs(names) do
+			taken[name] = true
+		end
+		for _index, dictionary in ipairs(dictionaries) do
+			if not names[dictionary] then
+				local name = candidates(dictionary)[level]
+				counts[name] = (counts[name] or 0) + 1
+			end
+		end
+		for _index, dictionary in ipairs(dictionaries) do
+			if not names[dictionary] then
+				local name = candidates(dictionary)[level]
+				if level == 3 or (counts[name] == 1 and not taken[name]) then
+					names[dictionary] = name
+				end
+			end
+		end
+	end
+	local overrides = G_reader_settings:readSetting("dictionaryexplorer_short_names") or {}
+	for _index, dictionary in ipairs(dictionaries) do
+		local override = overrides[dictionary.name]
+		if type(override) == "string" and override ~= "" then
+			names[dictionary] = override
+		end
+	end
+	return names
+end
+
+--- The short name of one dictionary (see shortNames()).
+function Library:shortName(dictionary)
+	return self:shortNames()[dictionary] or candidates(dictionary)[1]
 end
 
 --- The dictionary called `name`, if it can be opened.

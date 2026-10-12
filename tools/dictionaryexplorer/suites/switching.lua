@@ -1,37 +1,31 @@
 --[[
-Going to a word in another dictionary, and the trail through several.
+All the dictionaries as one: going to a word looks for it in all of them.
 
-  the dock        a selected word offers, last in the dock, an icon that lists
-                  the other dictionaries: only when one of those loaded has
-                  the word as it is, or one not loaded yet might; the list
-                  then uses what the dock found out
-  the list        only the other dictionaries that have the word (also through
-                  its accents), with the entry when it is spelled otherwise; one
-                  whose index was never prepared is listed as such, and
-                  choosing it prepares it first; no dictionary at all is said
-  the trail       choosing one goes there, the trail going on through it: back
-                  returns to the word, and the dictionary, before, forward to
-                  the other one; the dictionary left lets go of what it kept
-  not here        a word with no entry here but in other dictionaries says so on
-                  the page; its suggestions start with them, and choosing one
-                  goes there in place of the missed word in the trail; only
-                  dictionaries whose index is ready are asked; for a word no
-                  dictionary has, the suggestions end with the closest entries
-                  of each other dictionary (3 at most)
-  the mark        the header says how many other dictionaries have the word the
-                  page is about, and not once it is off the page
-  search          the footer's Search lists, for a word typed, what every
-                  dictionary has (this one first, with accents too), and
-                  choosing one goes there; with none, the closest entries
-  the header      tapping it lists the other dictionaries that have the word
-                  the page is about, and goes to it there
-  continuing      the exploration is one for all dictionaries: it continues in
-                  the dictionary it was left in, its trail still crossing them;
-                  a word whose dictionary changed since is looked for again by
-                  the word, one whose dictionary is gone is left out; what
-                  v1.4.0 saved (one exploration per dictionary) is taken over
+  short names     made from the dictionaries' names (the languages they
+                  mention, "EN-PT"; a word of the name when that doesn't tell
+                  them apart), and one set by the user wins
+  priority        a word leads to: its exact entry here, then an exact entry
+                  elsewhere (KOReader's order), then an accented spelling here,
+                  then one elsewhere; else the closest entry here
+  going there     Go to word (dock, links, menu, popup) goes to the dictionary
+                  that has the word and says so on the page; the dock has no
+                  button of its own for other dictionaries any more
+  the header      "· ‹ 1/3 ›" says which of the dictionaries that have the word
+                  this one is; tapping the right half of the name's line goes
+                  to the next one, its left half to the previous one, the same
+                  word taking the same place in the trail; tapping the rest
+                  lists them
+  the trail       goes through dictionaries, each word with its dictionary's
+                  short name in the breadcrumb then
+  lists           Search and the suggestions show one row per word, with the
+                  dictionaries that have it; choosing one goes there
+  preparing       a dictionary never prepared is not asked (nor prepared) by a
+                  word; it is listed as such, and the menu prepares them all
+  continuing      the exploration goes on in the dictionary it was left in, its
+                  trail still crossing them; what v1.4.0 saved is taken over
 
-It runs on the fixtures, through the plugin (it needs KOReader v2026.07 or newer).
+It runs on the fixtures, through the plugin (it needs KOReader v2026.07 or
+newer), and on the author's dictionaries when they are installed.
 ]]
 
 return function(H, ui)
@@ -40,18 +34,14 @@ return function(H, ui)
 	local SETTING = "dictionaryexplorer_exploration"
 	local plugin = ui.dictionaryexplorer
 	local by = H.dictionaries().by
-	local text, html, xdxf = by.fx, by.fh, by.fd
-	if not (plugin and text and html and xdxf) then
-		H.skip("other dictionaries", "the plugin is not active, or the fixtures were not found")
+	local text, html, xdxf, bytes = by.fx, by.fh, by.fd, by.fb
+	if not (plugin and text and html and xdxf and bytes) then
+		H.skip("all the dictionaries as one", "the plugin is not active, or the fixtures were not found")
 		H.finish()
 		return
 	end
 
 	local viewer
-	local function onTop()
-		local stack = UIManager._window_stack
-		return stack[#stack] and stack[#stack].widget
-	end
 	local function close()
 		local shown = H.findViewer()
 		if shown then
@@ -61,26 +51,177 @@ return function(H, ui)
 	local function entryWord()
 		return viewer.dictionary:getEntry(viewer.highlighted).word
 	end
-	-- A list's choices, whatever its page (see Viewer:_showList()).
-	local function listLabels(dialog)
-		local labels = {}
-		for _index, choice in ipairs(dialog and dialog.choices or {}) do
-			labels[#labels + 1] = choice.text
-		end
-		return labels
+	local function noticeText()
+		local notice = viewer and viewer.miss_notice
+		local box = notice and notice[2] and notice[2][2]
+		return box and box.text or ""
 	end
-	local function listed(dialog, prefix)
+	local function labels(dialog)
+		local found = {}
 		for _index, choice in ipairs(dialog and dialog.choices or {}) do
-			if choice.text:sub(1, #prefix) == prefix then
+			found[#found + 1] = choice.text
+		end
+		return table.concat(found, " | ")
+	end
+	local function row(dialog, pattern)
+		for _index, choice in ipairs(dialog and dialog.choices or {}) do
+			if choice.text:find(pattern) then
 				return choice
 			end
 		end
 	end
+	local function closeList(field)
+		if viewer[field] then
+			UIManager:close(viewer[field])
+		end
+	end
+	local function escape(name)
+		return (name:gsub("%p", "%%%0"))
+	end
+	-- The first dictionary other than `current`, in KOReader's order, whose
+	-- answer for `word` is of `kind` ("exact", "accent").
+	local function firstElsewhere(word, current, kind)
+		for _index, dictionary in ipairs(viewer.lib:others(current)) do
+			if dictionary:isIndexed() and dictionary:resolve(word).kind == kind then
+				return dictionary
+			end
+		end
+	end
+	local function open(dictionary, word)
+		close()
+		plugin:openAt(dictionary, word)
+		viewer = H.findViewer()
+		return viewer
+	end
 
-	-- ---- the dock --------------------------------------------------------------------
-	-- Selects a plain word of the page with a real long press, and returns it
-	-- with the dock's last button.
-	local function selectWord()
+	-- ---- short names ------------------------------------------------------------------
+	H.step(1, function()
+		G_reader_settings:delSetting(SETTING)
+		G_reader_settings:delSetting("dictionaryexplorer_short_names")
+		open(html, "house")
+		local names = viewer.lib:shortNames()
+		H.check(
+			"short names tell the fixtures apart with a word of their names",
+			names[text] == "Fixture Text" and names[html] == "Fixture HTML" and names[xdxf] == "Fixture XDXF" and names[bytes] == "Fixture Bytes",
+			string.format("%s, %s, %s, %s", tostring(names[text]), tostring(names[html]), tostring(names[xdxf]), tostring(names[bytes]))
+		)
+		local en, pt, ox = by.en, by.pt, by.ox
+		if en and pt and ox then
+			H.check("and the author's dictionaries with the languages they mention", names[en] == "EN-PT" and names[pt] == "PT" and names[ox] == "EN", string.format("%s, %s, %s", names[en], names[pt], names[ox]))
+		else
+			H.skip("short names of the author's dictionaries", "not installed")
+		end
+		G_reader_settings:saveSetting("dictionaryexplorer_short_names", { [text.name] = "FT" })
+		H.check("a short name set by the user wins", viewer.lib:shortName(text) == "FT")
+		G_reader_settings:delSetting("dictionaryexplorer_short_names")
+
+		-- The menu's editor shows the name as it is now, each time it opens.
+		local item
+		for _index, candidate in ipairs(plugin:getShortNamesMenu()) do
+			if candidate.text_func():find(text.name, 1, true) == 1 then
+				item = candidate
+			end
+		end
+		local function edit(new_name)
+			item.callback()
+			local editor = H.findInputDialog()
+			local shown = editor and editor:getInputText()
+			if editor and new_name then
+				editor:setInputText(new_name)
+				for _index, button in ipairs(editor.buttons[1]) do
+					if button.text == "Save" then
+						button.callback()
+					end
+				end
+			elseif editor then
+				UIManager:close(editor)
+			end
+			return shown
+		end
+		local before = item and edit("CUSTOM")
+		local after = item and edit(nil)
+		H.check("the short-name editor shows the name saved last, not the one the menu was made with", before == "Fixture Text" and after == "CUSTOM", string.format("%s, then %s", tostring(before), tostring(after)))
+		G_reader_settings:delSetting("dictionaryexplorer_short_names")
+	end)
+
+	-- ---- priority -----------------------------------------------------------------------
+	H.step(0.5, function()
+		local lib = viewer.lib
+		local function check(description, word, current, dictionary, kind, from)
+			local lookup = lib:resolve(word, current)
+			H.check(
+				string.format("%s: %q from %s", description, word, current.name),
+				dictionary ~= nil and lookup.dictionary == dictionary and lookup.kind == kind and lookup.from == from,
+				string.format("%s, %s, from %s", lookup.dictionary.name, lookup.kind, lookup.from and lookup.from.name or "-")
+			)
+		end
+		check("an exact entry here stays here", "house", html, html, "exact", nil)
+		check("no entry here, an exact one elsewhere goes there", "casa", html, firstElsewhere("casa", html, "exact"), "exact", html)
+		check("an exact entry elsewhere wins over an accented spelling here", "sofa", text, firstElsewhere("sofa", text, "exact"), "exact", text)
+		check("an accented spelling here, with no exact entry anywhere, stays here", "acao", text, text, "accent", nil)
+		check("no exact entry anywhere and no spelling here: an accented one elsewhere", "acao", html, firstElsewhere("acao", html, "accent"), "accent", html)
+		check("nothing anywhere: the closest entry here", "qqqzzzz", html, html, "closest", nil)
+	end)
+
+	-- ---- going there --------------------------------------------------------------------
+	H.step(0.5, function()
+		open(html, "house")
+		local holder = firstElsewhere("casa", html, "exact")
+		viewer:goToWord("casa")
+		H.check(
+			"Go to word goes to the dictionary that has the word, and says so",
+			viewer.dictionary == holder and entryWord() == "casa"
+				and noticeText():find(string.format("No entry for “casa” in %s. Found in %s.", viewer.lib:shortName(html), viewer.lib:shortName(holder)), 1, true) ~= nil,
+			noticeText()
+		)
+		H.check("the trail goes on through it", H.trailText(viewer) == "house>casa" and viewer.trail[2].dictionary == holder)
+		-- The word was found: the line just says where, with nothing to tap for.
+		UIManager:forceRePaint()
+		local area = viewer.html_widget.dimen
+		H.gesture("tap", area.x + area.w / 2, area.y - 4)
+		H.check(
+			"the line only says where the word was found: no suggestions offered, none opened",
+			noticeText() ~= "" and noticeText():find("Tap here", 1, true) == nil and viewer.suggestions_dialog == nil,
+			noticeText()
+		)
+		H.check(
+			"and the breadcrumb then names each word's dictionary",
+			viewer.breadcrumb ~= nil and viewer.breadcrumb.trail[1].word == "house · " .. viewer.lib:shortName(html),
+			viewer.breadcrumb and viewer.breadcrumb.trail[1].word
+		)
+		H.check("the dictionary left lets go of what it kept", html._dict_file == nil and html._chunks == nil)
+		viewer:goToCrumb(1)
+		H.check("going back to the first word returns to its dictionary", viewer.dictionary == html and entryWord() == "house")
+		viewer:goToWord("acao")
+		local accented = firstElsewhere("acao", html, "accent")
+		H.check(
+			"an accented spelling elsewhere is shown, saying which",
+			viewer.dictionary == accented and entryWord() == "ação" and noticeText():find("Showing “ação” from " .. viewer.lib:shortName(accented), 1, true) ~= nil,
+			noticeText()
+		)
+
+		-- From the menu (and the popup), the same.
+		plugin:openAt(html, "casa")
+		viewer = H.findViewer()
+		H.check("opening at a word from the menu goes where it is", viewer.dictionary == holder and noticeText():find("Found in", 1, true) ~= nil)
+		close()
+		plugin:openWord(html.name, "casa")
+		viewer = H.findViewer()
+		H.check("and so does opening from the popup or another plugin", viewer.dictionary == holder)
+
+		local en, pt = by.en, by.pt
+		if en and pt then
+			open(en, "house")
+			viewer:goToWord("casa")
+			H.check("with the author's dictionaries: “casa” from English–Portuguese goes to the Portuguese one", viewer.dictionary == pt and entryWord() == "casa", viewer.dictionary.name)
+		else
+			H.skip("from English-Portuguese to Portuguese", "the Priberam dictionaries are not installed")
+		end
+	end)
+
+	-- The dock: Go to word does all that; there is no other button for it.
+	H.step(0.5, function()
+		open(html, "house")
 		UIManager:forceRePaint()
 		local box = viewer.html_widget.htmlbox_widget
 		local page = box.document:openPage(box.page_number)
@@ -95,259 +236,160 @@ return function(H, ui)
 			end
 		end
 		if not target then
-			return nil
+			H.skip("the dock", "no plain word found on the page")
+			return
 		end
 		local x, y = box.dimen.x + (target.x0 + target.x1) / 2, box.dimen.y + (line.y0 + line.y1) / 2
 		H.gesture("hold", x, y)
 		H.gesture("hold_release", x, y)
 		local buttons = viewer.selection_dock and viewer.selection_dock.buttons[1] or {}
-		local last = buttons[#buttons]
-		local offered = last ~= nil and (last.icon or ""):match("icons/other_dictionary%.svg$") ~= nil
-		return target.word, offered and last or nil
-	end
-	-- Whether another dictionary has `word` as it is, asked directly.
-	local function elsewhere(word)
-		for _index, dictionary in ipairs(viewer:_otherDictionaries()) do
-			if dictionary:isIndexed() and select(2, dictionary:locateText(word)) then
-				return true
-			end
+		local icon = false
+		for _index, button in ipairs(buttons) do
+			icon = icon or (button.icon or ""):match("other_dictionary") ~= nil
 		end
-		return false
-	end
-
-	H.step(1, function()
-		G_reader_settings:delSetting(SETTING)
-		plugin:openAt(html, "house")
-		viewer = H.findViewer()
-		local word, button = selectWord()
-		if not word then
-			H.skip("the dock's other dictionaries button", "no plain word found on the page")
-			return
-		end
-		H.check(
-			"with every dictionary loaded, the dock offers the other dictionaries only when one has the word",
-			(button ~= nil) == elsewhere(word),
-			string.format("%q: %s", word, button and "offered" or "not offered")
-		)
+		H.check("the dock ends with Go to word, with no button for other dictionaries", #buttons > 0 and buttons[#buttons].text == "Go to word" and not icon)
 		viewer:_closeSelectionDock()
 		viewer:_clearSelection()
-
-		-- A dictionary not loaded yet might have it: the button is offered.
-		xdxf.idx, xdxf.syn, xdxf.offsets, xdxf.first_keys, xdxf.count = nil, nil, nil, nil, nil
-		word, button = selectWord()
-		H.check("with a dictionary not loaded yet, it is offered", button ~= nil, word)
-		if button then
-			button.callback()
-		end
-		-- The list, or, when no other dictionary has the word, a message saying so.
-		local dialog = viewer.dictionaries_dialog
-		local message = H.findWidget(function(widget)
-			return type(widget.text) == "string" and widget.text:find("No other dictionary has", 1, true) ~= nil
-		end)
-		H.check("and it looks the word up in the others, loading that one then", (dialog ~= nil and onTop() == dialog or message ~= nil) and viewer.selection_dock == nil and xdxf.idx ~= nil)
-		if dialog then
-			UIManager:close(dialog)
-		end
-		if message then
-			UIManager:close(message)
-		end
-
-		-- What the dock asks: the word as it is only (no accent search), quickly.
-		local started = os.clock()
-		local known, unknown = viewer:_checkSelection("casa")
-		local cpu = (os.clock() - started) * 1000
-		H.check("the dock's check finds the word in the dictionaries that have it", known[text] == "casa" and known[xdxf] == "casa" and known[html] == nil and not unknown)
-		known = viewer:_checkSelection("acao")
-		H.check("but does not look for its accents (a selection is spelled right)", known[text] == false)
-		H.say(string.format("  the dock's check of %d other dictionaries: %.2f ms CPU (not checked)", #viewer:_otherDictionaries(), cpu))
-
-		-- The list then uses what the dock found out.
-		local asked = {}
-		local resolve = H.StarDict.resolve
-		H.StarDict.resolve = function(dictionary, ...)
-			asked[dictionary] = true
-			return resolve(dictionary, ...)
-		end
-		known = viewer:_checkSelection("casa")
-		viewer:showOtherDictionaries("casa", known)
-		H.StarDict.resolve = resolve
-		H.check("and the list does not ask them again", not asked[text] and not asked[xdxf] and listed(viewer.dictionaries_dialog, text.name) ~= nil)
-		if viewer.dictionaries_dialog then
-			UIManager:close(viewer.dictionaries_dialog)
-		end
 	end)
 
-	-- ---- the list --------------------------------------------------------------------
+	-- ---- the header -----------------------------------------------------------------------
 	H.step(0.5, function()
-		viewer:showOtherDictionaries("casa")
-		local dialog = viewer.dictionaries_dialog
-		H.check(
-			"the list has the other dictionaries with the word, not this one",
-			listed(dialog, text.name) ~= nil and listed(dialog, xdxf.name) ~= nil and listed(dialog, html.name) == nil,
-			table.concat(listLabels(dialog), " | ")
-		)
-		if dialog then
-			UIManager:close(dialog)
-		end
-
-		viewer:showOtherDictionaries("acao")
-		dialog = viewer.dictionaries_dialog
-		local row = listed(dialog, text.name)
-		H.check("a dictionary that has it with accents shows the entry", row ~= nil and row.text == text.name .. " (ação)" and listed(dialog, xdxf.name) == nil, row and row.text)
-		if dialog then
-			UIManager:close(dialog)
-		end
-
-		viewer:showOtherDictionaries("qqqzzzz")
-		local message = H.findWidget(function(widget)
-			return type(widget.text) == "string" and widget.text:find("No other dictionary has", 1, true) ~= nil
-		end)
-		H.check("when no other dictionary has it, that is said, with no list", message ~= nil and viewer.dictionaries_dialog == nil)
-		if message then
-			UIManager:close(message)
-		end
-	end)
-
-	-- ---- the trail --------------------------------------------------------------------
-	H.step(0.5, function()
-		viewer:showOtherDictionaries("casa")
-		local row = listed(viewer.dictionaries_dialog, text.name)
-		if row then
-			row.callback()
-		end
-		H.check(
-			"choosing one goes to the word there, with the list gone",
-			viewer.dictionary == text and entryWord() == "casa" and viewer.dictionaries_dialog == nil and onTop() == viewer
-		)
-		H.check("the trail goes on through it", H.trailText(viewer) == "house>casa" and viewer.trail[1].dictionary == html and viewer.trail[2].dictionary == text, H.trailText(viewer))
-		H.check("the dictionary left lets go of what it kept", html._dict_file == nil and html._chunks == nil)
-		H.check("the header names the dictionary shown", viewer.column ~= nil and viewer.dictionary.name == text.name)
-
-		viewer:goToWord("livro")
-		H.check("Go to word goes on in the new dictionary", viewer.dictionary == text and entryWord() == "livro" and H.trailText(viewer) == "house>casa>livro")
-		viewer:goToCrumb(1)
-		H.check("going back to the first word returns to its dictionary", viewer.dictionary == html and entryWord() == "house")
-		viewer:goToCrumb(2)
-		H.check("and the next one to the other one again", viewer.dictionary == text and entryWord() == "casa")
-		H.check("the trail stays as it was", H.trailText(viewer) == "house>casa>livro")
-	end)
-
-	-- The case this is for, with the author's dictionaries: an English word in the
-	-- English-Portuguese one, then a Portuguese word in the Portuguese one.
-	H.step(0.5, function()
-		local en, pt = by.en, by.pt
-		if not (en and pt) then
-			H.skip("from English-Portuguese to Portuguese", "the Priberam dictionaries are not installed")
-			return
-		end
-		close()
-		plugin:openAt(en, "house")
-		viewer = H.findViewer()
-		viewer:showOtherDictionaries("casa")
-		local row = listed(viewer.dictionaries_dialog, pt.name)
-		if row then
-			row.callback()
-		end
-		H.check("an English word, then “casa” in the Portuguese dictionary", row ~= nil and viewer.dictionary == pt and entryWord() == "casa", viewer.dictionary.name)
-		viewer:goToCrumb(1)
-		-- Priberam's English-Portuguese dictionary has it as "House".
-		H.check("and back to the English one", viewer.dictionary == en and entryWord():lower() == "house", string.format("%s: %s, trail %s @%d", viewer.dictionary.name, tostring(viewer.highlighted and entryWord()), H.trailText(viewer), viewer.trail_index))
-		close()
-		plugin:openAt(html, "house")
-		viewer = H.findViewer()
-		viewer:goToWordIn(text, "casa")
-		viewer:goToWord("livro")
-	end)
-
-	-- ---- not here ---------------------------------------------------------------------
-	local function noticeText()
-		local notice = viewer and viewer.miss_notice
-		local box = notice and notice[2] and notice[2][2]
-		return box and box.text or ""
-	end
-
-	H.step(0.5, function()
-		close()
-		plugin:openAt(html, "house")
-		viewer = H.findViewer()
-		viewer:goToWord("casa")
-		-- The first of the other dictionaries that have it, in KOReader's order.
-		local holder, holders = nil, 0
-		for _index, dictionary in ipairs(viewer:_otherDictionaries()) do
-			if dictionary:resolve("casa").kind == "exact" then
-				holder = holder or dictionary
-				holders = holders + 1
+		open(text, "casa")
+		local holders = viewer.lib:holders("casa", text)
+		local index
+		for position, holder in ipairs(holders) do
+			if holder.dictionary == text then
+				index = position
 			end
 		end
+		local mark = viewer.header_mark and viewer.header_mark.text or ""
+		H.check("the header says which of the dictionaries that have the word this one is", #holders >= 3 and mark:find(string.format("%d/%d ›", index, #holders), 1, true) ~= nil, mark)
+
+		-- Tapping the right half of the name's line goes to the next one, round
+		-- to this one again; the left half to the previous one.
+		local function tapName(fraction)
+			local visited, ok = {}, true
+			for _step = 1, #holders do
+				UIManager:forceRePaint()
+				local band = viewer._name_band
+				H.gesture("tap", Screen:getWidth() * fraction, (band.top + band.bottom) / 2)
+				visited[#visited + 1] = viewer.dictionary
+				ok = ok and #viewer.trail == 1 and viewer.trail[1].dictionary == viewer.dictionary and entryWord():lower() == "casa"
+			end
+			return visited, ok
+		end
+		local visited, ok = tapName(0.75)
+		local expected = holders[index % #holders + 1].dictionary
 		H.check(
-			"a word with no entry here but elsewhere: the page says where",
-			holder ~= nil and viewer.dictionary == html and noticeText():find(string.format("It is in %s and %d more", holder.name, holders - 1), 1, true) ~= nil,
-			noticeText()
+			"tapping the right half of the dictionary's name goes to the word in the next one, the same word taking the same place in the trail",
+			visited[1] == expected and ok,
+			visited[1] and visited[1].name
 		)
+		H.check("and round the dictionaries back to this one", viewer.dictionary == text)
+		visited, ok = tapName(0.25)
+		expected = holders[(index - 2) % #holders + 1].dictionary
+		H.check(
+			"tapping its left half goes to the word in the previous one, round back to this one too",
+			visited[1] == expected and ok and viewer.dictionary == text,
+			visited[1] and visited[1].name
+		)
+		H.check("the mark has both ways", (viewer.header_mark and viewer.header_mark.text or ""):find("‹ %d+/%d+ ›") ~= nil)
+
+		-- The rest of the header lists them.
+		UIManager:forceRePaint() -- as a finger finds it: drawn
+		H.gesture("tap", Screen:getWidth() / 2, 4)
+		local dialog = viewer.dictionaries_dialog
+		H.check(
+			"tapping the rest of the header lists them, as “word · short name”",
+			dialog ~= nil and row(dialog, "^casa · " .. escape(viewer.lib:shortName(xdxf)) .. "$") ~= nil and row(dialog, escape(viewer.lib:shortName(text)) .. "$") == nil,
+			labels(dialog)
+		)
+		closeList("dictionaries_dialog")
+
+		viewer:showNext()
+		viewer:showNext()
+		H.check("no mark once the word's entry is off the page", viewer.header_mark == nil)
+	end)
+
+	-- ---- lists ----------------------------------------------------------------------------
+	H.step(0.5, function()
+		open(html, "house")
+		viewer:searchAll("sofa")
+		local dialog = viewer.search_dialog
+		local first = dialog and dialog.choices[1].text or ""
+		local accented = row(dialog, "^sofá · ")
+		H.check(
+			"Search shows one row per word, with the dictionaries that have it, this one first",
+			first:find("^sofa · " .. escape(viewer.lib:shortName(html))) ~= nil and accented ~= nil and accented.text:find(viewer.lib:shortName(text), 1, true) ~= nil,
+			labels(dialog)
+		)
+		if accented then
+			accented.callback()
+		end
+		H.check("choosing a word goes to it", viewer.dictionary ~= html and entryWord() == "sofá" and viewer.search_dialog == nil)
+
+		-- A word of the .syn leading to the second of two homographs: the result
+		-- opens that one, not the first one of the headword shown.
+		viewer:goToWordIn(text, "livro")
+		local expected = text:resolve("cofre").position
+		viewer:searchAll("cofre")
+		dialog = viewer.search_dialog
+		local banco = row(dialog, "^banco")
+		if banco then
+			banco.callback()
+		end
+		H.check(
+			"a result found through the .syn opens the entry it leads to, with the word asked for in the trail",
+			banco ~= nil and viewer.dictionary == text and viewer.highlighted == expected and viewer.trail[viewer.trail_index].word == "cofre"
+				and text:readDefinition(text:getEntry(viewer.highlighted)):find("money", 1, true) ~= nil,
+			string.format("%s at %s (expected %s)", tostring(banco and banco.text), tostring(viewer.highlighted), tostring(expected))
+		)
+
+		viewer:searchAll("casaz")
+		dialog = viewer.search_dialog
+		local casa = row(dialog, "^casa · ")
+		H.check("a word found in several dictionaries is one row, naming them all", casa ~= nil and casa.text:find(", ", 1, true) ~= nil, labels(dialog))
+		closeList("search_dialog")
+
+		-- The suggestions for a word no dictionary has, the same way.
+		viewer:goToWordIn(html, "house")
+		viewer:goToWord("casaz")
+		H.check("a word no dictionary has stays here, with the closest entry, and offers suggestions", viewer.dictionary == html and noticeText():find("Showing the closest one. Tap here for suggestions.", 1, true) ~= nil, noticeText())
+		local length = #viewer.trail
 		viewer:showSuggestions()
-		local first = viewer.suggestions_dialog and viewer.suggestions_dialog.choices[1]
-		H.check("its suggestions start with the other dictionaries", holder ~= nil and first ~= nil and first.text == "“casa” in " .. holder.name, first and first.text)
-		if first then
-			first.callback()
+		dialog = viewer.suggestions_dialog
+		casa = row(dialog, "^casa · ")
+		H.check("its suggestions are one row per word too", casa ~= nil, labels(dialog))
+		if casa then
+			casa.callback()
 		end
-		H.check(
-			"choosing one goes there, in place of the missed word in the trail",
-			viewer.dictionary == holder and entryWord() == "casa" and H.trailText(viewer) == "house>casa" and viewer.trail[2].dictionary == holder and viewer.miss_notice == nil,
-			H.trailText(viewer)
-		)
-
-		viewer:goToWord("qqqzzzz")
-		H.check("a word no dictionary has: no other dictionary named", noticeText():find("It is in", 1, true) == nil and noticeText() ~= "")
+		H.check("and the one chosen takes the missed word's place in the trail", entryWord():lower() == "casa" and #viewer.trail == length, H.trailText(viewer))
 	end)
 
-	-- ---- the header ---------------------------------------------------------------------
+	-- ---- preparing --------------------------------------------------------------------------
 	H.step(0.5, function()
-		viewer:goToWord("casa") -- in the dictionary chosen above
-		local here = viewer.dictionary
-		UIManager:forceRePaint()
-		H.gesture("tap", Screen:getWidth() / 2, 10)
-		local dialog = viewer.dictionaries_dialog
-		local row = here ~= xdxf and listed(dialog, xdxf.name)
-		H.check("tapping the header lists the other dictionaries with the word on the page", row and listed(dialog, here.name) == nil, table.concat(listLabels(dialog), " | "))
-		if row then
-			row.callback()
-		end
-		H.check("and goes to it there", viewer.dictionary == xdxf and entryWord() == "casa" and viewer.trail[#viewer.trail].dictionary == xdxf)
-	end)
-
-	-- A dictionary whose index was never prepared.
-	H.step(0.5, function()
-		viewer:goToCrumb(1) -- in html
-		local cache = xdxf.cache_path
+		open(html, "house")
+		os.remove(xdxf.cache_path)
 		xdxf.idx, xdxf.syn, xdxf.offsets, xdxf.first_keys, xdxf.count = nil, nil, nil, nil, nil
-		os.remove(cache)
+		local lookup = viewer.lib:resolve("sol", html) -- the XDXF fixture has it (and the Portuguese dictionary)
+		H.check("a dictionary never prepared is not asked, nor prepared, by a word", lookup.dictionary ~= xdxf and not xdxf:isIndexed())
 		viewer:showOtherDictionaries("casa")
-		local row = listed(viewer.dictionaries_dialog, xdxf.name)
-		H.check("a dictionary never prepared is listed as such", row ~= nil and row.text == xdxf.name .. " (index not prepared yet)", row and row.text)
-		if row then
-			-- A missed word is not looked for in it either, so nothing is prepared.
-			UIManager:close(viewer.dictionaries_dialog)
-			viewer:goToWord("sol") -- the XDXF fixture has it (and the Portuguese dictionary, when installed)
-			local asked = false
-			for _index, found in ipairs(viewer.miss and viewer.miss.elsewhere or {}) do
-				asked = asked or found.dictionary == xdxf
-			end
-			H.check("a dictionary never prepared is not asked about a missed word", not asked and not xdxf:isIndexed(), noticeText())
-			-- isIndexed() would have loaded a cache: there is none.
-			viewer:showOtherDictionaries("casa")
-			row = listed(viewer.dictionaries_dialog, xdxf.name)
-		end
-		if row then
-			row.callback() -- prepares it (with a notice), then goes there
-		end
+		local unprepared = row(viewer.dictionaries_dialog, "index not prepared yet")
+		H.check("it is listed as such", unprepared ~= nil and unprepared.text:find(xdxf.name, 1, true) ~= nil, labels(viewer.dictionaries_dialog))
+		closeList("dictionaries_dialog")
+		plugin:prepareAll()
 	end)
-	H.step(1, function()
-		H.check("choosing it prepares it, then goes to the word there", viewer.dictionary == xdxf and entryWord() == "casa" and xdxf:isIndexed())
+	H.step(1.5, function()
+		H.check("the menu's Prepare all dictionaries prepares it", xdxf:isIndexed())
 		H.closeStartupMessages()
+		H.check("and then a word finds it", viewer.lib:resolve("sol", html).kind ~= "closest")
 	end)
 
-	-- ---- continuing --------------------------------------------------------------------
+	-- ---- continuing ------------------------------------------------------------------------
 	H.step(0.5, function()
+		open(html, "house")
+		viewer:goToWord("casa") -- to another dictionary
+		viewer:goToWordIn(xdxf, "sol")
 		local trail, length = H.trailText(viewer), #viewer.trail
 		close()
 		local state = G_reader_settings:readSetting(SETTING)
@@ -381,8 +423,7 @@ return function(H, ui)
 
 	-- What v1.4.0 saved.
 	H.step(0.5, function()
-		plugin:openAt(text, "gato")
-		viewer = H.findViewer()
+		open(text, "gato")
 		viewer:goToWord("mesa")
 		local first = viewer.first
 		close()
@@ -400,194 +441,6 @@ return function(H, ui)
 			viewer and viewer.dictionary == text and viewer.first == first and H.trailText(viewer) == "gato>mesa"
 				and G_reader_settings:readSetting("dictionaryexplorer_explorations") == nil
 		)
-		close()
-		G_reader_settings:delSetting(SETTING)
-	end)
-
-	-- ---- searching all dictionaries --------------------------------------------------------
-	-- Types `word` in the footer's Search dialog, as a user does.
-	local function search(word)
-		viewer:showGoToDialog()
-		local dialog = H.findInputDialog()
-		dialog:setInputText(word)
-		for _index, button in ipairs(dialog.buttons[1]) do
-			if button.text == "Search" then
-				button.callback()
-			end
-		end
-		return viewer.search_dialog
-	end
-	-- The dictionary and the entry a result row names ("entry — dictionary").
-	local function results(dialog)
-		local found = {}
-		for _index, choice in ipairs(dialog and dialog.choices or {}) do
-			local entry, name = choice.text:match("^(.-) — (.+)$")
-			found[#found + 1] = { entry = entry, name = name, choice = choice }
-		end
-		return found
-	end
-
-	H.step(0.5, function()
-		close()
-		plugin:openAt(text, "livro")
-		viewer = H.findViewer()
-		H.check("the footer's button is Search", H.footer(viewer)[1].text == "Search")
-		local holders = { text.name }
-		for _index, dictionary in ipairs(viewer:_otherDictionaries()) do
-			if dictionary:resolve("casa").kind ~= "closest" then
-				holders[#holders + 1] = dictionary.name
-			end
-		end
-		local dialog = search("casa")
-		local found = results(dialog)
-		local names = {}
-		for _index, result in ipairs(found) do
-			names[#names + 1] = result.name
-		end
-		H.check(
-			"Search lists every dictionary that has the word, this one first, each with its entry",
-			dialog ~= nil and table.concat(names, "|") == table.concat(holders, "|") and found[1].entry == "casa",
-			table.concat(listLabels(dialog), " | ")
-		)
-		H.check("the page stays as it was until a result is chosen", viewer.dictionary == text and entryWord() == "livro")
-		if dialog then
-			UIManager:close(dialog)
-		end
-
-		-- Typed without its accents: "sofa" in English, "sofá" in Portuguese.
-		viewer:goToWordIn(html, "house")
-		found = results(search("sofa"))
-		local sofa
-		for _index, result in ipairs(found) do
-			if result.name == text.name then
-				sofa = result
-			end
-		end
-		H.check("with its accents too: “sofa” finds “sofá” in Portuguese", found[1] and found[1].name == html.name and sofa ~= nil and sofa.entry == "sofá", table.concat(listLabels(viewer.search_dialog), " | "))
-		if sofa then
-			sofa.choice.callback()
-		end
-		H.check("choosing a result goes there, the trail going on", viewer.dictionary == text and entryWord() == "sofá" and viewer.search_dialog == nil and viewer.trail[#viewer.trail].dictionary == text)
-
-		local en, pt = by.en, by.pt
-		if en and pt then
-			viewer:goToWordIn(en, "house")
-			found = results(search("sofa"))
-			local in_pt
-			for _index, result in ipairs(found) do
-				if result.name == pt.name then
-					in_pt = result
-				end
-			end
-			H.check("with the author's dictionaries: “sofa” in English–Portuguese also lists “sofá” in Portuguese", found[1] and found[1].name == en.name and in_pt ~= nil and in_pt.entry == "sofá", table.concat(listLabels(viewer.search_dialog), " | "))
-			if viewer.search_dialog then
-				UIManager:close(viewer.search_dialog)
-			end
-		end
-
-		-- A word no dictionary has: the closest entries, here and elsewhere.
-		viewer:goToWordIn(text, "livro")
-		dialog = search("casaz")
-		found = results(dialog)
-		local here, in_others = false, false
-		for _index, result in ipairs(found) do
-			here = here or result.name == text.name
-			in_others = in_others or (result.name ~= text.name and result.entry:lower():find("^casa") ~= nil)
-		end
-		H.check("a word no dictionary has lists the closest entries, here and in the others", dialog ~= nil and dialog.title:find("the closest ones", 1, true) ~= nil and here and in_others, table.concat(listLabels(dialog), " | "))
-		if dialog then
-			UIManager:close(dialog)
-		end
-		close()
-		G_reader_settings:delSetting(SETTING)
-	end)
-
-	-- ---- closest elsewhere ----------------------------------------------------------------
-	-- A word no dictionary has: the suggestions also offer the entries closest
-	-- to it in the other dictionaries.
-	H.step(0.5, function()
-		plugin:openAt(html, "house")
-		viewer = H.findViewer()
-		viewer:goToWord("casaz")
-		viewer:showSuggestions()
-		local dialog = viewer.suggestions_dialog
-		local row
-		for _index, candidate in ipairs(dialog and dialog.choices or {}) do
-			local label = candidate.text
-			if not row and label:sub(-#text.name) == text.name and label:find("^“casa") then
-				row = candidate
-			end
-		end
-		H.check("the suggestions for a word no dictionary has include the closest entries of the others", row ~= nil, table.concat(listLabels(dialog), " | "))
-		local others = 0
-		for _index, candidate in ipairs(dialog and dialog.choices or {}) do
-			if candidate.text:sub(-#text.name) == text.name then
-				others = others + 1
-			end
-		end
-		H.check("at most 3 for each other dictionary", others >= 1 and others <= 3, others)
-		-- Spelled most like it, not merely next to it: Fixture Text has casa,
-		-- Casa, casaco and casado around "casaz".
-		local alike = 0
-		for _index, candidate in ipairs(dialog and dialog.choices or {}) do
-			local label = candidate.text
-			if label:sub(-#text.name) == text.name and label:lower():find("^“casa") then
-				alike = alike + 1
-			end
-		end
-		H.check("the ones spelled most like it", alike == others, string.format("%d of %d", alike, others))
-		local noise = false
-		for _index, candidate in ipairs(dialog and dialog.choices or {}) do
-			local label = candidate.text
-			if label:find("” in ", 1, true) and not label:lower():find("^“ca") then
-				noise = true
-			end
-		end
-		H.check("and none of the others' entries that only sort near it", not noise)
-		if row then
-			row.callback()
-		end
-		H.check(
-			"choosing one goes there, in place of the missed word in the trail",
-			viewer.dictionary == text and entryWord():find("^casa") ~= nil and #viewer.trail == 2 and viewer.trail[2].dictionary == text,
-			H.trailText(viewer)
-		)
-		close()
-		G_reader_settings:delSetting(SETTING)
-	end)
-
-	-- ---- the header's mark ---------------------------------------------------------------
-	-- When other dictionaries have the word the page is about, the header says
-	-- how many, next to the dictionary's name.
-	local function mark()
-		return viewer.header_mark and viewer.header_mark.text or ""
-	end
-	H.step(0.5, function()
-		plugin:openAt(text, "casa")
-		viewer = H.findViewer()
-		local others = 0
-		for _dictionary, entry in pairs((viewer:_checkSelection("casa"))) do
-			if entry then
-				others = others + 1
-			end
-		end
-		H.check("the header says how many other dictionaries have the word", others >= 2 and mark():find(string.format("also in %d more", others), 1, true) ~= nil, mark())
-		viewer:showNext()
-		viewer:showNext()
-		H.check("not once the word's entry is off the page", mark() == "")
-		-- A word only this dictionary has.
-		local only
-		for position = 0, text:getCount() - 1 do
-			local word = text:getEntry(position).word
-			if not only and word:sub(1, 1) == "q" and not viewer:_anyFound((viewer:_checkSelection(word))) then
-				only = word
-			end
-		end
-		viewer:goToWord(only)
-		H.check("nor for a word only this dictionary has", mark() == "", only)
-		viewer:goToWord("casa")
-		H.check("and the page still fits with it", mark() ~= "" and H.fits(viewer) and viewer.column:getSize().h <= require("device").screen:getHeight(),
-			string.format("mark %q, fits %s, %d of %d px", mark(), tostring(H.fits(viewer)), viewer.column:getSize().h, require("device").screen:getHeight()))
 		close()
 		G_reader_settings:delSetting(SETTING)
 	end)
