@@ -187,7 +187,7 @@ local function walk(widget, visit, seen)
 end
 
 local function isButton(widget)
-	return widget.onTapDictionaryButton ~= nil or widget.onTapHeaderPageMenu ~= nil
+	return widget.onTapDictionaryButton ~= nil or widget.onTapHeaderPageMenu ~= nil or widget.onTapHeaderSubtitle ~= nil
 end
 
 --- The button of the active card (its footer or its header) whose hint is `hint`.

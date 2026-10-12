@@ -36,7 +36,8 @@ Translator = require("ui/translator")
 util = require("util")
 logger = require("logger")
 
-_ = require("gettext")
+-- The plugin's own translations, falling back to KOReader's catalog.
+_ = require("lookuppreview_l10n")
 C_ = _.pgettext or function(_context, text)
 	return _(text)
 end
@@ -214,7 +215,6 @@ ICON_COPY = "copy"
 ICON_ADD_NOTE = "add_note"
 ICON_WIKIPEDIA = "wikipedia"
 ICON_LOADING = "loading"
-ICON_MENU = "menu"
 ICON_EDIT = "edit"
 ICON_TRANSLATE_SENTENCE = "translate_sentence"
 ICON_TRANSLATE_SELECTION = "translate_selection"
@@ -302,11 +302,6 @@ PLUGIN_ICON_DEFINITIONS = {
 		id = ICON_EDIT,
 		label = _("Edit the looked up text"),
 		basenames = { "edit_lookup", "edit" },
-	},
-	{
-		id = ICON_MENU,
-		label = _("Card selector"),
-		basenames = { "menu" },
 	},
 }
 

@@ -1,4 +1,4 @@
-# Lookup Preview ![Version](https://img.shields.io/badge/version-v1.4.5-blue)
+# Lookup Preview ![Version](https://img.shields.io/badge/version-v1.5.0-blue)
 
 **Lookup Preview** is a KOReader reader plugin that changes the lookup flow for selected text. Instead of opening each native lookup window immediately, it first shows a compact floating carousel with preview cards for **Dictionary**, **Translate**, and **Wikipedia**.
 
@@ -16,8 +16,7 @@ The plugin metadata registers it as `lookuppreview` with the display name **Look
 - Opens the carousel directly on the card matching the action selected by the user.
 - Supports horizontal swipes to move between Dictionary, Translate, and Wikipedia.
 - Automatically positions the floating carousel near the top or bottom of the screen to avoid covering the selected text when possible.
-- Uses a compact header with title and subtitle for each card.
-- Uses `menu.svg` for the card selector button in the header; tapping it opens the same card list used by the previous page indicators.
+- Uses a compact header: the card's name as title (tap it, `Dictionary ▾`, to choose another card) and what the card shows as subtitle.
 - Keeps KOReader's original native lookup widgets available through compact action buttons.
 - Uses lazy loading for Translate and Wikipedia cards, avoiding unnecessary network requests until those cards are opened.
 - Looks the selected text up in the dictionary when the Dictionary card is first shown, also when the carousel was opened from Translate or Wikipedia, so every card works whichever action opened it.
@@ -35,7 +34,8 @@ The plugin metadata registers it as `lookuppreview` with the display name **Look
 - In tabbed mode, uses a square upper-left junction while Dictionary is active, restoring the rounded card corner and extending the Dictionary tab border to meet it on the other tabs.
 - Avoids repeating the Translate and Wikipedia tab labels as card titles in tabbed mode, promoting their useful language and result controls to title styling.
 - Uses matching dithered shadows along the right and bottom edges of each card, following the card radius in rounded mode while preserving square shadows in square mode.
-- Holding any button, the header's card selector button, a clickable subtitle, or a side tab shows a short note saying what it does. The note appears centred on the card, just above it (or below when there is no room), and stays for five seconds after the finger is lifted; a tap or swipe dismisses it sooner.
+- Is translated into Portuguese (Brazil and Portugal) when KOReader is in Portuguese; other languages use KOReader's own translations for the words it has, and English for the rest.
+- Holding any button, the card's title, a clickable subtitle, or a side tab shows a short note saying what it does. The note appears centred on the card, just above it (or below when there is no room), and stays for five seconds after the finger is lifted; a tap or swipe dismisses it sooner.
 - Adds a version entry in the plugin settings menu.
 
 ## Installation
@@ -46,6 +46,7 @@ Copy the plugin folder to KOReader's `plugins` directory:
 lookuppreview.koplugin/
 ├── _meta.lua
 ├── main.lua
+├── lookuppreview_l10n.lua
 ├── icons/
 │   ├── add_note.svg
 │   ├── copy.svg
@@ -54,7 +55,6 @@ lookuppreview.koplugin/
 │   ├── highlight.svg
 │   ├── load_online.svg
 │   ├── loading.svg
-│   ├── menu.svg
 │   ├── open_popup.svg
 │   ├── retry.svg
 │   ├── search.svg
@@ -91,14 +91,13 @@ Expected primary filenames:
 | Add translation note | `add_note.svg` | `add_note.png` |
 | Full Wikipedia article | `wikipedia.svg` | `wikipedia.png` |
 | Loading feedback | `loading.svg` | `loading.png` |
-| Card selector | `menu.svg` | `menu.png` |
 | Edit the looked up text | `edit_lookup.svg` | `edit_lookup.png` |
 | Translate the whole sentence | `translate_sentence.svg` | `translate_sentence.png` |
 | Translate only the selected text | `translate_selection.svg` | `translate_selection.png` |
 | Load an online card | `load_online.svg` | `load_online.png` |
 | Retry | `retry.svg` | `retry.png` |
 
-The Highlight action also accepts `lookuppreview.highlight` and `dictionarypreview.highlight`; search also accepts `appbar.search`; and Full Wikipedia article also accepts `lookuppreview.wikipedia` and `dictionarypreview.wikipedia`, each with an `.svg` or `.png` extension. `open_popup` was called `read_more` in earlier versions, and a local `read_more.svg` or `read_more.png` is still accepted. If neither is present, Open native details falls back to KOReader's `chevron.up` icon. If `menu` is absent, the card selector falls back to KOReader's `appbar.menu` icon. The edit button also accepts `edit.svg` or `edit.png`; if neither is present, it uses KOReader's `edit` icon; the back button uses `chevron.left`, like Previous result. If `vocabulary` is absent, Add to vocabulary builder falls back to KOReader's `plus` icon; once the word is added the button shows KOReader's `check` icon. Highlight, Go to word, Copy translation, Add translation note, Full Wikipedia article, Sentence, Load and Retry fall back to their text labels when their local icons are absent. Every button but the Wikipedia language code is an icon; holding it says what it does.
+The Highlight action also accepts `lookuppreview.highlight` and `dictionarypreview.highlight`; search also accepts `appbar.search`; and Full Wikipedia article also accepts `lookuppreview.wikipedia` and `dictionarypreview.wikipedia`, each with an `.svg` or `.png` extension. `open_popup` was called `read_more` in earlier versions, and a local `read_more.svg` or `read_more.png` is still accepted. If neither is present, Open native details falls back to KOReader's `chevron.up` icon. The edit button also accepts `edit.svg` or `edit.png`; if neither is present, it uses KOReader's `edit` icon; the back button uses `chevron.left`, like Previous result. If `vocabulary` is absent, Add to vocabulary builder falls back to KOReader's `plus` icon; once the word is added the button shows KOReader's `check` icon. Highlight, Go to word, Copy translation, Add translation note, Full Wikipedia article, Sentence, Load and Retry fall back to their text labels when their local icons are absent. Every button but the Wikipedia language code is an icon; holding it says what it does.
 
 The same list is available on the device under **Lookup preview → Appearance → Custom icon filenames**.
 
@@ -161,13 +160,13 @@ The original KOReader widgets remain available. Each card has a compact details/
 
 Translate and Wikipedia are loaded lazily. This means the plugin does not query the translation service or Wikipedia until the corresponding card is opened. This keeps dictionary lookup fast and avoids unnecessary network calls.
 
-The dictionary is loaded the same way when the carousel was opened from Translate or Wikipedia: the selected text is looked up when the Dictionary card is first shown (by swiping, a tab or the card selector), whatever the online loading setting, since the dictionary is local. The lookup goes through KOReader's own, so fuzzy search, the dictionaries enabled for the book and the lookup history behave as for a lookup from the book; the result fills the card instead of opening KOReader's window.
+The dictionary is loaded the same way when the carousel was opened from Translate or Wikipedia: the selected text is looked up when the Dictionary card is first shown (by swiping, a tab or the card's title), whatever the online loading setting, since the dictionary is local. The lookup goes through KOReader's own, so fuzzy search, the dictionaries enabled for the book and the lookup history behave as for a lookup from the book; the result fills the card instead of opening KOReader's window.
 
 Each card can be in one of these states: not looked up yet, loading, showing its content, nothing found, or failed (with a **Retry** button).
 
 ## Dictionary card
 
-- Shows the selected word or text and the current dictionary name.
+- Shows the found word and the current dictionary name in the subtitle (`livro · Dictionary name ▾`).
 - When the carousel was opened from Translate or Wikipedia, looks the selected text up the first time the card is shown. While it looks up, the card says so; a word in no dictionary shows **No definition found.**, and a lookup that did not finish offers **Retry**.
 - Displays the dictionary definition inside a scrollable preview area.
 - Supports multiple dictionary results.
@@ -229,10 +228,9 @@ found word · dictionary name
 | Element | Action |
 |---|---|
 | Back (`chevron.left`) | Shown in a lookup made inside the carousel: goes back to the previous lookup, as it was |
-| Card title | Shows the current card type |
-| Card subtitle | Opens the related selector when available |
-| Edit (`edit.svg`) | Asks for another text to look up, starting from the one shown, and looks it up on the same card |
-| Menu icon (`menu.svg`) | Opens the card selector menu |
+| Card title (`Dictionary ▾`) | The card's name; tapping it opens the list of cards, below the title. Without ▾ when only one card is shown; with tabs there is no title (the tabs name and switch the cards) and the subtitle takes its place |
+| Card subtitle | What the card shows (the word and dictionary, the languages, the article); opens the related selector when it has ▾ |
+| Edit (`edit_lookup.svg`) | Asks for another text to look up, starting from the one shown, and looks it up on the same card |
 
 ## Lookups inside the carousel
 
@@ -244,7 +242,7 @@ Three ways look something up without leaving the carousel:
 
 Each of them opens a new lookup on top of the previous one; the header's back button (‹) returns to it with its content, chosen result and scroll position, without looking anything up again. Every lookup of the chain keeps the text selected in the book: **Highlight** and **Search** act on it, and closing the carousel clears it. The buttons that would attach another text to the book's selection are not offered in a lookup made inside the carousel: **Note** on the Translate card and **Add to vocabulary builder** (whose context is the book's selection).
 
-### Card selector
+### Card list (tap the card's title)
 
 | Item | Action |
 |---|---|
@@ -293,7 +291,7 @@ The **Copy** and **Note** buttons can be shown or hidden from the plugin setting
 
 | Gesture | Action |
 |---|---|
-| Long-press a button, the card selector button, a clickable subtitle, or a side tab | Shows a short note saying what it does, next to the card, for a few seconds |
+| Long-press a button, the card's title, a clickable subtitle, or a side tab | Shows a short note saying what it does, next to the card, for a few seconds |
 | Swipe left | Move to the next card |
 | Swipe right | Move to the previous card |
 | Vertical scroll inside card content | Scrolls the current card content |
@@ -370,7 +368,7 @@ The plugin stores settings through KOReader's reader settings system.
 
 The carousel is composed of three main areas:
 
-1. A compact header with title, subtitle, and card selector button.
+1. A compact header with the card's name (which opens the list of cards), a subtitle, and the back and edit buttons.
 2. A scrollable HTML content area.
 3. A compact action button row.
 
@@ -413,6 +411,10 @@ These optimizations are especially useful on e-ink devices, where recreating the
 - When the Dictionary card looks up text selected for Translate or Wikipedia and nothing is found, it shows **No definition found.** instead of KOReader's **No results found** dialog with its fuzzy search option; the card's KOReader button still opens KOReader's own window. If dictionary lookups are set to open in an external app (Android), the card says so instead of looking up.
 - Clipboard support depends on the device and KOReader build.
 - Floating carousel positioning depends on the selection position reported by KOReader. If that position is unavailable, the carousel falls back to a safe default position.
+
+## Translations
+
+Lookup Preview's own texts (menus, help, the buttons' hints, the cards' messages) are translated in `lookuppreview_l10n.lua`, like the other plugins of this repository: one table serves Brazilian and European Portuguese. Texts KOReader already translates (Cancel, Dictionary, Translate…) come from KOReader's catalog, which also serves every other language for the words it has; the rest stays in English. To translate the plugin into another language, add a table for it in that file.
 
 ## Tests
 

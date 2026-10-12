@@ -131,14 +131,23 @@ return function(H, ui)
 	end)
 
 	-- ---- rebuild -------------------------------------------------------------
+	local full_count
 	H.step(0.5, function()
+		full_count = select(2, H.activePage())
 		plugin:setSidePreviewMode("tabs")
 		plugin:refreshVisibleCards()
 	end)
 	H.step(0.5, function()
-		H.check("switching to tabs keeps the place", page() == 3, page())
+		-- With tabs the card has no title, so more of the content fits a page:
+		-- the same proportion of it is shown.
+		local current, count = H.activePage()
+		local expected = 1 + math.floor(2 * count / full_count)
+		H.check("switching to tabs keeps the place", current == expected, string.format("%d (expected %d, %d -> %d pages)", current, expected, full_count, count))
 		plugin:setSidePreviewMode("full_cards")
 		plugin:refreshVisibleCards()
+	end)
+	H.step(0.5, function()
+		H.check("and switching back finds it again", page() == 3, page())
 	end)
 	H.step(0.5, function()
 		local old_count = select(2, H.activePage())

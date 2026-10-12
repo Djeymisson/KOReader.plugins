@@ -150,11 +150,17 @@ return function(ctx)
 		return html, css
 	end
 
-	local function buildSubtitle(dict_name, result_count, no_result)
-		if no_result or not result_count or result_count <= 1 then
-			return dict_name
+	-- The word shown and its dictionary (the card's title is the card's name),
+	-- with ▾ when the other results can be chosen from it.
+	local function buildSubtitle(shown_word, dict_name, result_count, no_result)
+		if no_result then
+			return tostring(shown_word)
 		end
-		return string.format("%s ▾", dict_name)
+		local subtitle = string.format("%s · %s", tostring(shown_word), dict_name)
+		if result_count and result_count > 1 then
+			subtitle = subtitle .. " ▾"
+		end
+		return subtitle
 	end
 
 	local function closePreviewBeforeExternalAction(self, state)
@@ -186,7 +192,7 @@ return function(ctx)
 		return {
 			page_type = PAGE_DICTIONARY,
 			title = tostring(shown_word or _("Dictionary")),
-			subtitle = buildSubtitle(dict_name, result_count, result.no_result),
+			subtitle = buildSubtitle(shown_word, dict_name, result_count, result.no_result),
 			html_body = definition_html,
 			css = css,
 			html_resource_directory = result.dictionary_resource_directory,

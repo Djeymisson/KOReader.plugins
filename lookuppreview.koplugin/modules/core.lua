@@ -372,7 +372,7 @@ return function(ctx)
 				},
 				{
 					text = _("Show source text"),
-					help_text = _("Shows the original selected text above its translation."),
+					help_text = _("Shows the original selected text below its translation."),
 					checked_func = function()
 						return self:showTranslationSourceText()
 					end,

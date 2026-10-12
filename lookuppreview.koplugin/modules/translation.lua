@@ -591,14 +591,25 @@ return function(ctx)
 		return true
 	end
 
+	-- The language's name, as the translator lists it. A code it does not list
+	-- as given (KOReader in pt_BR makes the target "pt_br") is looked for as
+	-- "pt-BR", then as "pt", before showing the code itself.
 	function LookupPreview:getTranslatorLanguageLabel(translator, lang)
-		if translator and type(translator.getLanguageName) == "function" then
-			local ok, name = pcall(function()
-				return translator:getLanguageName(lang, lang and lang:upper() or "?")
-			end)
-			if ok and name then
-				return name
+		if translator and type(translator.getLanguageName) == "function" and lang then
+			lang = tostring(lang)
+			local base, region = lang:match("^(%a+)[_-](%a+)$")
+			local candidates = { lang }
+			if base then
+				candidates[#candidates + 1] = base:lower() .. "-" .. region:upper()
+				candidates[#candidates + 1] = base:lower()
 			end
+			for index = 1, #candidates do
+				local ok, name, supported = pcall(translator.getLanguageName, translator, candidates[index], nil)
+				if ok and name and supported then
+					return name
+				end
+			end
+			return lang:upper()
 		end
 
 		return tostring(lang or "?")

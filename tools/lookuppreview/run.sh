@@ -6,7 +6,7 @@
 #   tools/lookuppreview/run.sh [options] SUITE...
 #
 # SUITE is the name of a file in suites/ (without .lua), or "check" for every
-# suite (entry, dictionary, scroll, online, vocabulary, navigation, reading). See README.md for what each does. The
+# suite (entry, dictionary, scroll, online, vocabulary, navigation, reading, l10n). See README.md for what each does. The
 # synthetic dictionaries of tools/dictionaryexplorer/fixtures are always there,
 # and the translation service and Wikipedia are replaced by stand-ins, so no
 # suite needs a dictionary of your own or the network.
@@ -16,6 +16,9 @@
 #                    on macOS, the Contents/koreader folder of KOReader.app)
 #   --keep           keep the temporary profile (it is printed) to look at its log
 #   --timeout SECS   give up on a suite after this long (default: 120)
+#
+# LP_LANGUAGE=pt_BR runs the suites with KOReader in that language (the l10n
+# suite always runs in pt_BR).
 #
 # Exit status: 0 if every suite passed, 1 if a check failed or a suite did not finish.
 
@@ -49,7 +52,7 @@ done
 expanded=""
 for suite in $SUITES; do
 	if [ "$suite" = check ]; then
-		expanded="$expanded entry dictionary scroll online vocabulary navigation reading"
+		expanded="$expanded entry dictionary scroll online vocabulary navigation reading l10n"
 	else
 		expanded="$expanded $suite"
 	fi
@@ -91,7 +94,12 @@ run_suite() {
 	# A book with words the fixtures have: "livro" (Fixture Text), "casa"
 	# (Fixture XDXF), "house" (Fixture HTML); "qqqzzzz" is in none.
 	printf 'O livro fica na casa qqqzzzz.\nThe house is near a bookshop.\n' > "$work/book.txt"
-	printf 'return { ["plugins_disabled"] = { ["statistics"] = true }, ["color_rendering"] = false }\n' > "$work/home/settings.reader.lua"
+	# The l10n suite runs KOReader in Brazilian Portuguese; the others in
+	# English, or in the language LP_LANGUAGE names (pt_BR, de...).
+	language=""
+	[ -n "${LP_LANGUAGE:-}" ] && language="[\"language\"] = \"$LP_LANGUAGE\", "
+	[ "$name" = l10n ] && language='["language"] = "pt_BR", '
+	printf 'return { %s["plugins_disabled"] = { ["statistics"] = true }, ["color_rendering"] = false }\n' "$language" > "$work/home/settings.reader.lua"
 
 	echo "== $name"
 	( cd "$KOREADER_DIR" && \

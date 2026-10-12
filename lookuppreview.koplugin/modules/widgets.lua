@@ -873,7 +873,8 @@ return function(ctx)
 	function SimplePageMenu:getPosition(width, height, screen_width, screen_height)
 		local parent_dimen = self.parent_popup and self.parent_popup.visible_dimen
 		local anchor = self.anchor_dimen
-		local x = anchor and (anchor.x + anchor.w - width) or math.floor((screen_width - width) / 2)
+		local x = anchor and (anchor.align_left and anchor.x or (anchor.x + anchor.w - width))
+			or math.floor((screen_width - width) / 2)
 		x = clamp(x, CARD_EDGE_MARGIN, screen_width - width - CARD_EDGE_MARGIN)
 
 		local y
@@ -1588,33 +1589,33 @@ return function(ctx)
 		payload = payload or {}
 
 		local back_button, edit_button = self:makeHeaderNavigation(is_active)
-		local menu_button
-		if not self:useTabsMode() then
-			local menu_icon_file = self.plugin and self.plugin:getPluginIconFile(ICON_MENU)
-			menu_button = HeaderPageMenuButton:new({
-				icon_file = menu_icon_file,
-				width = HEADER_MENU_WIDTH,
-				show_parent = self,
-				hint = _("Choose which card to show"),
-				callback = function()
-					return self:showPageMenu()
-				end,
-			})
-		end
 
 		local text_width = content_width
-		for _, button in ipairs({ back_button or false, edit_button or false, menu_button or false }) do
+		for _, button in ipairs({ back_button or false, edit_button or false }) do
 			if button then
 				text_width = text_width - HEADER_MENU_WIDTH - HEADER_TITLE_MENU_GAP
 			end
 		end
 		text_width = math.max(1, text_width)
+
+		-- The title is the card's name; on the active card, with ▾, it opens the
+		-- list of cards. Tabs already name and switch the cards, so with tabs
+		-- the subtitle takes the title's place.
 		local hide_redundant_title = self:useTabsMode()
-			and (payload.page_type == PAGE_TRANSLATION or payload.page_type == PAGE_WIKIPEDIA)
 		local text_items = {}
 		if not hide_redundant_title then
-			text_items[#text_items + 1] =
-				self:makeHeaderText(payload.title or EMPTY_TEXT, TITLE_FACE, true, nil, text_width)
+			local title = PAGE_TITLES[payload.page_type] or payload.title or EMPTY_TEXT
+			local can_switch = is_active and self.plugin and #self.plugin:getVisibleCards() > 1
+			text_items[#text_items + 1] = self:makeHeaderText(
+				can_switch and (title .. " ▾") or title,
+				TITLE_FACE,
+				true,
+				can_switch and function()
+					return self:showPageMenu()
+				end or nil,
+				text_width,
+				_("Choose which card to show")
+			)
 		end
 
 		if payload.subtitle and payload.subtitle ~= "" then
@@ -1634,7 +1635,7 @@ return function(ctx)
 
 		local text_block = VerticalGroup:new(text_items)
 		local row_height = getWidgetSize(text_block).h or Screen:scaleBySize(24)
-		if menu_button or back_button or edit_button then
+		if back_button or edit_button then
 			row_height = math.max(row_height, HEADER_MENU_HEIGHT)
 		end
 
@@ -1655,7 +1656,7 @@ return function(ctx)
 			dimen = Geom:new({ w = text_width, h = row_height }),
 			text_block,
 		})
-		for _, button in ipairs({ edit_button or false, menu_button or false }) do
+		for _, button in ipairs({ edit_button or false }) do
 			if button then
 				row_items[#row_items + 1] = HorizontalSpan:new({ width = HEADER_TITLE_MENU_GAP })
 				row_items[#row_items + 1] = headerButton(button)
@@ -1997,16 +1998,22 @@ return function(ctx)
 		local card_width = self.card_width or math.max(CARD_MIN_WIDTH, math.floor(screen_width * CARD_WIDTH_RATIO))
 		card_width = math.min(card_width, screen_width - 2 * CARD_EDGE_MARGIN)
 
+		-- The card's title, where the list opens below, aligned on its left.
 		local active_x = math.floor((screen_width - card_width) / 2)
-		local content_width = math.max(1, card_width - 2 * CARD_PADDING_H - 2 * CARD_BORDER_SIZE)
-		return Geom:new({
-			x = active_x + CARD_BORDER_SIZE + CARD_PADDING_H + content_width - HEADER_MENU_WIDTH,
+		local title_x = active_x + CARD_BORDER_SIZE + CARD_PADDING_H
+		if self.state and self.state.parent then
+			title_x = title_x + HEADER_MENU_WIDTH + HEADER_TITLE_MENU_GAP
+		end
+		local anchor = Geom:new({
+			x = title_x,
 			y = ((self.visible_dimen and self.visible_dimen.y) or CARD_EDGE_MARGIN)
 				+ CARD_BORDER_SIZE
 				+ CARD_PADDING_TOP,
 			w = HEADER_MENU_WIDTH,
 			h = HEADER_MENU_HEIGHT,
 		})
+		anchor.align_left = true
+		return anchor
 	end
 
 	function LookupPreviewPopup:showPageMenu()
