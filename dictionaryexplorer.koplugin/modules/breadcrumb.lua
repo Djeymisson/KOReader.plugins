@@ -129,8 +129,8 @@ function Breadcrumb:_layout()
 	end
 
 	-- A "…" is needed on each side that has words left out.
-	local function reserve(first, last)
-		return (first > 1 and room_for_ellipsis or 0) + (last < count and room_for_ellipsis or 0)
+	local function reserve(from, to)
+		return (from > 1 and room_for_ellipsis or 0) + (to < count and room_for_ellipsis or 0)
 	end
 
 	-- The word at `last` always shows, cut short if it has to be.

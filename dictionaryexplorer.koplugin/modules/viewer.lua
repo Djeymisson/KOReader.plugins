@@ -9,7 +9,6 @@ reading history, the "last book" setting, statistics or a sidecar folder.
 
 local BD = require("ui/bidi")
 local Blitbuffer = require("ffi/blitbuffer")
-local ButtonDialog = require("ui/widget/buttondialog")
 local ButtonTable = require("ui/widget/buttontable")
 local CenterContainer = require("ui/widget/container/centercontainer")
 local Device = require("device")
@@ -28,7 +27,6 @@ local LineWidget = require("ui/widget/linewidget")
 local Notification = require("ui/widget/notification")
 local ScrollHtmlWidget = require("ui/widget/scrollhtmlwidget")
 local Size = require("ui/size")
-local TextBoxWidget = require("ui/widget/textboxwidget")
 local TextWidget = require("ui/widget/textwidget")
 local TitleBar = require("ui/widget/titlebar")
 local UIManager = require("ui/uimanager")
@@ -41,6 +39,10 @@ local _ = require("dictionaryexplorer_l10n")
 local T = require("ffi/util").template
 
 local Breadcrumb = require("modules/breadcrumb")
+local ChoiceList = require("modules/choicelist")
+local Library = require("modules/library")
+local Notices = require("modules/notices")
+local Trail = require("modules/trail")
 local Dock = require("modules/dock")
 local FitModel = require("modules/fitmodel")
 local Text = require("modules/text")
@@ -79,12 +81,6 @@ local SKIP_MARGIN = 1 -- only entries predicted to fit in the room left are trie
 -- The "no entry" line: the word asked for is cut to this many characters, and
 -- the line to this many lines, so a long pasted phrase can't crowd out the
 -- entries.
-local MISS_NOTICE_MAX_CHARS = 60
-local MISS_NOTICE_MAX_LINES = 2
-local MAX_SAVED_CRUMBS = 50 -- the latest words of the trail kept to continue an exploration
-local CLOSEST_ELSEWHERE = 3 -- entries of each other dictionary among the suggestions for a missed word
-local CLOSEST_SHARED = 2 -- letters they must begin with as the word does
-local LIST_ROWS_PER_PAGE = 6 -- choices on each page of a list (suggestions, other dictionaries)
 
 -- What the viewer has learnt about how tall entries are, for the session and
 -- per dictionary, font size and text width.
@@ -147,6 +143,7 @@ local DictionaryExplorerViewer = InputContainer:extend({
 })
 
 function DictionaryExplorerViewer:init()
+	self.lib = Library.new(self.library)
 	self.dimen = Geom:new({ w = Screen:getWidth(), h = Screen:getHeight() })
 	local default_margin = Screen:scaleBySize(DEFAULT_SIDE_MARGIN)
 	local margins = self.side_margins or { left = default_margin, right = default_margin }
@@ -429,10 +426,7 @@ function DictionaryExplorerViewer:_buildHeader(first_position, last_position)
 	local others = self._header_others -- set by _installPage() for the page it shows
 	self.header_mark = nil
 	if others and others > 0 then
-		self.header_mark = TextWidget:new({
-			text = "  ·  " .. T(_("also in %1 more"), others),
-			face = Font:getFace("NotoSans-Bold.ttf", 15),
-		})
+		self.header_mark = Notices.headerMark(others)
 		width = math.max(width - self.header_mark:getSize().w, math.floor(width / 3))
 	end
 	local dictionary_name = TextWidget:new({
@@ -541,7 +535,7 @@ end
 
 -- How many of the entries that come after the run first..last (which has
 -- `entries` entries) are predicted to fit in `remaining` pixels.
-function DictionaryExplorerViewer:_entriesThatFit(range, first, last, entries, max_entries, remaining, spills_at)
+function DictionaryExplorerViewer:_entriesThatFit(range, first, _last, entries, max_entries, remaining, spills_at)
 	local dictionary = self.dictionary
 	local limit = math.min(max_entries, (spills_at or math.huge) - 1)
 	local fitted, total = 0, 0
@@ -556,7 +550,7 @@ function DictionaryExplorerViewer:_entriesThatFit(range, first, last, entries, m
 			break
 		end
 		fitted = candidate - entries
-		first, last = next_first, next_last
+		first = next_first -- only where the run starts matters for the next one
 	end
 	return fitted
 end
@@ -656,18 +650,6 @@ end
 -- so in a line of its own above the entries. It is part of the page, drawn
 -- with it, so it costs no refresh of its own (a notification would cost two:
 -- showing it and taking it away); the next page or word takes it away.
--- `text` cut to MISS_NOTICE_MAX_CHARS characters.
-local function cutText(text)
-	local characters = 0
-	for position in text:gmatch("()[%z\1-\127\194-\244]") do
-		characters = characters + 1
-		if characters > MISS_NOTICE_MAX_CHARS then
-			return text:sub(1, position - 1) .. "…"
-		end
-	end
-	return text
-end
-
 -- The word the trail shows for a word that was looked up: the word asked for
 -- when it only leads to the entry (through the .syn) or has none at all, the
 -- entry's own otherwise.
@@ -696,43 +678,14 @@ function DictionaryExplorerViewer:_missFrom(lookup)
 	end
 end
 
--- The entries of another dictionary closest to a word it has no entry for:
--- its accented spellings first, then the ones spelled most like it (see
--- StarDict:nearest()), if they begin as it does: entries of another dictionary
--- that only happen to sort near it would be noise. At most CLOSEST_ELSEWHERE.
+-- See Library:closest().
 function DictionaryExplorerViewer:_closestIn(dictionary, word)
-	local lookup = dictionary:resolve(word)
-	local count = dictionary:getCount()
-	local positions, seen = {}, {}
-	local function add(position)
-		if position >= 0 and position < count and not seen[position] and #positions < CLOSEST_ELSEWHERE then
-			seen[position] = true
-			positions[#positions + 1] = position
-		end
-	end
-	for _index, position in ipairs(lookup.spellings or {}) do
-		add(position)
-	end
-	for _index, position in ipairs(dictionary:nearest(word, CLOSEST_ELSEWHERE, CLOSEST_SHARED)) do
-		add(position)
-	end
-	return positions
+	return self.lib:closest(dictionary, word)
 end
 
--- The other dictionaries that have `word` (also through another case, the
--- .syn or its accents): { dictionary, entry } each, in KOReader's order. Only
--- the ones whose index is ready are asked, so nothing is prepared for it.
+-- The other dictionaries that have `word`: see Library:elsewhere().
 function DictionaryExplorerViewer:_findElsewhere(word)
-	local found = {}
-	for _index, dictionary in ipairs(self:_otherDictionaries()) do
-		if dictionary:isIndexed() then
-			local lookup = dictionary:resolve(word)
-			if lookup.kind ~= "closest" then
-				found[#found + 1] = { dictionary = dictionary, entry = dictionary:getEntry(lookup.position).word }
-			end
-		end
-	end
-	return #found > 0 and found or nil
+	return self.lib:elsewhere(word, self.dictionary)
 end
 
 function DictionaryExplorerViewer:_getMissNotice()
@@ -750,36 +703,7 @@ function DictionaryExplorerViewer:_getMissNotice()
 		cached.widget:free()
 	end
 	local margins = self.side_margins
-	local text
-	local names = elsewhere and elsewhere[1].dictionary.name
-	if elsewhere and #elsewhere > 1 then
-		names = T(_("%1 and %2 more"), names, #elsewhere - 1)
-	end
-	if miss.shown then
-		text = T(_("No entry for “%1”. Showing “%2”."), cutText(miss.word), cutText(miss.shown))
-	elseif elsewhere then
-		text = T(_("No entry for “%1”. It is in %2."), cutText(miss.word), names)
-	else
-		text = T(_("No entry for “%1”. Showing the closest one."), cutText(miss.word))
-	end
-	text = text .. " " .. _("Tap here for suggestions.")
-	local face = Font:getFace("NotoSans-Italic.ttf", 16)
-	local line_px = math.floor((1 + TextBoxWidget.line_height) * face.size + 0.5)
-	local widget = VerticalGroup:new({
-		align = "left",
-		VerticalSpan:new({ width = Screen:scaleBySize(GAP_BELOW_RULE) }),
-		HorizontalGroup:new({
-			HorizontalSpan:new({ width = margins.left }),
-			TextBoxWidget:new({
-				text = text,
-				face = face,
-				width = self.dimen.w - margins.left - margins.right,
-				height = MISS_NOTICE_MAX_LINES * line_px,
-				height_adjust = true, -- a single line takes one line's height
-				height_overflow_show_ellipsis = true,
-			}),
-		}),
-	})
+	local widget = Notices.build(Notices.missText(miss), self.dimen.w - margins.left - margins.right, margins.left, Screen:scaleBySize(GAP_BELOW_RULE))
 	self._miss_notice = { key = key, widget = widget }
 	return widget
 end
@@ -794,104 +718,27 @@ function DictionaryExplorerViewer:_isOnMissNotice(pos)
 	return pos.y >= top and pos.y < area.y
 end
 
--- Shows a list of choices on top of the page, kept in self[field] while it is
--- shown, LIST_ROWS_PER_PAGE choices at a time: it never fills the screen, and
--- a row at its foot pages through it (‹ ›) and closes it (✕), so leaving it
--- doesn't take a choice. Every page has as many rows (the last one is filled
--- with blank ones), so turning a page refreshes only the list's own area.
--- Closing it clears that area without the flash ButtonDialog uses, and does
--- nothing at all when a choice was made: the new page covers it.
--- `rows` is { { button }, ... }, one choice per row; the dialog keeps them
--- all, as `choices`, whatever the page. `offset`, when given, is where the
--- user had moved the list to (see _turnList()).
--- @treturn ButtonDialog the list shown
-function DictionaryExplorerViewer:_showList(field, title, rows, page, offset)
-	page = page or 1
-	local pages = math.max(1, math.ceil(#rows / LIST_ROWS_PER_PAGE))
-	local shown = {}
-	for index = (page - 1) * LIST_ROWS_PER_PAGE + 1, page * LIST_ROWS_PER_PAGE do
-		shown[#shown + 1] = rows[index] or (pages > 1 and { { text = "", enabled = false } }) or nil
-	end
-	local close = {
-		icon = "close",
-		callback = function()
-			if self[field] then
-				UIManager:close(self[field])
+-- Shows a list of choices (see choicelist.lua), kept in self[field] while it
+-- is shown: the dialog of the page shown, as pages turn.
+function DictionaryExplorerViewer:_showList(field, title, rows)
+	return ChoiceList.show({
+		title = title,
+		rows = rows,
+		on_show = function(dialog)
+			self[field] = dialog
+		end,
+		on_close = function(dialog)
+			if self[field] == dialog then
+				self[field] = nil
 			end
 		end,
-	}
-	if pages > 1 then
-		local function turnTo(target)
-			return function()
-				self:_turnList(field, title, rows, target)
-			end
-		end
-		table.insert(shown, {
-			{ icon = "chevron.left", enabled = page > 1, callback = turnTo(page - 1) },
-			{ icon = "chevron.right", enabled = page < pages, callback = turnTo(page + 1) },
-			close,
-		})
-	else
-		table.insert(shown, { close })
-	end
-	local dialog = ButtonDialog:new({
-		-- `title` itself stays as given: turnTo() hands it to the next page.
-		title = pages > 1 and T("%1 (%2/%3)", title, page, pages) or title,
-		title_align = "center",
-		buttons = shown,
 	})
-	if offset then
-		dialog.movable:setMovedOffset(offset)
-	end
-	dialog.choices, dialog.page, dialog.pages = {}, page, pages
-	for _index, row in ipairs(rows) do
-		dialog.choices[#dialog.choices + 1] = row[1]
-	end
-	dialog.onCloseWidget = function(this)
-		if self[field] == this then
-			self[field] = nil
-		end
-		if not self._choosing then
-			UIManager:setDirty(nil, function()
-				return "ui", this.movable.dimen
-			end)
-		end
-	end
-	self[field] = dialog
-	UIManager:show(dialog)
-	return dialog
-end
-
--- Shows another page of a list in place of the one shown, where the user may
--- have moved it (a ButtonDialog can be dragged). The old one goes without a
--- refresh of its own; one refresh covers both areas, which are the same
--- unless something moved it (KOReader merges it with the new list's own).
-function DictionaryExplorerViewer:_turnList(field, title, rows, page)
-	local old = self[field]
-	if not old then
-		return
-	end
-	local offset = old.movable:getMovedOffset()
-	local old_area = old.movable.dimen and old.movable.dimen:copy()
-	self._choosing = true
-	UIManager:close(old)
-	self._choosing = nil
-	local new = self:_showList(field, title, rows, page, offset)
-	UIManager:setDirty(nil, function()
-		local area = new.movable.dimen
-		if old_area and area then
-			return "ui", old_area:combine(area)
-		end
-		return "ui", old_area or area
-	end)
 end
 
 -- Closes the list in self[field] because a choice was made in it.
 function DictionaryExplorerViewer:_closeListForChoice(field)
 	if self[field] then
-		self._choosing = true
-		UIManager:close(self[field])
-		self._choosing = nil
+		ChoiceList.closeForChoice(self[field])
 	end
 end
 
@@ -942,7 +789,7 @@ function DictionaryExplorerViewer:showSuggestions()
 		end
 	end
 	if #rows > 0 then
-		self:_showList("suggestions_dialog", T(_("Suggestions for “%1”"), cutText(miss.word)), rows)
+		self:_showList("suggestions_dialog", T(_("Suggestions for “%1”"), Notices.cut(miss.word)), rows)
 	end
 end
 
@@ -965,7 +812,7 @@ end
 -- @treturn bool whether it is a new item of the trail
 function DictionaryExplorerViewer:_placeInTrail(word, position, replace)
 	if replace then
-		self.trail[self.trail_index] = { word = word, position = position, dictionary = self.dictionary }
+		Trail.replace(self.trail, self.trail_index, { word = word, position = position, dictionary = self.dictionary })
 		return true
 	end
 	return self:_pushTrail(word, position)
@@ -1020,28 +867,12 @@ function DictionaryExplorerViewer:_installPage(html_widget, first, last, at_end)
 end
 
 --- Where the exploration is, to continue it later: the dictionary and page it
--- is on, the highlighted entry, and the latest words of the trail, each with
--- its dictionary. Plain values only, so it can be kept in the settings: the
--- number of entries of each dictionary and the headword at each position
--- tell, when it is continued, whether a dictionary is still the same.
+-- is on, the highlighted entry, and the trail (see Trail.save()). Plain values
+-- only, so it can be kept in the settings.
 function DictionaryExplorerViewer:explorationState()
 	local dictionary = self.dictionary
-	local start = math.max(1, #self.trail - MAX_SAVED_CRUMBS + 1)
-	local trail, counts = {}, { [dictionary.name] = dictionary:getCount() }
-	for index = start, #self.trail do
-		local crumb = self.trail[index]
-		local check = crumb.check -- not visited since it was restored: as it was saved
-		local name = crumb.dictionary.name
-		local entry = check and check.entry
-		if not check then
-			entry = crumb.dictionary:getEntry(crumb.position)
-			entry = entry and entry.word
-			counts[name] = crumb.dictionary:getCount()
-		elseif not counts[name] then
-			counts[name] = check.count
-		end
-		trail[#trail + 1] = { word = crumb.word, position = crumb.position, dictionary = name, entry = entry }
-	end
+	local trail, trail_index, counts = Trail.save(self.trail, self.trail_index)
+	counts[dictionary.name] = dictionary:getCount()
 	return {
 		dictionary = dictionary.name,
 		count = dictionary:getCount(),
@@ -1051,14 +882,11 @@ function DictionaryExplorerViewer:explorationState()
 		highlighted = self.highlighted,
 		word = self:_currentWord(),
 		trail = trail,
-		trail_index = math.max(1, self.trail_index - start + 1),
+		trail_index = trail_index,
 	}
 end
 
 -- Reopens a saved exploration (see explorationState()) on the page it was on.
--- The words of the trail in other dictionaries are checked when they are
--- gone to (their dictionaries are not loaded before), and the ones whose
--- dictionary is gone are left out.
 -- @treturn bool false when it doesn't fit this dictionary any more
 function DictionaryExplorerViewer:_restore(state)
 	local dictionary = self.dictionary
@@ -1067,38 +895,13 @@ function DictionaryExplorerViewer:_restore(state)
 	if state.count ~= dictionary:getCount() or not entry or entry.word ~= state.first_word or type(state.trail) ~= "table" then
 		return false
 	end
-	local counts = type(state.counts) == "table" and state.counts or {}
-	local trail, current = {}, nil
-	local saved_index = tonumber(state.trail_index) or #state.trail
-	for index, crumb in ipairs(state.trail) do
-		local position = type(crumb) == "table" and tonumber(crumb.position)
-		local crumb_dictionary
-		if position and type(crumb.word) == "string" then
-			-- Explorations saved before they could cross dictionaries have none.
-			local name = crumb.dictionary or dictionary.name
-			if name == dictionary.name then
-				crumb_dictionary = dictionary
-			elseif self.library then
-				crumb_dictionary = self.library.find(name)
-			end
-		end
-		if crumb_dictionary then
-			trail[#trail + 1] = {
-				word = crumb.word,
-				position = position,
-				dictionary = crumb_dictionary,
-				check = { count = counts[crumb_dictionary.name] or (crumb_dictionary == dictionary and state.count), entry = crumb.entry },
-			}
-		end
-		if index <= saved_index and #trail > 0 then
-			current = #trail
-		end
-	end
-	if #trail == 0 then
+	local trail, index = Trail.load(state.trail, state.trail_index, state.counts, dictionary, function(name)
+		return self.lib:find(name)
+	end, state.count)
+	if not trail then
 		return false
 	end
-	self.trail = trail
-	self.trail_index = current or 1
+	self.trail, self.trail_index = trail, index
 	if self.trail_index < #trail then
 		self.crumb_end = self.trail_index -- the current word in view in the breadcrumb
 	end
@@ -1107,28 +910,18 @@ function DictionaryExplorerViewer:_restore(state)
 	return true
 end
 
--- A word of the trail restored from a saved exploration: if its dictionary
--- changed since, its entry is looked for again by the word.
+-- A word of the trail restored from a saved exploration: see Trail.check().
 function DictionaryExplorerViewer:_checkCrumb(crumb)
-	local check = crumb.check
-	if not check then
-		return
-	end
-	crumb.check = nil
-	local dictionary = crumb.dictionary
-	local entry = dictionary:getEntry(crumb.position)
-	if dictionary:getCount() ~= check.count or not entry or (check.entry and entry.word ~= check.entry) then
-		crumb.position = dictionary:locate(crumb.word)
-	end
+	Trail.check(crumb)
 end
 
 -- Runs `callback` once `dictionary` can be read: at once for this one or one
 -- whose index is ready, after preparing it (with a notice) otherwise.
 function DictionaryExplorerViewer:_withDictionary(dictionary, callback)
-	if dictionary == self.dictionary or dictionary:isIndexed() then
+	if dictionary == self.dictionary then
 		callback()
-	elseif self.library then
-		self.library.prepare(dictionary, callback)
+	else
+		self.lib:prepare(dictionary, callback)
 	end
 end
 
@@ -1327,23 +1120,16 @@ function DictionaryExplorerViewer:_refreshBreadcrumb()
 	old:free()
 end
 
--- Adds a word to the trail. Going somewhere new after having stepped back
--- along the trail replaces whatever came after that point, like a browser's
--- history does.
+-- Adds a word to the trail (see Trail.push()).
 -- @treturn bool whether the word was added (it isn't when it is the entry the
 -- trail is on already)
 function DictionaryExplorerViewer:_pushTrail(word, position)
-	local current = self.trail[self.trail_index]
-	if current.position == position and current.dictionary == self.dictionary then
-		return false
+	local added
+	self.trail_index, added = Trail.push(self.trail, self.trail_index, { word = word, position = position, dictionary = self.dictionary })
+	if added then
+		self.crumb_end = nil -- show the latest words again
 	end
-	for index = #self.trail, self.trail_index + 1, -1 do
-		self.trail[index] = nil
-	end
-	table.insert(self.trail, { word = word, position = position, dictionary = self.dictionary })
-	self.trail_index = #self.trail
-	self.crumb_end = nil -- show the latest words again
-	return true
+	return added
 end
 
 --- Goes to a word of the trail, leaving the trail as it is. A word of another
@@ -1421,7 +1207,7 @@ end
 -- per entry, so turning pages costs nothing.
 function DictionaryExplorerViewer:_othersWithEntry(first, last)
 	local highlighted = self.highlighted
-	if not (highlighted and highlighted >= first and highlighted <= last and self.library) then
+	if not (highlighted and highlighted >= first and highlighted <= last and self.lib:hasProvider()) then
 		return nil
 	end
 	self._others_cache = self._others_cache or {}
@@ -1448,15 +1234,7 @@ end
 
 -- The dictionaries other than this one to offer, in KOReader's order.
 function DictionaryExplorerViewer:_otherDictionaries()
-	local others = {}
-	if self.library then
-		for _index, dictionary in ipairs(self.library.list()) do
-			if dictionary ~= self.dictionary then
-				others[#others + 1] = dictionary
-			end
-		end
-	end
-	return others
+	return self.lib:others(self.dictionary)
 end
 
 --- Offers the other dictionaries that have `word`, in a list: an English word
@@ -1500,40 +1278,25 @@ function DictionaryExplorerViewer:showOtherDictionaries(word, known)
 		end
 	end
 	if #rows == 0 then
-		UIManager:show(InfoMessage:new({ text = T(_("No other dictionary has “%1”."), cutText(word)) }))
+		UIManager:show(InfoMessage:new({ text = T(_("No other dictionary has “%1”."), Notices.cut(word)) }))
 		return
 	end
-	self:_showList("dictionaries_dialog", T(_("“%1” in other dictionaries"), cutText(word)), rows)
+	self:_showList("dictionaries_dialog", T(_("“%1” in other dictionaries"), Notices.cut(word)), rows)
 end
 
 function DictionaryExplorerViewer:_anyFound(known)
-	for _dictionary, entry in pairs(known) do
-		if entry then
-			return true
-		end
-	end
-	return false
+	return Library.anyFound(known)
 end
 
 --- What the other dictionaries say about a selected word, for the dock to
 -- offer its button only when there is somewhere to go. It must be quick (it
--- runs between the finger lifting and the dock being drawn), so it asks only
--- the dictionaries already loaded, and only for the word as it is (in any
--- case, or through the .syn): a selection comes from the text, spelled
--- right, so the search for accents is left out.
+-- runs between the finger lifting and the dock being drawn): see
+-- Library:quick(). A selection comes from the text, spelled right, so the
+-- search for accents is left out.
 -- @treturn table { [dictionary] = its entry for the word, or false }
 -- @treturn bool whether a dictionary not loaded yet might have it
 function DictionaryExplorerViewer:_checkSelection(word)
-	local known, unknown = {}, false
-	for _index, dictionary in ipairs(self:_otherDictionaries()) do
-		if dictionary.idx then
-			local position, exact = dictionary:locateText(word)
-			known[dictionary] = exact and dictionary:getEntry(position).word or false
-		else
-			unknown = true
-		end
-	end
-	return known, unknown
+	return self.lib:quick(word, self.dictionary)
 end
 
 -- Un-highlights the text the user selected.
@@ -1815,10 +1578,10 @@ function DictionaryExplorerViewer:searchAll(word)
 			unprepared[#unprepared + 1] = row(T(_("%1 (index not prepared yet)"), dictionary.name), dictionary, word)
 		end
 	end
-	local title = T(_("Results for “%1”"), cutText(word))
+	local title = T(_("Results for “%1”"), Notices.cut(word))
 	if #found == 0 then
 		-- Nothing has it: what is spelled most like it, here and elsewhere.
-		title = T(_("No entry for “%1”: the closest ones"), cutText(word))
+		title = T(_("No entry for “%1”: the closest ones"), Notices.cut(word))
 		for _index, position in ipairs(self.dictionary:suggest(word)) do
 			local entry = self.dictionary:getEntry(position).word
 			found[#found + 1] = row(T("%1 — %2", entry, self.dictionary.name), self.dictionary, entry)
@@ -1837,7 +1600,7 @@ function DictionaryExplorerViewer:searchAll(word)
 		found[#found + 1] = entry
 	end
 	if #found == 0 then
-		UIManager:show(InfoMessage:new({ text = T(_("Nothing found for “%1”."), cutText(word)) }))
+		UIManager:show(InfoMessage:new({ text = T(_("Nothing found for “%1”."), Notices.cut(word)) }))
 		return
 	end
 	self:_showList("search_dialog", title, found)

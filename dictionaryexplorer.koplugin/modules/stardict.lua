@@ -23,6 +23,7 @@ dictionary works without it.
 
 local DataStorage = require("datastorage")
 local Inflate = require("modules/inflate")
+local Spelling = require("modules/spelling")
 local dump = require("dump")
 local lfs = require("libs/libkoreader-lfs")
 local logger = require("logger")
@@ -44,21 +45,17 @@ local NEAREST_WINDOW = 8 -- entries looked at on each side of where a word would
 
 local SUPPORTED_TYPES = { m = true, h = true, x = true }
 
+local foldAscii = Spelling.foldAscii
+local changeCase = Spelling.changeCase
+local caseVariants = Spelling.caseVariants
+local splitCharacters = Spelling.characters
+
 -- The StarDict spec sorts the .idx with stardict_strcmp: ASCII
 -- case-insensitive first, then byte order. Not every dictionary follows it:
 -- the Priberam Portuguese one is in plain byte order (capitalized words come
 -- before all the lowercase ones), so lookups try both orders. Lua's "<" on
 -- strings is a byte comparison as long as LC_COLLATE stays "C", which
 -- KOReader doesn't change.
-local ASCII_FOLD = {}
-for code = string.byte("A"), string.byte("Z") do
-	ASCII_FOLD[string.char(code)] = string.char(code + 32)
-end
-
-local function foldAscii(text)
-	return (text:gsub("[A-Z]", ASCII_FOLD))
-end
-
 local function compareFolded(a, b)
 	local folded_a, folded_b = foldAscii(a), foldAscii(b)
 	if folded_a ~= folded_b then
@@ -78,42 +75,6 @@ local function compareBytes(a, b)
 end
 
 local COMPARATORS = { compareFolded, compareBytes }
-
--- Case mapping for any letter, not only A-Z ("Árvore" -> "árvore"), through
--- the utf8proc KOReader ships. Without it, only ASCII letters change case.
-local Utf8Proc
-do
-	local ok, module = pcall(require, "ffi/utf8proc")
-	Utf8Proc = ok and module or nil
-end
-
-local function changeCase(text, lower)
-	if Utf8Proc then
-		local ok, cased = pcall(Utf8Proc.cased_dumb, text, lower)
-		if ok and cased then
-			return cased
-		end
-	end
-	return lower and foldAscii(text) or text:upper()
-end
-
---- The other casings a key may be stored under: all lowercase (a word at the
--- start of a sentence), capitalized (a name typed in lowercase) and all
--- uppercase (an abbreviation), each once and none the same as `word`.
-local function caseVariants(word)
-	local lowered = changeCase(word, true)
-	local first, rest = lowered:match("^([%z\1-\127\194-\244][\128-\191]*)(.*)$")
-	local candidates = { lowered, first and (changeCase(first, false) .. rest), changeCase(word, false) }
-	local variants, seen = {}, { [word] = true }
-	for index = 1, 3 do
-		local candidate = candidates[index]
-		if candidate and not seen[candidate] then
-			seen[candidate] = true
-			variants[#variants + 1] = candidate
-		end
-	end
-	return variants
-end
 
 local function readFile(path)
 	local file = io.open(path, "rb")
@@ -710,39 +671,9 @@ end
 -- Accents, and what to do when a word has no entry
 -- ---------------------------------------------------------------------------
 
--- The accented lowercase letters of the Latin-1 range, by their plain letter.
--- All are two bytes, the first one \195.
-local ACCENTED = {
-	a = { "á", "à", "â", "ã", "ä", "å" },
-	e = { "é", "è", "ê", "ë" },
-	i = { "í", "ì", "î", "ï" },
-	o = { "ó", "ò", "ô", "õ", "ö" },
-	u = { "ú", "ù", "û", "ü" },
-	c = { "ç" },
-	n = { "ñ" },
-	y = { "ý", "ÿ" },
-}
-local PLAIN = {}
-for plain, accented in pairs(ACCENTED) do
-	for _index, letter in ipairs(accented) do
-		PLAIN[letter] = plain
-	end
-end
-
---- The word without its accents, in lowercase ("Ação" -> "acao").
-function StarDict.plainSpelling(word)
-	return (changeCase(word, true):gsub("\195[\128-\191]", function(letter)
-		return PLAIN[letter] or letter
-	end))
-end
-
-local function splitCharacters(text)
-	local characters = {}
-	for character in text:gmatch("[%z\1-\127\194-\244][\128-\191]*") do
-		characters[#characters + 1] = character
-	end
-	return characters
-end
+--- The word without its accents, in lowercase ("Ação" -> "acao"); see
+-- spelling.lua. Kept here too, for the code that has a dictionary at hand.
+StarDict.plainSpelling = Spelling.plainSpelling
 
 -- Whether some key starts with `prefix`, under one sort order. In the
 -- StarDict order the keys that differ only in ASCII case are mixed, so a few
@@ -797,7 +728,7 @@ function StarDict:findAccentedSpellings(word)
 		end
 		local plain = characters[index]
 		local options = { plain }
-		for _index, letter in ipairs(ACCENTED[plain] or {}) do
+		for _index, letter in ipairs(Spelling.accented(plain)) do
 			options[#options + 1] = letter
 		end
 		if index == 1 then

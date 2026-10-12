@@ -40,7 +40,15 @@ return function(H, ui)
 	end
 
 	H.step(1, function()
+		-- The author's dictionaries only: the fixtures have no words of their
+		-- own here (they are measured by the budgets suite).
+		local measured = {}
 		for key, dictionary in pairs(dictionaries.by) do
+			if WORDS[key] then
+				measured[key] = dictionary
+			end
+		end
+		for key, dictionary in pairs(measured) do
 			local label = dictionary.name:sub(1, 34)
 			local words = WORDS[key]
 
@@ -88,8 +96,9 @@ return function(H, ui)
 	H.step(2, function()
 		-- S4: loading the plugin's modules (parsing them), and the memory they keep
 		local names = {
-			"modules/inflate", "modules/stardict", "modules/fitmodel",
-			"modules/dock", "modules/breadcrumb", "modules/viewer",
+			"modules/inflate", "modules/spelling", "modules/stardict", "modules/fitmodel",
+			"modules/dock", "modules/breadcrumb", "modules/choicelist", "modules/library",
+			"modules/trail", "modules/notices", "modules/viewer",
 		}
 		local kept = {}
 		for _index, name in ipairs(names) do

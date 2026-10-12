@@ -1,4 +1,4 @@
-# Dictionary Explorer ![Version](https://img.shields.io/badge/version-v1.6.0-blue)
+# Dictionary Explorer ![Version](https://img.shields.io/badge/version-v1.6.1-blue)
 
 **Dictionary Explorer** adds a **Go to dictionary** button to KOReader's dictionary popup. It opens the dictionary at the word you looked up, in a full-screen viewer where you can keep paging through the neighbouring entries like a book, similar to the Kindle's "go to dictionary".
 
@@ -25,11 +25,16 @@ dictionaryexplorer.koplugin/
 │   └── remove_word.svg
 └── modules/
     ├── breadcrumb.lua
+    ├── choicelist.lua
     ├── dock.lua
     ├── fitmodel.lua
     ├── inflate.lua
+    ├── library.lua
+    ├── notices.lua
+    ├── spelling.lua
     ├── stardict.lua
     ├── text.lua
+    ├── trail.lua
     └── viewer.lua
 ```
 
@@ -153,7 +158,7 @@ Open the top menu and go to **Tools > Dictionary Explorer**:
 
 ## Performance and battery
 
-- **Nothing runs in the background.** The plugin has no timers, polling or listeners beyond KOReader's own events; when the viewer is closed it costs nothing but the memory of what was loaded (about 60 KB of code and, per dictionary opened, the index below).
+- **Nothing runs in the background.** The plugin has no timers, polling or listeners beyond KOReader's own events; when the viewer is closed it costs nothing but the memory of what was loaded (about 120 KB of code and, per dictionary opened, the index below).
 - **First use of a dictionary** scans its `.idx` once and caches a compact index (`cache/dictionaryexplorer/`). On a desktop that takes about 70 ms for a dictionary with 860 thousand entries (the time on an e-reader is dominated by reading the file); afterwards loading the cache takes a few milliseconds.
 - **Opening the viewer or going to a word** costs a few milliseconds of CPU on a desktop, and a page turn about 2 to 3. The exception is a very long entry (the Oxford entry for `house` has 186 KB of HTML), which takes the layout engine a fraction of a second: the whole entry is laid out.
 - **The screen is refreshed once per action** (page turn, going to a word, scrolling the breadcrumb, with no repeated refreshes), which is what an e-ink display costs the most battery for. Closing the viewer does one full refresh, as KOReader does when closing a document.
