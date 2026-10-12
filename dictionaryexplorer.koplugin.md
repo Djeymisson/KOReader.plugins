@@ -1,4 +1,4 @@
-# Dictionary Explorer ![Version](https://img.shields.io/badge/version-v1.8.0-blue)
+# Dictionary Explorer ![Version](https://img.shields.io/badge/version-v1.8.1-blue)
 
 **Dictionary Explorer** adds a **Go to dictionary** button to KOReader's dictionary popup. It opens the dictionary at the word you looked up, in a full-screen viewer where you can keep paging through the neighbouring entries like a book, similar to the Kindle's "go to dictionary". While each page shows one dictionary, finding a word works as if all your dictionaries were one: a word missing from the one on screen is looked for in the others.
 
@@ -223,6 +223,7 @@ Open the top menu and go to **Tools > Dictionary Explorer**:
 - **First use of a dictionary** scans its `.idx` once and caches a compact index (`cache/dictionaryexplorer/`). On a desktop that takes about 70 ms for a dictionary with 860 thousand entries (the time on an e-reader is dominated by reading the file); afterwards loading the cache takes a few milliseconds.
 - **Opening the viewer or going to a word** costs a few milliseconds of CPU on a desktop, and a page turn about 2 to 3. A word missing from the dictionary on screen also asks the others (a millisecond or two each), loading their caches the first time in a session. The exception is a very long entry (the Oxford entry for `house` has 186 KB of HTML), which takes the layout engine a fraction of a second: the whole entry is laid out.
 - **The screen is refreshed once per action** (page turn, going to a word, going to the same word in another dictionary, scrolling the breadcrumb, applying the dictionary appearance, with no repeated refreshes), which is what an e-ink display costs the most battery for. Lists and the dictionary appearance's dialog refresh only their own area. Closing the viewer does one full refresh, as KOReader does when closing a document.
+- **A long exploration costs no more per page.** Where the exploration is (to continue it later) is kept after every page, with the last 50 words of the breadcrumb, but each word's entry is read once, not on every page; the short names the breadcrumb and the header show are worked out from the dictionaries' names once. A page turn with 50 words through several dictionaries in the breadcrumb opens as few files as one with none.
 - While a page is being built, the definitions file is opened once and each entry's HTML is read once, however many layouts are tried; the file and the inflated chunks of compressed dictionaries are released when the viewer closes or goes to another dictionary.
 
 ## Known limitations

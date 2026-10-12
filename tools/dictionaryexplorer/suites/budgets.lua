@@ -61,6 +61,7 @@ local VARIANTS = {
 	{ name = "compact", settings = { compact_header = true } },
 }
 local READS_PER_ENTRY = 1.2
+local TRAIL_CRUMBS = 50 -- words gone to before the turns with a long trail
 
 return function(H, ui)
 	H.instrument()
@@ -151,6 +152,47 @@ return function(H, ui)
 		useSettings({})
 	end)
 	end
+
+	-- A long trail through several dictionaries, in the plugin's viewer: what
+	-- each page shown saves to continue the exploration, and the breadcrumb
+	-- naming each word's dictionary, must not make a turn read the other
+	-- dictionaries (it did: every crumb's headword was read again on every
+	-- turn, opening dozens of files).
+	H.step(1, function()
+		local plugin = ui.dictionaryexplorer
+		local dictionaries_shown = plugin and plugin:getLibrary().list() or {}
+		if #dictionaries_shown < 2 then
+			H.skip("paging with a long trail", "the plugin is not active, or there is only one dictionary")
+			return
+		end
+		local base = dictionaries_shown[1]
+		plugin:openAt(base, base:getEntry(math.floor(base:getCount() / 2)).word)
+		local viewer = H.findViewer()
+		for index = 1, TRAIL_CRUMBS do
+			local dictionary = dictionaries_shown[index % #dictionaries_shown + 1]
+			viewer:goToWordIn(dictionary, dictionary:getEntry(math.floor(dictionary:getCount() * ((index * 37) % 100) / 100)).word)
+		end
+		viewer:goToWordIn(base, base:getEntry(0).word)
+		viewer:showNext()
+		local turns, opens = 0, 0
+		for _turn = 1, TURNS do
+			local moved
+			local _, _, delta = H.measure(function()
+				moved = viewer:showNext()
+			end)
+			if not moved then
+				break
+			end
+			turns, opens = turns + 1, opens + delta.opens
+		end
+		H.check(
+			string.format("with a trail of %d words through %d dictionaries: files opened per turn", #viewer.trail, #dictionaries_shown),
+			turns > 0 and opens / turns <= GENERAL.opens,
+			string.format("%.2f (limit %.1f)", opens / math.max(turns, 1), GENERAL.opens)
+		)
+		viewer:onClose()
+		G_reader_settings:delSetting("dictionaryexplorer_exploration")
+	end)
 
 	H.finish()
 end

@@ -59,8 +59,13 @@ function Trail.save(trail, index)
 		local name = crumb.dictionary.name
 		local entry = check and check.entry
 		if not check then
-			entry = crumb.dictionary:getEntry(crumb.position)
-			entry = entry and entry.word
+			-- Read once per crumb and position: this runs on every page shown,
+			-- and the crumbs of other dictionaries are rarely in memory.
+			if crumb.entry_at ~= crumb.position then
+				entry = crumb.dictionary:getEntry(crumb.position)
+				crumb.entry, crumb.entry_at = entry and entry.word, crumb.position
+			end
+			entry = crumb.entry
 			counts[name] = crumb.dictionary:getCount()
 		elseif not counts[name] then
 			counts[name] = check.count

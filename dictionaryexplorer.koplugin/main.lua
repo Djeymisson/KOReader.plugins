@@ -28,7 +28,7 @@ local ReadingSettings = require("modules/readingsettings")
 local StarDict = require("modules/stardict")
 local Viewer = require("modules/viewer")
 
-local PLUGIN_VERSION = "v1.8.0"
+local PLUGIN_VERSION = "v1.8.1"
 
 local SETTING_START_DICTIONARY = "dictionaryexplorer_start_dictionary" -- a dictionary name; unset means automatic
 local SETTING_SHORT_NAMES = "dictionaryexplorer_short_names" -- { [dictionary name] = short name } set by the user (see Library)

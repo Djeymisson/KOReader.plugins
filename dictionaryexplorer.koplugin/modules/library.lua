@@ -228,16 +228,25 @@ local function nameParts(name)
 	return words, codes
 end
 
--- The short names a dictionary may get, shortest first.
+-- The short names a dictionary may get, shortest first. They depend on its
+-- name only, so they are made once per name: the breadcrumb and the header
+-- ask for them on every page.
+local candidates_by_name = {}
 local function candidates(dictionary)
-	local words, codes = nameParts(dictionary.name)
-	local languages = table.concat(codes, "-")
-	local first, second = words[1] or dictionary.name, words[2]
-	return {
-		languages ~= "" and languages or first,
-		languages ~= "" and (first .. " " .. languages) or (second and (first .. " " .. second) or first),
-		dictionary.name,
-	}
+	local name = dictionary.name
+	local found = candidates_by_name[name]
+	if not found then
+		local words, codes = nameParts(name)
+		local languages = table.concat(codes, "-")
+		local first, second = words[1] or name, words[2]
+		found = {
+			languages ~= "" and languages or first,
+			languages ~= "" and (first .. " " .. languages) or (second and (first .. " " .. second) or first),
+			name,
+		}
+		candidates_by_name[name] = found
+	end
+	return found
 end
 
 --- Short names for the dictionaries, made from their names: the languages
