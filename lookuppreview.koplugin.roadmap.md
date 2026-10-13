@@ -24,7 +24,10 @@ Versão atual: **v1.7.1**
 | v1.6.0 | Vocabulary Builder: nota junto ao carrossel e desfazer | ✅ |
 | v1.7.0 | D.5: reorganizar os menus de configuração | ✅ |
 | v1.7.1 | Ajustes nos nomes e na estrutura do menu | ✅ |
-| v1.8.0+ | Fase 4, um item por versão | ⬜ |
+| v1.8.0 | 4.1: nota de estudo | ⬜ |
+| v1.9.0 | 4.4: preferências por livro | ⬜ |
+| v1.10.0 | 4.2: histórico de consultas | ⬜ |
+| v1.11.0 | 4.3: cache persistente | ⬜ |
 
 Toda entrega sobe a versão em `main.lua`/`_meta.lua`, no `.md` do plugin (badge e linha de versão) e no `README.md`, e passa no `luacheck` sem avisos.
 
@@ -81,12 +84,196 @@ Valor médio, esforço maior.
 
 | # | Status | Item | Valor | Esforço | Depende de | Versão |
 |---|---|---|---|---|---|---|
-| 4.1 | ⬜ | **Nota de estudo com contexto**: termo, definição ou tradução, frase original e referência do livro, pelo fluxo de notas existente | ★★★ | Médio | 3.3 | |
-| 4.2 | ⬜ | **Histórico recente unificado**, com favoritos e opção de limpar | ★★★ | Médio–alto | 1.3, pilha da fase 2 | |
-| 4.3 | ⬜ | **Cache persistente para uso offline**, com indicação de "salvo" e ação Atualizar | ★★ | Médio | 1.3, 4.2 | |
-| 4.4 | ⬜ | **Preferências por livro** (idiomas e apresentação) em `doc_settings`, herdando as globais | ★★ | Médio | 3.2, 3.4 | |
+| 4.1 | ⬜ | **Nota de estudo com contexto**: termo, definição e/ou tradução, frase original e referência do livro, numa nota do KOReader presa ao trecho. Decisões tomadas: ver "Detalhamento da 4.1" abaixo | ★★★ | Médio | 3.3 ✅ | |
+| 4.2 | ⬜ | **Histórico recente unificado**, com favoritos e opção de limpar. Decisões tomadas: ver "Detalhamento da 4.2" abaixo | ★★★ | Médio–alto | 1.3 ✅, pilha da fase 2 ✅ | |
+| 4.3 | ⬜ | **Cache persistente para uso offline**, com indicação de "salvo" e ação Atualizar. Decisões tomadas: ver "Detalhamento da 4.3" abaixo | ★★ | Médio | 1.3 ✅, 4.2 | |
+| 4.4 | ⬜ | **Preferências por livro** (idiomas e cards) em `doc_settings`, herdando as globais. Decisões tomadas: ver "Detalhamento da 4.4" abaixo | ★★ | Médio | 3.2 ✅, 3.4 ✅ | |
+
+Ordem de implementação e custos: ver "Custo-benefício da Fase 4" abaixo.
 
 Por que a fase 4 fica por último: a 4.1 se sobrepõe em parte ao Vocabulary Builder (1.4), então vale ver como o 1.4 é usado antes de definir o formato da nota. A 4.3 e a 4.4 resolvem casos mais raros e criam dados persistentes que depois precisam ser migrados.
+
+### Custo-benefício da Fase 4
+
+Estimativas a partir das decisões registradas nos detalhamentos abaixo, **não medições**, considerando um e-reader típico (CPU bem mais lenta que a de um computador). Num e-reader, a bateria vai sobretudo para o **Wi-Fi**, depois para as **atualizações da tela e-ink**, e bem menos para CPU e gravações no armazenamento.
+
+Do mais barato ao mais caro:
+
+| # | Item | Desempenho | Armazenamento | Bateria | Benefício |
+|---|---|---|---|---|---|
+| 1 | **4.4 Preferências por livro** | Desprezível | Alguns bytes por livro | Nenhum custo extra | Médio (alto para quem lê em vários idiomas) |
+| 2 | **4.1 Nota de estudo** | Baixo, só quando usada | ~0,2–2 KB por nota | Desprezível | Alto para estudo |
+| 3 | **4.2 Histórico** | Baixo por consulta | ~40–60 KB | Baixo | Alto |
+| 4 | **4.3 Cache persistente** | Médio (alto com o formato errado) | ~0,5–1,5 MB + favoritos | **Pode economizar** (evita Wi-Fi) | Médio (alto para quem lê offline) |
+
+- **4.4:** a cada consulta, lê alguns valores nos metadados do livro, que o KOReader já carregou na memória ao abri-lo. Grava só quando uma opção muda, e o KOReader grava esse arquivo ao fechar o livro de qualquer forma.
+- **4.1:** só custa quando o botão é tocado. Converter a definição de HTML para texto puro leva milissegundos, com o limite de tamanho decidido. A nota vai para os metadados do livro, como qualquer destaque. Não faz consultas na rede (usa o que já está no card) e atualiza a tela uma vez, numa área pequena (a confirmação junto ao card).
+- **4.2:** grava um item por consulta que abre o carrossel. Num arquivo comum regravado inteiro (200 itens), isso leva dezenas de milissegundos por consulta num e-reader; num banco que grava só a linha nova, quase nada. Abrir a lista custa o mesmo que um menu do KOReader, com uma atualização de tela. Sem rede.
+- **4.3:** 500 respostas (uma introdução da Wikipedia tem ~1–5 KB; uma tradução, menos de 1 KB). Num arquivo comum carregado inteiro, abrir cada livro leria ~1 MB (centenas de milissegundos num e-reader), e a gravação segura a cada resposta (decisão 7) regravaria o arquivo inteiro a cada resposta, o que é lento e desgasta o armazenamento. Com SQLite, cada consulta lê ou grava uma linha, as gravações são atômicas e abrir o livro não custa nada. Na bateria, cada resposta vinda do cache é uma consulta a menos pelo Wi-Fi, o maior gasto de um e-reader; para quem relê ou reabre consultas pelo histórico, deve economizar mais do que gasta. A validade de 30 dias da Wikipedia devolve algumas consultas à rede.
+
+**Recomendações:**
+
+1. **SQLite na 4.2 e na 4.3**, no mesmo banco. O KOReader já traz SQLite (`lua-ljsqlite3`, usado pelo Vocabulary Builder). Isso tira a 4.3 de "alto" para "médio" em desempenho, cumpre a gravação segura (decisão 7 da 4.3) sem regravar o arquivo inteiro e deixa a 4.2 com custo quase zero por consulta.
+2. **Ordem de implementação por custo-benefício:** 4.1 e 4.4 primeiro (benefício alto ou médio, custo quase zero), depois 4.2, e por último 4.3, que depende do histórico para os favoritos e é o maior trabalho. A tabela de entregas já segue essa ordem.
+3. **Medir depois de implementar,** com testes de desempenho no estilo dos `budgets` do Dictionary Explorer: eles limitam contagens (arquivos abertos, leituras, gravações, consultas), não tempo, que depende do aparelho. Assim estas estimativas viram regras verificadas. Limites a criar:
+   - 4.1: nenhuma consulta na rede ao salvar a nota;
+   - 4.4: nenhuma gravação por consulta;
+   - 4.2: no máximo uma linha gravada por consulta;
+   - 4.3: o cache nunca é lido inteiro ao abrir um livro; uma linha lida por consulta; nenhuma consulta na rede para uma resposta salva e válida.
+
+### Detalhamento da 4.1 — Nota de estudo
+
+**O que é:** um botão que cria um destaque no trecho selecionado do livro e anexa a ele uma nota já preenchida com o que foi consultado. A referência do livro (capítulo, página, posição) vem do próprio destaque do KOReader. Por isso a nota aparece nas anotações do livro e sai na exportação do KOReader (Markdown, Joplin, Readwise…).
+
+**Diferença do que existe:** o botão Note atual (card Translate) guarda só a tradução. O Vocabulary Builder (1.4) guarda a palavra e a frase no próprio banco, para revisão espaçada, fora das anotações do livro. A nota de estudo junta as partes e fica no livro.
+
+Exemplo de nota:
+
+```text
+casa (s. f.)
+Edifício destinado a habitação; moradia.
+— Dicionário Aberto
+
+Tradução (pt → en): house
+Frase: "O livro fica na casa da avó."
+```
+
+**Decisões (definidas pelo usuário em 2026-10-12):**
+
+| # | Ponto | Decisão |
+|---|---|---|
+| 1 | Onde fica o botão | **Nos dois cards**, Dictionary e Translate. No Translate, o botão Note atual precisa ser revisto na implementação: virar a nota de estudo ou ficar ao lado dela |
+| 2 | O que entra na nota | **Caixas de marcar nas configurações** (seguindo a estrutura da D.5: Content → card → opções): definição do resultado mostrado, tradução, frase em volta da seleção |
+| 3 | Definições longas | **Texto puro** (sem HTML), com um **limite de tamanho**, e marcação de onde foi cortado |
+| 4 | Revisão antes de salvar | **Padrão: salvar direto**, com uma confirmação junto ao card (o mesmo widget das dicas, v1.6.0). Uma **configuração** troca para abrir o editor de nota do KOReader já preenchido, para revisar antes de salvar |
+| 5 | Consultas feitas dentro do carrossel (link, termo editado, toque longo) | A nota fica presa ao trecho do livro, mas registra **os dois**: o termo consultado e o trecho de onde se partiu, por exemplo "Consultado: X (a partir de 'Y')" |
+
+**A decidir na implementação:**
+
+- Quando Translate ou Wikipedia ainda não carregaram (modo Manual, ou rede indisponível): proposta inicial, a nota leva o que já está carregado e o botão avisa o que ficou de fora, sem disparar consultas.
+- O tamanho exato do limite de definição e o texto da marca de corte.
+- O comportamento quando já existe um destaque sobre o mesmo trecho: acrescentar à nota existente ou criar outra.
+- Testes: uma suíte nova cobrindo o conteúdo da nota para cada combinação de caixas, o corte de definições longas, o modo direto e o modo com editor, e uma consulta aninhada (os dois termos registrados).
+
+### Detalhamento da 4.2 — Histórico de consultas
+
+**O que é:** uma lista persistente das consultas que abriram o carrossel. Dela se reabre uma consulta sem precisar achar o trecho no livro, se marcam favoritos e se limpa o resto.
+
+**Diferença do que existe:**
+
+- O histórico de consultas do KOReader cobre só o dicionário e reabre o popup nativo, sem favoritos.
+- O cache (1.3) fica só na memória e é invisível.
+- A pilha de consultas (Fase 2) some quando o carrossel fecha.
+- O Vocabulary Builder serve para revisão espaçada de palavras escolhidas, não para registrar o que foi consultado.
+
+**Como funcionaria:** cada consulta guarda o texto, o livro, a data e os cards vistos.
+
+- **Tocar num item** reabre o carrossel com aquele texto. O dicionário é local e responde sempre; Translate e Wikipedia vêm do cache, se ainda estiverem lá (o 4.3 tornaria isso offline).
+- **Toque longo num item** marca ou desmarca o favorito, ou remove o item.
+- **Limpar** apaga o histórico e mantém os favoritos.
+- Uma consulta reaberta **não tem seleção no livro**: os botões que dependem dela (Highlight, Search, Note, Sentence, nota de estudo da 4.1) ficam ocultos, como nas consultas feitas dentro do carrossel.
+
+Exemplo de lista:
+
+```text
+Histórico de consultas            [Este livro | Todos]
+★ casa              Dicionário · Tradução   O cortiço · 12/10/2026 14:32
+  saudade           Dicionário              O cortiço · 12/10/2026 14:10
+  ...
+[Limpar histórico]
+```
+
+**Decisões (definidas pelo usuário em 2026-10-12):**
+
+| # | Ponto | Decisão |
+|---|---|---|
+| 1 | Onde abrir a lista | **Combinação:** item no menu do plugin, ação de gesto do KOReader (Dispatcher, para usar num toque ou no Quick Dock) e um acesso dentro do carrossel |
+| 2 | O que registrar | **Só a consulta que abriu o carrossel.** Links, termos editados e toques longos dentro dele não entram |
+| 3 | Privacidade | **Opção própria para desligar o registro** |
+| 4 | Escopo | **Filtrada pelo livro aberto**, com a opção de ver todos os livros |
+| 5 | Relação com a 4.1 e o Vocabulary Builder | **Lista simples:** sem marcar os itens que viraram nota ou foram para o Vocabulary Builder |
+| 6 | Limite e formato | **200 itens** (os mais antigos saem primeiro; favoritos nunca saem sozinhos), com a **data completa** em cada item |
+
+**A decidir na implementação:**
+
+- Onde fica o acesso dentro do carrossel. O header já tem ‹, o título e ✎; o menu de cards aberto pelo título (D.4) é uma opção, por exemplo com "Histórico" no fim da lista de cards.
+- Se, além da opção própria, o registro também respeita a opção do KOReader que desliga o histórico do dicionário (proposta: sim, as duas desligam).
+- Onde o histórico é gravado: um arquivo próprio no diretório de configurações do KOReader, separado das configurações, e no mesmo formato que a 4.3 (cache persistente) vai usar. **Recomendado: SQLite** (ver "Custo-benefício da Fase 4").
+- Se o texto de um item aparece como foi consultado ou já limpo (sem pontuação, como a busca no dicionário faz).
+- O formato da data segue o idioma do KOReader (por exemplo, `12/10/2026 14:32` em pt_BR).
+- Testes: uma suíte nova cobrindo o registro (só a consulta raiz), o limite de 200 com favoritos preservados, os filtros por livro e todos, reabrir sem seleção (botões ocultos), favoritar, remover, limpar e a opção de desligar.
+
+### Detalhamento da 4.3 — Cache persistente (offline)
+
+**O que é:** gravar em disco as respostas de Translate e Wikipedia que hoje (1.3) ficam só na memória. Uma consulta já feita continua disponível depois de reiniciar o KOReader, mesmo sem rede. Não baixa nada antecipadamente: guarda só o que já foi consultado. O dicionário fica de fora, porque é local.
+
+**O que existe (1.3, v1.2.0):** um LRU em memória com 64 respostas, que vale para a sessão e é perdido ao reiniciar. A chave é serviço + idiomas + texto. Guarda "nada encontrado", mas nunca erros. Retry sempre vai à rede, e no modo Manual uma resposta em cache aparece direto.
+
+**O que acrescenta:** a persistência; a indicação no card de que a resposta veio do disco, com a data; e a ação Atualizar. Junto com o histórico (4.2), permite reabrir itens antigos offline. Por isso usa o mesmo formato de armazenamento da 4.2.
+
+Exemplo de subtítulo de uma resposta salva:
+
+```text
+Português → English ▾ · salvo em 12/10/2026
+```
+
+**Decisões (definidas pelo usuário em 2026-10-12):**
+
+| # | Ponto | Decisão |
+|---|---|---|
+| 1 | Tamanho | **500 respostas** no disco; as **menos usadas saem primeiro** (LRU, como o cache em memória) |
+| 2 | Validade | **30 dias** para a Wikipedia, cujos artigos mudam; as traduções não expiram, conforme a proposta apresentada. Uma resposta vencida é consultada de novo quando há rede, e mostrada mesmo assim (com a data) quando não há |
+| 3 | Onde aparece o "salvo" | **No subtítulo**, com a data |
+| 4 | Quando aparece o Atualizar | **Sempre que a resposta vem do que foi salvo.** Atualizar consulta de novo e substitui a resposta (mesma semântica do Retry, com o ícone `retry.svg`) |
+| 5 | Limpar | **Opção própria para limpar o cache** nas configurações |
+| 6 | Relação com o histórico e privacidade | **Histórico desligado desliga também o cache em disco.** As respostas dos **favoritos** da 4.2 ficam guardadas **até serem apagadas manualmente**: fora do limite de 500 e da validade de 30 dias |
+| 7 | Gravação | **O mais seguro:** gravar a cada resposta nova, com escrita atômica (arquivo temporário e depois troca de nome, como o índice do Dictionary Explorer), para não corromper o arquivo se o aparelho desligar no meio |
+
+**A decidir na implementação:**
+
+- Confirmar que a validade de 30 dias vale só para a Wikipedia (interpretação registrada acima) ou também para as traduções.
+- Com o histórico desligado: o cache em memória da sessão (1.3) continua funcionando (ele não grava nada) e só o disco deixa de ser usado. Proposta: sim. Ao desligar, o que já estava no disco é apagado ou só deixa de ser usado?
+- Onde fica "Limpar cache" no menu (seguindo a D.5: perto de "Online card loading" em Content) e se o "Limpar histórico" da 4.2 oferece limpar o cache junto. O apagar manual das respostas dos favoritos acontece ao remover o favorito ou com uma ação própria.
+- O formato do arquivo (o mesmo da 4.2; **recomendado: SQLite**, ver "Custo-benefício da Fase 4") e o formato da data no subtítulo, seguindo o idioma do KOReader.
+- Testes: uma suíte nova cobrindo a persistência entre sessões (o arquivo relido ao iniciar), o limite de 500 com os menos usados saindo, a validade de 30 dias (resposta vencida reconsultada com rede e mostrada sem), "salvo em" no subtítulo, Atualizar, limpar, histórico desligado desligando o disco, favoritos preservados e um arquivo corrompido não quebrando o plugin.
+
+### Detalhamento da 4.4 — Preferências por livro
+
+**O que é:** algumas opções do plugin podem valer só para o livro aberto. Os outros livros seguem a configuração geral, e um livro sem valor próprio também. O valor fica nos metadados do livro (`doc_settings`, a pasta `.sdr`), como o KOReader já faz com os dicionários preferidos e os desativados por livro. Ele acompanha o livro e some se os metadados forem apagados.
+
+**Precedência:** escolha na consulta (3.2, só o idioma de origem) → este livro → configuração geral. Vale o nível mais específico que estiver definido.
+
+**Por que:** quem lê livros em idiomas diferentes troca hoje as mesmas opções a cada livro (idioma da Wikipedia, origem da tradução, card de abertura).
+
+**Decisões (definidas pelo usuário em 2026-10-12):**
+
+| # | Ponto | Decisão |
+|---|---|---|
+| 1 | Quais opções podem valer por livro | **Idioma da Wikipedia, idioma de origem da tradução e cards** (visíveis, ordem e card de abertura). O idioma de destino fica **opcional**, a avaliar na implementação. Aparência, carregamento online e botões continuam só globais |
+| 2 | Como definir por livro | **Dentro de cada opção** (proposta b): cada opção que pode valer por livro ganha a escolha "Só para este livro" e, quando o livro tem valor próprio, "Seguir a configuração geral (…)". Não há um submenu que repita as opções |
+| 3 | Mudanças feitas pelo card (subtítulo de idiomas) | **Se o livro já tem valor próprio para aquela opção, a mudança vai para o livro; se não, vai para a configuração geral** (como hoje) |
+| 4 | Idioma do próprio livro | **"Idioma do livro" como escolha** para a Wikipedia e para a origem da tradução: usa o idioma dos metadados do livro (a maioria dos EPUB informa), sem configurar livro a livro. Sem esse dado, segue a configuração geral |
+| 5 | Indicação | **Só no menu**: a opção mostra "(este livro)" quando o valor vem do livro. O card não muda |
+| 6 | Esquecer | A ação "Esquecer as configurações deste livro" fica **no submenu do livro** |
+
+Exemplo, no menu:
+
+```text
+Wikipédia
+  Idioma: Français (este livro)
+    Seguir a configuração geral (English)
+    Idioma do livro
+    ● Français
+    …
+```
+
+**A decidir na implementação:**
+
+- **Conciliar os itens 2 e 6:** com a escolha dentro de cada opção (2) não há um submenu que repita as opções, mas o "Esquecer" fica num submenu do livro (6). Proposta: um item pequeno **"Este livro"** no menu do plugin, só com a lista do que o livro tem de próprio e a ação "Esquecer as configurações deste livro". *A confirmar com o usuário.*
+- Como "Só para este livro" aparece em opções que já são listas (idiomas: um item a mais no topo) e nas que não são (cards: "Mostrar e ordenar cartões" e "Abrir no…" ganham a mesma escolha).
+- A relação de "Idioma do livro" (4) com a opção global do KOReader que já usa o idioma do livro como origem da tradução: as duas convivem? Proposta: a do plugin vale para o plugin, e a do KOReader continua valendo para o tradutor nativo.
+- Se o idioma de destino entra como opção por livro (decisão 1 deixou opcional).
+- Testes: uma suíte nova cobrindo a precedência (consulta > livro > geral), "Só para este livro" e "Seguir a configuração geral", mudança pelo card indo para o livro ou para a configuração geral, "Idioma do livro" com e sem idioma nos metadados, "(este livro)" no menu, "Esquecer", e dois livros com valores diferentes (abrir um e depois o outro).
 
 ---
 
