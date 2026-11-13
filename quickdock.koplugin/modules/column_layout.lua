@@ -17,6 +17,7 @@ local math_min = math.min
 return function(QuickDock, C, lib)
     local FloatingControlButtonDialog = lib.widgets.FloatingControlButtonDialog
     local markSelectedButton = lib.widgets.markSelectedButton
+    local useFrameTapFeedback = lib.widgets.useFrameTapFeedback
     local Layout = lib.Layout
     local Prefs = lib.Prefs
 
@@ -95,6 +96,7 @@ return function(QuickDock, C, lib)
             button_table,
         })
         block.button_table = button_table
+        useFrameTapFeedback(block, button_table, rows)
         markSelectedPanel(block, button_table, rows, items)
         return block
     end

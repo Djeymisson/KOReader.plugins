@@ -62,12 +62,13 @@ local function allowSliderRefresh(owner, force)
     return true
 end
 
--- Marks the selected button of a ButtonTable framed like the dock: black
+-- Paints a button of a ButtonTable framed like the dock inverted: black
 -- across the frame's whole inner width, from border to border, reaching the
 -- frame's top or bottom (along its rounded inner corners) for the first or
 -- last row, with the button's label painted inverted on it. Button's own
 -- inversion only covers the button, leaving the frame's padding white.
-local function paintSelectedButton(bb, frame, button, first, last)
+-- Returns the painted region.
+local function paintInvertedButton(bb, frame, button, first, last)
     local frame_dimen = frame.dimen
     local cell = button[1] and button[1].dimen
     local label = button.label_widget
@@ -117,19 +118,83 @@ local function paintSelectedButton(bb, frame, button, first, last)
         label:paintTo(bb, label_x, label_y)
         label.fgcolor = fgcolor
     end
+    return Geom:new({ x = frame_dimen.x, y = top, w = frame_dimen.w, h = bottom - top })
 end
 
--- frame: the FrameContainer around button_table; rows: the button rows
--- given to it. Paints the button with the given id selected over the frame.
-local function markSelectedButton(frame, button_table, rows, id)
-    local first_id = rows[1] and rows[1][1] and rows[1][1].id
-    local last_id = rows[#rows] and rows[#rows][1] and rows[#rows][1].id
+-- What a dock-like frame paints inverted over its ButtonTable: the selected
+-- button (a choice that stays marked) and the button showing its tap
+-- feedback. Installed once per frame. rows: the button rows given to the
+-- table.
+local function getFrameMarks(frame, button_table, rows)
+    local marks = frame._quickdock_marks
+    if marks then
+        return marks
+    end
+    marks = {
+        first_id = rows[1] and rows[1][1] and rows[1][1].id,
+        last_id = rows[#rows] and rows[#rows][1] and rows[#rows][1].id,
+    }
+    frame._quickdock_marks = marks
     local paintTo = frame.paintTo
     function frame:paintTo(bb, x, y)
         paintTo(self, bb, x, y)
-        local button = button_table:getButtonById(id)
-        if button then
-            paintSelectedButton(bb, self, button, id == first_id, id == last_id)
+        -- Tapping the selected button shows it the other way round, as an
+        -- inverted button's feedback does.
+        local feedback_id = marks.feedback_id
+        local selected_id = marks.selected_id
+        local function paint(id)
+            local button = button_table:getButtonById(id)
+            if button then
+                return paintInvertedButton(bb, self, button, id == marks.first_id, id == marks.last_id)
+            end
+        end
+        if selected_id and selected_id ~= feedback_id then
+            paint(selected_id)
+        end
+        if feedback_id and feedback_id ~= selected_id then
+            marks.feedback_region = paint(feedback_id)
+        elseif feedback_id then
+            -- Its frame-wide mark went away: refresh beyond the button too.
+            marks.feedback_region = self.dimen
+        end
+    end
+    return marks
+end
+
+-- Keeps the button with the given id marked.
+local function markSelectedButton(frame, button_table, rows, id)
+    getFrameMarks(frame, button_table, rows).selected_id = id
+end
+
+-- Gives every button of the table the frame-wide tap feedback in place of
+-- Button's own, which inverts the button alone.
+local function useFrameTapFeedback(frame, button_table, rows)
+    local marks = getFrameMarks(frame, button_table, rows)
+    local function repaint(button, refresh_type)
+        local dimen = frame.dimen
+        if not dimen then
+            return
+        end
+        -- This repaints *now*, as Button's own feedback does.
+        UIManager:widgetRepaint(frame, dimen.x, dimen.y)
+        local region = marks.feedback_region or (button[1] and button[1].dimen) or dimen
+        UIManager:setDirty(nil, refresh_type, region)
+    end
+    for _row_index, row in ipairs(rows) do
+        for _index, entry in ipairs(row) do
+            local button = entry.id and button_table:getButtonById(entry.id)
+            if button then
+                button._doFeedbackHighlight = function(self)
+                    marks.feedback_id = entry.id
+                    marks.feedback_region = nil
+                    repaint(self, "fast")
+                end
+                button._undoFeedbackHighlight = function(self)
+                    marks.feedback_id = nil
+                    repaint(self, self.enabled and "fast" or "ui")
+                    marks.feedback_region = nil
+                end
+            end
         end
     end
 end
@@ -445,6 +510,7 @@ return function(C)
         -- Buttons stacked above the dock, from the top.
         local dock_frame = self.movable[1]
         self.dock_frame = dock_frame
+        useFrameTapFeedback(dock_frame, self.buttontable, self.buttons)
         local dock_size = dock_frame:getSize()
         local function makeButton(factory)
             return factory and factory(dock_size.w, self) or nil
@@ -568,6 +634,7 @@ return function(C)
         FloatingControlButtonDialog = FloatingControlButtonDialog,
         makeFallbackLabel = makeFallbackLabel,
         markSelectedButton = markSelectedButton,
+        useFrameTapFeedback = useFrameTapFeedback,
         allowSliderRefresh = allowSliderRefresh,
     }
 
