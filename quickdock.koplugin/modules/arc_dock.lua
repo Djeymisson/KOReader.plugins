@@ -460,6 +460,9 @@ return function(widgets)
     -- Items on the arc, from the bottom end to the side end. The page arrows
     -- are the first and last items of their pages.
     function ArcDock:getMainSlots()
+        if self.mode == "panels" then
+            return self.panel_items or {}
+        end
         if self.mode ~= "actions" then
             local slider = self.sliders[self.mode]
             return { slider and slider.leading_item or nil }
@@ -473,16 +476,17 @@ return function(widgets)
     -- the unused slots stay empty at the chosen end. The slider's leading item
     -- always sits at the bottom end.
     function ArcDock:itemPosition(index, count)
-        if self.mode ~= "actions" then
+        if self.mode ~= "actions" and self.mode ~= "panels" then
             return 0
         end
-        if self.fill then
+        local geometry = self.geometry
+        -- The panel picker may list more panels than a short arc holds actions.
+        if self.fill or count > geometry.capacity then
             if count < 2 then
                 return 0
             end
             return (index - 1) / (count - 1)
         end
-        local geometry = self.geometry
         local offset = 0
         if self.empty_space == "start" then
             offset = math_max(0, geometry.capacity - count)
@@ -622,7 +626,37 @@ return function(widgets)
         self:refresh()
     end
 
+    -- The panel picker in place of the ring, as a lighting slider is shown:
+    -- items is one ring item per enabled panel, the shown one selected.
+    function ArcDock:showPanelPicker(items)
+        self:freePanelPickerItems()
+        self.panel_items = {}
+        for index = 1, #items do
+            self.panel_items[index] = ArcItem.new(items[index])
+        end
+        self.mode = "panels"
+        self:refresh()
+    end
+
+    function ArcDock:hidePanelPicker()
+        if self.mode ~= "panels" then
+            return
+        end
+        self.mode = "actions"
+        self:refresh()
+    end
+
+    function ArcDock:freePanelPickerItems()
+        for _index, item in ipairs(self.panel_items or {}) do
+            item:freeLabel()
+        end
+        self.panel_items = nil
+    end
+
     function ArcDock:isItemSelected(item)
+        if self.mode == "panels" then
+            return item.selected == true or item.panel_picker_toggle == true
+        end
         return item.slider_kind ~= nil and item.slider_kind == self.mode
     end
 
@@ -730,6 +764,7 @@ return function(widgets)
                 slider.leading_item:freeLabel()
             end
         end
+        self:freePanelPickerItems()
         if self._quickdock_suppress_close_refresh then
             return
         end
@@ -848,7 +883,7 @@ return function(widgets)
             end
             return true
         end
-        if self:isInsideBand(start) then
+        if self.mode == "actions" and self:isInsideBand(start) then
             local start_u = self:locate(start)
             local end_u = self:locate(finish)
             self:changePageBy(start_u, end_u)

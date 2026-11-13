@@ -166,11 +166,12 @@ return function(QuickDock, C, lib)
                 display_provider = function()
                     return self:getInfoPanelToggleDisplay()
                 end,
+                panel_picker_toggle = true,
                 callback = function()
-                    self:switchInfoPanel(self:getNextInfoPanelKind())
+                    self:onInfoPanelToggleTap()
                 end,
                 hold_callback = function()
-                    self:showInfoPanelSwitchHelp()
+                    self:onInfoPanelToggleHold()
                 end,
             })
         end

@@ -9,7 +9,7 @@ local lfs = require("libs/libkoreader-lfs")
 local UIManager = require("ui/uimanager")
 local _ = require("quickdock_l10n")
 
-local PLUGIN_VERSION = "v0.26.1"
+local PLUGIN_VERSION = "v0.27.0"
 
 local function pluginDir()
     local source = debug.getinfo(1, "S").source or ""
@@ -437,6 +437,8 @@ end
 function QuickDock:closeDock(rebuilding)
     local dialog = self.dialog
     self:cancelDockTimers(rebuilding)
+    -- A rebuilt dock (reopened, moved to the other side) starts on its actions.
+    self.panel_picker_open = nil
     if not Prefs.closeDockTogether() then
         self.dialog = nil
         self:closeStatusPanel()

@@ -37,6 +37,7 @@ local pt_BR = {
     ["book statistics"] = "estatísticas do livro",
     ["network information"] = "informações da rede",
     ["Showing %1. Tap to show %2."] = "Exibindo %1. Toque para mostrar %2.",
+    ["Choose a panel to show"] = "Escolha o painel a exibir",
     ["Connected"] = "Conectado",
     ["Wi-Fi on, not connected"] = "Wi-Fi ligado, sem conexão",
     ["Wi-Fi off"] = "Wi-Fi desligado",

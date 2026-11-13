@@ -13,7 +13,7 @@ Each plugin is kept in its own `.koplugin/` folder and has a dedicated documenta
 | Lookup Preview | v1.7.1 | `lookuppreview.koplugin/` | [lookuppreview.koplugin.md](./lookuppreview.koplugin.md) |
 | Reader Header Footer | v1.0.10 | `readerheaderfooter.koplugin/` | [readerheaderfooter.koplugin.md](./readerheaderfooter.koplugin.md) |
 | Selection Toolbar | v1.15.6 | `selectiontoolbar.koplugin/` | [selectiontoolbar.koplugin.md](./selectiontoolbar.koplugin.md) |
-| Quick Dock | v0.26.1 | `quickdock.koplugin/` | [quickdock.koplugin.md](./quickdock.koplugin.md) |
+| Quick Dock | v0.27.0 | `quickdock.koplugin/` | [quickdock.koplugin.md](./quickdock.koplugin.md) |
 | Image Browser | v0.2.7 | `imagebrowser.koplugin/` | [imagebrowser.koplugin.md](./imagebrowser.koplugin.md) |
 | Page Anchor | v1.17.0 | `pageanchor.koplugin/` | [pageanchor.koplugin.md](./pageanchor.koplugin.md) |
 | Dictionary Explorer | v1.8.1 | `dictionaryexplorer.koplugin/` | [dictionaryexplorer.koplugin.md](./dictionaryexplorer.koplugin.md) |

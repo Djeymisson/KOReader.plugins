@@ -18,6 +18,7 @@ local Screen = Device.screen
 local math_floor = math.floor
 local math_max = math.max
 local math_min = math.min
+local math_sqrt = math.sqrt
 
 local function firstCharacters(text, count)
     local characters = util.splitToChars(text or "")
@@ -59,6 +60,78 @@ local function allowSliderRefresh(owner, force)
     end
     owner.last_refresh_time = now
     return true
+end
+
+-- Marks the selected button of a ButtonTable framed like the dock: black
+-- across the frame's whole inner width, from border to border, reaching the
+-- frame's top or bottom (along its rounded inner corners) for the first or
+-- last row, with the button's label painted inverted on it. Button's own
+-- inversion only covers the button, leaving the frame's padding white.
+local function paintSelectedButton(bb, frame, button, first, last)
+    local frame_dimen = frame.dimen
+    local cell = button[1] and button[1].dimen
+    local label = button.label_widget
+    if not frame_dimen or not cell or not label then
+        return
+    end
+    local border = frame.bordersize or 0
+    local inner_x = frame_dimen.x + border
+    local inner_w = frame_dimen.w - 2 * border
+    local inner_top = frame_dimen.y + border
+    local inner_bottom = frame_dimen.y + frame_dimen.h - border
+    local radius = frame.radius or 0
+    local top = first and inner_top or cell.y
+    local bottom = last and inner_bottom or cell.y + cell.h
+    -- One rect for the straight part; the rows along a rounded corner are
+    -- painted one at a time, inset to the corner's curve.
+    local straight_top = math_max(top, inner_top + radius)
+    local straight_bottom = math_min(bottom, inner_bottom - radius)
+    for row = top, bottom - 1 do
+        if row < straight_top or row >= straight_bottom then
+            local dy
+            if row < inner_top + radius then
+                dy = inner_top + radius - row - 0.5
+            else
+                dy = row + 0.5 - (inner_bottom - radius)
+            end
+            -- Rounded down, so the fill meets the border's anti-aliased edge.
+            local inset = math_floor(radius - math_sqrt(math_max(0, radius * radius - dy * dy)))
+            bb:paintRect(inner_x + inset, row, inner_w - 2 * inset, 1, Blitbuffer.COLOR_BLACK)
+        end
+    end
+    if straight_bottom > straight_top then
+        bb:paintRect(inner_x, straight_top, inner_w, straight_bottom - straight_top, Blitbuffer.COLOR_BLACK)
+    end
+
+    -- Centered in the button, as Button lays it out.
+    local size = label:getSize()
+    local label_x = cell.x + math_floor((cell.w - size.w) / 2)
+    local label_y = cell.y + math_floor((cell.h - size.h) / 2)
+    if button.icon then
+        label.invert = true
+        label:paintTo(bb, label_x, label_y)
+        label.invert = nil
+    else
+        local fgcolor = label.fgcolor
+        label.fgcolor = Blitbuffer.COLOR_WHITE
+        label:paintTo(bb, label_x, label_y)
+        label.fgcolor = fgcolor
+    end
+end
+
+-- frame: the FrameContainer around button_table; rows: the button rows
+-- given to it. Paints the button with the given id selected over the frame.
+local function markSelectedButton(frame, button_table, rows, id)
+    local first_id = rows[1] and rows[1][1] and rows[1][1].id
+    local last_id = rows[#rows] and rows[#rows][1] and rows[#rows][1].id
+    local paintTo = frame.paintTo
+    function frame:paintTo(bb, x, y)
+        paintTo(self, bb, x, y)
+        local button = button_table:getButtonById(id)
+        if button then
+            paintSelectedButton(bb, self, button, id == first_id, id == last_id)
+        end
+    end
 end
 
 return function(C)
@@ -276,6 +349,29 @@ return function(C)
     -- refresh of the dock is enough to update it.
     local DynamicLabelButton = Button:extend({})
 
+    -- selected: drawn inverted. Button's own inversion (preselect) inverts
+    -- the whole rectangle and leaves square corners on a rounded button;
+    -- a black background keeps the button's radius instead, as KOReader
+    -- does for colored buttons, and only the label itself is inverted.
+    function DynamicLabelButton:init()
+        if self.selected then
+            self.background = Blitbuffer.COLOR_BLACK
+        end
+        Button.init(self)
+    end
+
+    function DynamicLabelButton:applySelectedLabel()
+        local label = self.label_widget
+        if not self.selected or not label then
+            return
+        end
+        if self.icon then
+            label.invert = true
+        else
+            label.fgcolor = Blitbuffer.COLOR_WHITE
+        end
+    end
+
     function DynamicLabelButton:paintTo(bb, x, y)
         local icon, text = self.display_provider()
         if icon then
@@ -288,6 +384,7 @@ return function(C)
             self.icon = nil
             self:setText(text, self.width)
         end
+        self:applySelectedLabel()
         Button.paintTo(self, bb, x, y)
     end
 
@@ -347,6 +444,7 @@ return function(C)
 
         -- Buttons stacked above the dock, from the top.
         local dock_frame = self.movable[1]
+        self.dock_frame = dock_frame
         local dock_size = dock_frame:getSize()
         local function makeButton(factory)
             return factory and factory(dock_size.w, self) or nil
@@ -355,11 +453,22 @@ return function(C)
         local side_button = makeButton(self.side_button_factory)
         local info_panel_toggle_button = makeButton(self.info_panel_toggle_button_factory)
         self.info_panel_toggle_button = info_panel_toggle_button
+        -- The open panel picker sits right above the panel-switch button.
+        local panel_picker = makeButton(self.panel_picker_factory)
+        self.panel_picker = panel_picker
+        -- The actions' own height, before anything is stacked on them.
+        self.dock_height = dock_size.h
 
         local dock_column = dock_frame
         local stacked = {}
         local gap = self.side_button_gap or C.BASE_SIDE_BUTTON_GAP
-        for _index, button in ipairs({ close_button or false, side_button or false, info_panel_toggle_button or false }) do
+        local stack_order = {
+            close_button or false,
+            side_button or false,
+            panel_picker or false,
+            info_panel_toggle_button or false,
+        }
+        for _index, button in ipairs(stack_order) do
             if button then
                 stacked[#stacked + 1] = button
                 stacked[#stacked + 1] = VerticalSpan:new({ width = gap })
@@ -371,8 +480,10 @@ return function(C)
         end
 
         -- Lighting columns beside the dock, all bottom-aligned with it.
+        -- slider_height keeps them at the actions' height while the panel
+        -- picker takes the actions' place.
         local function makeColumn(factory)
-            return factory and factory(dock_size.h, self) or nil
+            return factory and factory(self.slider_height or dock_size.h, self) or nil
         end
         local frontlight_column = makeColumn(self.frontlight_slider_factory)
         local warmth_column = makeColumn(self.warmth_slider_factory)
@@ -435,6 +546,19 @@ return function(C)
                     table.insert(self.layout, 1, { button })
                 end
             end
+            if panel_picker then
+                local picker_layout = panel_picker.button_table.layout or {}
+                for index = #picker_layout, 1, -1 do
+                    table.insert(self.layout, 1, picker_layout[index])
+                end
+            end
+        end
+        -- As ButtonDialog does with its own table: the dialog controls the
+        -- focus, so the picker's table must not keep a layout of its own.
+        -- Being a child, it would see the arrow keys first and keep the
+        -- focus cycling among the panels only.
+        if panel_picker then
+            panel_picker.button_table.layout = nil
         end
     end
 
@@ -443,6 +567,7 @@ return function(C)
         DynamicLabelButton = DynamicLabelButton,
         FloatingControlButtonDialog = FloatingControlButtonDialog,
         makeFallbackLabel = makeFallbackLabel,
+        markSelectedButton = markSelectedButton,
         allowSliderRefresh = allowSliderRefresh,
     }
 

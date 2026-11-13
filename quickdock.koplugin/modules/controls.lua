@@ -324,20 +324,123 @@ return function(QuickDock, C, lib)
         self:showButtonHelp(T(_("Showing %1. Tap to show %2."), current.name, next_mode.name))
     end
 
+    -- Panel picker: holding the panel-switch button replaces the dock's
+    -- actions with one button per enabled panel, the way the arc's lighting
+    -- slider takes the ring's place, so any panel is one tap away. With only
+    -- two panels the plain tap already reaches the other one, so the hold
+    -- keeps showing the help instead.
+    local PANEL_PICKER_MIN_PANELS = 3
+
+    function QuickDock:isPanelPickerOpen()
+        local dialog = self.dialog
+        if not dialog then
+            return false
+        end
+        if dialog.showPanelPicker then
+            return dialog.mode == "panels"
+        end
+        return self.panel_picker_open == true
+    end
+
+    function QuickDock:makePanelPickerItems(metrics)
+        local current_kind = self.current_info_panel_kind
+        local items = {}
+        for _index, kind in ipairs(Prefs.getEnabledInfoPanelKinds()) do
+            local mode = self:getInfoPanelMode(kind)
+            if mode then
+                local item = {
+                    id = "quickdock_panel_" .. kind,
+                    enabled = true,
+                    selected = kind == current_kind,
+                    callback = function()
+                        self:closePanelPicker(kind)
+                    end,
+                    hold_callback = function()
+                        self:showButtonHelp(mode.title)
+                    end,
+                }
+                setLabel(item, self:getIcon(mode.icon), makeFallbackLabel(mode.title, mode.icon),
+                    metrics.fallback_font_size, true)
+                items[#items + 1] = applyButtonMetrics(item, metrics)
+            end
+        end
+        return items
+    end
+
+    -- Rebuilds the dock around the picker state: the arc swaps its ring in
+    -- place, the column dock is replaced like a page turn.
+    function QuickDock:refreshPanelPickerDock(open)
+        local dialog = self.dialog
+        if dialog.showPanelPicker then
+            if open then
+                dialog:showPanelPicker(self:makePanelPickerItems(dialog.metrics))
+            else
+                dialog:hidePanelPicker()
+            end
+            return
+        end
+        self.panel_picker_open = open or nil
+        self:showColumnDockPage(self.current_page)
+    end
+
+    function QuickDock:openPanelPicker()
+        if not self.dialog or self:isPanelPickerOpen() then
+            return
+        end
+        self:refreshPanelPickerDock(true)
+        self:showButtonHelp(_("Choose a panel to show"))
+    end
+
+    -- kind: the panel chosen in the picker, or nil to leave it unchanged.
+    function QuickDock:closePanelPicker(kind)
+        if not self:isPanelPickerOpen() then
+            return
+        end
+        if kind and kind ~= self.current_info_panel_kind then
+            self:switchInfoPanel(kind)
+        else
+            self:closeStatusPanel()
+        end
+        if self.dialog then
+            self:refreshPanelPickerDock(false)
+        end
+    end
+
+    function QuickDock:onInfoPanelToggleTap()
+        if self:isPanelPickerOpen() then
+            self:closePanelPicker()
+        else
+            self:switchInfoPanel(self:getNextInfoPanelKind())
+        end
+    end
+
+    function QuickDock:onInfoPanelToggleHold()
+        if self:isPanelPickerOpen() then
+            self:closePanelPicker()
+        elseif #Prefs.getEnabledInfoPanelKinds() >= PANEL_PICKER_MIN_PANELS then
+            self:openPanelPicker()
+        else
+            self:showInfoPanelSwitchHelp()
+        end
+    end
+
     function QuickDock:makeInfoPanelToggleButton(width, dialog, metrics)
         local icon, fallback = self:getInfoPanelToggleDisplay()
         local button = applyHighlightedButtonMetrics({
             id = "quickdock_switch_info_panel",
             enabled = true,
             show_parent = dialog,
+            -- Marked while the picker it opened is shown, as the arc marks
+            -- the button of an open lighting slider.
+            selected = self.panel_picker_open == true,
             display_provider = function()
                 return self:getInfoPanelToggleDisplay()
             end,
             callback = function()
-                self:switchInfoPanel(self:getNextInfoPanelKind())
+                self:onInfoPanelToggleTap()
             end,
             hold_callback = function()
-                self:showInfoPanelSwitchHelp()
+                self:onInfoPanelToggleHold()
             end,
         }, width, metrics)
         setLabel(button, icon, fallback, metrics.side_font_size, true, "text_")

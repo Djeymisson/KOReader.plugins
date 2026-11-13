@@ -1,4 +1,4 @@
-# Quick Dock ![Version](https://img.shields.io/badge/version-v0.26.1-blue)
+# Quick Dock ![Version](https://img.shields.io/badge/version-v0.27.0-blue)
 
 Quick Dock adds a floating action dock with lighting controls and an optional information panel to KOReader. It is designed for touch devices and can be assigned to any gesture supported by KOReader.
 
@@ -20,7 +20,7 @@ Quick Dock adds a floating action dock with lighting controls and an optional in
 - Configurable closing method: one block at a time by default, or all blocks at once using the smallest encompassing rectangle and a non-flashing UI update.
 - Optional vertical frontlight slider in a separate column beside the action buttons, with a circular thumb, live brightness adjustment, and a dedicated frontlight toggle button.
 - Optional second lighting column for frontlight warmth on supported devices, using each device's native warmth range.
-- Optional information panel on the screen edge opposite the dock. It can show reading information, book statistics, the covers of recent documents (tap one to open it), network information, or any combination; when two or more are enabled, one highlighted button immediately above the action dock cycles through them without closing the dock.
+- Optional information panel on the screen edge opposite the dock. It can show reading information, book statistics, the covers of recent documents (tap one to open it), network information, or any combination; when two or more are enabled, one highlighted button immediately above the action dock cycles through them without closing the dock. With three or more, holding that button lists them right above it (or, in the arc, in place of the actions), so any panel is one tap away. See [Panel picker](#panel-picker).
 - Holding a dock button shows its help text in the compact opposite-edge status block above the information panel instead of opening a modal message.
 - Night mode and Wi-Fi execute in place without destroying and rebuilding the dock.
 - Wi-Fi progress appears in a compact opposite-edge status panel instead of KOReader's informational popups during inline toggles.
@@ -140,7 +140,7 @@ The settings follow the same grouped layout as the other plugins in this reposit
   - `Reset actions to defaults`: restores the initial actions and their order after confirmation without changing the other plugin settings.
   - `Reset behavior and actions`: additionally restores extra buttons, default actions, order, and visibility while preserving appearance.
 - `Gesture setup`: displays instructions for assigning the dock to a KOReader gesture.
-- `Version: v0.26.1`: shows the installed plugin version.
+- `Version: v0.27.0`: shows the installed plugin version.
 
 The side selector and visibility options keep their menu open after a change, making it easier to review related settings.
 
@@ -183,7 +183,21 @@ While reading, the panel shows the document title and primary author, current/to
 
 In the file browser or Bookshelf, no document-specific fields are invented: the reading panel shows the available daily reading summary, clock, and battery state. Reading-time fields appear only when KOReader's Statistics plugin is enabled and has data. Statistics are read once when the dock opens, and the same snapshot is reused across pagination and side changes; there is no timer, background polling, or global ReaderUI/FileManager patch. The daily summary comes from one read-only query on the Statistics database that counts today's pages exactly as KOReader's own Statistics plugin does, rescaled to each book's current page count, but forces the database's date index so that only today's records are read; for KOReader's own query, SQLite chooses another index and scans the whole reading history, which grows slower as the history grows. Should that query fail (for example, with a different database layout), the panel falls back to KOReader's query. The network panel never touches the database (the statistics panel's own read-only query is described below).
 
-The network panel displays the current Wi-Fi state and reads the available interface, MAC, SSID, IPv4/IPv6, and gateway details the same way KOReader's own network information does, but without its gateway ping: that test is synchronous, blocks the interface until it answers or times out, and keeps the radio busy, so the panel only reads the interface state already known to the system and sends nothing over the network. This data is collected when the network panel is opened or selected and refreshed from KOReader's connection events when the dock's Wi-Fi button changes state; there is no background polling. With two or more panels enabled, one square button immediately above the action dock cycles through them (Reading, Statistics, Recent documents, Network, skipping disabled ones) without rebuilding or closing the dock. It uses the same dimensions, border, rounded corners, and press feedback as the frontlight toggle. Its icon indicates the panel currently visible: `reading_info.svg` (with the system open-book icon as fallback) for Reading, `stats.svg` for Statistics, `recent_info.svg` (with `history.svg` as fallback) for Recent documents, or `network_info.svg` for Network. Holding the button describes the current panel and the tap action.
+The network panel displays the current Wi-Fi state and reads the available interface, MAC, SSID, IPv4/IPv6, and gateway details the same way KOReader's own network information does, but without its gateway ping: that test is synchronous, blocks the interface until it answers or times out, and keeps the radio busy, so the panel only reads the interface state already known to the system and sends nothing over the network. This data is collected when the network panel is opened or selected and refreshed from KOReader's connection events when the dock's Wi-Fi button changes state; there is no background polling. With two or more panels enabled, one square button immediately above the action dock cycles through them (Reading, Statistics, Recent documents, Network, skipping disabled ones) without rebuilding or closing the dock. It uses the same dimensions, border, rounded corners, and press feedback as the frontlight toggle. Its icon indicates the panel currently visible: `reading_info.svg` (with the system open-book icon as fallback) for Reading, `stats.svg` for Statistics, `recent_info.svg` (with `history.svg` as fallback) for Recent documents, or `network_info.svg` for Network. With two panels, holding the button describes the current panel and the tap action; with three or more, it opens the panel picker.
+
+### Panel picker
+
+With three or more panels enabled, holding the panel-switch button shows one button per enabled panel, in `Panel order`, using the same icons as the switch button. The status block shows `Choose a panel to show`.
+
+- Column dock: the panels appear in a block of their own, framed and sized like the action dock, stacked right above the panel-switch button with the usual gap between them (the first panel at the bottom). The actions stay where they are. When the screen is too short for that block, the panels take the actions' place instead; the lighting columns keep the actions' height either way.
+- Arc dock: the panels take the place of the actions on the ring, the first one at its bottom end, as a lighting slider does.
+
+The panel on screen is marked, inverted in the column and with a thick ring in the arc, and so is the switch button while the picker is open, the way the arc marks the button of an open lighting slider.
+
+- Tap a panel to show it: the picker closes, and the actions are back on the same page as before.
+- Tap the marked panel, or tap or hold the switch button again, to close the picker without changing the panel.
+- Hold a panel to see its name in the status block.
+- Tapping outside the dock closes it as usual. While the panels replace the actions, their page arrows and the arc's swipes are not available.
 
 ### Book statistics panel
 
