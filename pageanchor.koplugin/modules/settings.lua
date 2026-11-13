@@ -104,6 +104,9 @@ function PageAnchor:getButtonMetrics()
 		segment_width = height + 2 * scaleMetric(C.BASE_BUTTON_SIDE_PADDING, factor),
 		side_padding = scaleMetric(C.BASE_BUTTON_SIDE_PADDING, factor),
 		label_font_size = math.floor(C.BASE_INLINE_LABEL_FONT_SIZE * factor + 0.5),
+		-- Segment height in the compact tab: the icon with just a little
+		-- air above and below, instead of a full button's height.
+		compact_height = scaleMetric(C.BASE_BUTTON_ICON_SIZE, factor) + 2 * scaleMetric(C.BASE_COMPACT_VERTICAL_PADDING, factor),
 		padding = C.BUTTON_OUTER_PADDING,
 		margin = C.BUTTON_MARGIN,
 	}
@@ -153,7 +156,45 @@ function PageAnchor:setInlineLabelMode(mode)
 	self:_onDisplaySettingChanged()
 end
 
+function PageAnchor:getStyle()
+	return readOption(C.SETTING_STYLE, C.STYLE_OPTIONS, C.STYLE_FLOATING)
+end
+
+function PageAnchor:isCompactStyle()
+	return self:getStyle() == C.STYLE_COMPACT
+end
+
+function PageAnchor:setStyle(style)
+	G_reader_settings:saveSetting(C.SETTING_STYLE, style == C.STYLE_COMPACT and C.STYLE_COMPACT or C.STYLE_FLOATING)
+	-- The compact tab always sits at the bottom: the touch zones may move.
+	if self._installed then
+		self:registerOverlayZones()
+	end
+	self:_onDisplaySettingChanged()
+end
+
+-- The undo notice shown after dismissing or discarding ("Anchor set here",
+-- "Buttons dismissed", "Anchor discarded"). Off, the discard is silent; it
+-- can still be undone from the menu or the gesture action.
+function PageAnchor:isUndoNoticeEnabled()
+	return G_reader_settings:nilOrTrue(C.SETTING_UNDO_NOTICE)
+end
+
+function PageAnchor:setUndoNoticeEnabled(enabled)
+	G_reader_settings:saveSetting(C.SETTING_UNDO_NOTICE, enabled and true or false)
+end
+
+-- The saved position, whatever the style (what the menu shows).
+function PageAnchor:getSavedVerticalPosition()
+	local value = G_reader_settings:readSetting(C.SETTING_VERTICAL_POSITION)
+	return C.VERTICAL_ZONES[value] and value or C.VERTICAL_BOTTOM
+end
+
+-- Where the control actually sits: the compact tab is always at the bottom.
 function PageAnchor:getVerticalPosition()
+	if self:isCompactStyle() then
+		return C.VERTICAL_BOTTOM
+	end
 	local value = G_reader_settings:readSetting(C.SETTING_VERTICAL_POSITION)
 	return C.VERTICAL_ZONES[value] and value or C.VERTICAL_BOTTOM
 end

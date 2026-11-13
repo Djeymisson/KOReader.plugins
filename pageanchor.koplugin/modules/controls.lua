@@ -360,6 +360,13 @@ function PageAnchor:getOverlayClearance(side)
 		return nil
 	end
 	local size = self.overlay:_getDock(spec).widget:getSize()
+	if self:isCompactStyle() then
+		-- The compact tab sits on the bottom edge itself, with no margin
+		-- under it to cancel Quick Dock's own: take that margin back out.
+		-- Its tap targets are exactly the tab, so clearing the tab also
+		-- keeps a tap on the bottom of the dock off them.
+		return math.max(0, size.h + Size.padding.default - self:getButtonMetrics().margin)
+	end
 	return size.h + Size.padding.default
 end
 

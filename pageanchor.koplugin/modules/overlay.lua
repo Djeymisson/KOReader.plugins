@@ -24,6 +24,7 @@ local lib = select(2, ...)
 local anchorIcon = lib.anchorIcon
 
 local FloatingHistoryOverlay = WidgetContainer:extend({})
+local AnchorTab -- defined below, used by _makeDock for the compact style
 
 function FloatingHistoryOverlay:clearCache()
 	if self.dock and self.dock.widget and self.dock.widget.free then
@@ -47,6 +48,11 @@ end
 -- screen center, mirroring Quick Dock's own icon ordering.
 function FloatingHistoryOverlay:_makeDock(spec)
 	local metrics = self.owner:getButtonMetrics()
+	if self.owner:isCompactStyle() then
+		-- Lower segments in the compact tab (see compact_height); every
+		-- builder below reads the height from here.
+		metrics = setmetatable({ height = metrics.compact_height }, { __index = metrics })
+	end
 	if spec.minimized then
 		return self:_makeTab(spec, metrics)
 	end
@@ -97,17 +103,33 @@ function FloatingHistoryOverlay:_makeDock(spec)
 	local dock_content = HorizontalGroup:new(dock_children)
 	local content_size = dock_content:getSize()
 
-	local widget = FrameContainer:new({
-		background = Blitbuffer.COLOR_WHITE,
-		bordersize = Size.border.button,
-		radius = Size.radius.button,
-		margin = 0,
-		padding = metrics.padding,
-		CenterContainer:new({
-			dimen = Geom:new({ w = content_size.w, h = metrics.height }),
-			dock_content,
-		}),
-	})
+	local widget
+	if self.owner:isCompactStyle() then
+		-- Compact: the same segments in a tab growing out of the bottom
+		-- edge. Same side insets as the floating pill (so dismiss_x below
+		-- holds for both), but no bottom border and no outer padding below.
+		local border = Size.border.button
+		widget = AnchorTab:new({
+			edge = "bottom",
+			width = content_size.w + 2 * (metrics.padding + border),
+			height = self:_compactHeight(metrics),
+			radius = Size.radius.button,
+			bordersize = border,
+			child = dock_content,
+		})
+	else
+		widget = FrameContainer:new({
+			background = Blitbuffer.COLOR_WHITE,
+			bordersize = Size.border.button,
+			radius = Size.radius.button,
+			margin = 0,
+			padding = metrics.padding,
+			CenterContainer:new({
+				dimen = Geom:new({ w = content_size.w, h = metrics.height }),
+				dock_content,
+			}),
+		})
+	end
 
 	local dismiss_offset = spec.side == "left" and (content_size.w - dismiss_size.w) or 0
 	return {
@@ -147,22 +169,23 @@ function FloatingHistoryOverlay:_makeLabeledSegment(spec, metrics)
 	})
 end
 
--- The minimized form: a narrow tab glued to the screen edge, holding just
--- the anchor icon, so it reads as "something is parked here" rather than
--- as live navigation. Drawn by hand instead of with a FrameContainer, which
--- can only round all four corners: here the inner corners are rounded and
--- the screen-edge side is square and borderless, like a tab pulled out of
--- the side of the page. Everything is painted inside the screen -- the
--- outer side is squared off by overpainting, never by drawing past the
--- edge, which not every blitbuffer path clips.
-local AnchorTab = Widget:extend({
-	side = "right",
+-- A tab growing out of one screen edge ("left", "right" or "bottom"),
+-- holding `child` centered: the minimized tab glued to the side, and the
+-- whole compact-style control and undo notice glued to the bottom. Drawn
+-- by hand instead of with a FrameContainer, which can only round all four
+-- corners: here the inner corners are rounded and the screen-edge side is
+-- square and borderless, like a tab pulled out of the edge of the page.
+-- Everything is painted inside the screen -- the outer side is squared off
+-- by overpainting, never by drawing past the edge, which not every
+-- blitbuffer path clips.
+AnchorTab = Widget:extend({
+	edge = "right",
 	width = 0,
 	height = 0,
 	radius = 0,
 	bordersize = 0,
 	border_color = Blitbuffer.COLOR_DARK_GRAY,
-	icon_widget = nil,
+	child = nil,
 })
 
 function AnchorTab:getSize()
@@ -172,44 +195,69 @@ end
 function AnchorTab:paintTo(bb, x, y)
 	local w, h, bw = self.width, self.height, self.bordersize
 	local r = math.min(self.radius, math.floor(w / 2), math.floor(h / 2))
-	bb:paintRoundedRect(x, y, w, h, Blitbuffer.COLOR_WHITE, r)
-	bb:paintBorder(x, y, w, h, bw, self.border_color, r)
-	if r > 0 then
+	local white, color = Blitbuffer.COLOR_WHITE, self.border_color
+	bb:paintRoundedRect(x, y, w, h, white, r)
+	bb:paintBorder(x, y, w, h, bw, color, r)
+	if self.edge == "bottom" then
+		if r > 0 then
+			-- White over the bottom corners and border, then carry the
+			-- side edges down to the screen edge.
+			local edge_y = y + h - r
+			bb:paintRect(x, edge_y, w, r, white)
+			bb:paintRect(x, edge_y, bw, r, color)
+			bb:paintRect(x + w - bw, edge_y, bw, r, color)
+		else
+			bb:paintRect(x + bw, y + h - bw, w - 2 * bw, bw, white)
+		end
+	elseif r > 0 then
 		-- Square off the screen-edge side: white over its rounded corners
 		-- and side border, then carry the top and bottom edges across.
-		local edge_x = self.side == "left" and x or x + w - r
-		bb:paintRect(edge_x, y, r, h, Blitbuffer.COLOR_WHITE)
-		bb:paintRect(edge_x, y, r, bw, self.border_color)
-		bb:paintRect(edge_x, y + h - bw, r, bw, self.border_color)
+		local edge_x = self.edge == "left" and x or x + w - r
+		bb:paintRect(edge_x, y, r, h, white)
+		bb:paintRect(edge_x, y, r, bw, color)
+		bb:paintRect(edge_x, y + h - bw, r, bw, color)
 	else
-		local edge_x = self.side == "left" and x or x + w - bw
-		bb:paintRect(edge_x, y + bw, bw, h - 2 * bw, Blitbuffer.COLOR_WHITE)
+		local edge_x = self.edge == "left" and x or x + w - bw
+		bb:paintRect(edge_x, y + bw, bw, h - 2 * bw, white)
 	end
-	local icon_size = self.icon_widget:getSize()
-	self.icon_widget:paintTo(bb,
-		x + math.floor((w - icon_size.w) / 2),
-		y + math.floor((h - icon_size.h) / 2))
+	local child_size = self.child:getSize()
+	-- Centered in what's drawn: a bottom tab has no border at the bottom.
+	local inner_h = self.edge == "bottom" and (h + bw) or h
+	self.child:paintTo(bb,
+		x + math.floor((w - child_size.w) / 2),
+		y + math.floor((inner_h - child_size.h) / 2))
 end
 
 function AnchorTab:free()
-	if self.icon_widget and self.icon_widget.free then
-		self.icon_widget:free()
+	if self.child and self.child.free then
+		self.child:free()
 	end
+end
+
+-- Height of the compact control: the low segments plus the top border
+-- only -- no outer padding, and the bottom side is the screen edge.
+function FloatingHistoryOverlay:_compactHeight(metrics)
+	return metrics.compact_height + Size.border.button
 end
 
 -- Same height as the full control, so it sits exactly where the control
 -- was and keeps Quick Dock's clearance (getOverlayClearance) unchanged when
--- it expands; only as wide as the icon plus a little air. The tap target is
--- wider than what's drawn (see paintTo), so narrow never means hard to hit.
+-- it expands; only as wide as the icon plus a little air. Floating style:
+-- glued to the side edge, with a tap target wider than what's drawn (see
+-- paintTo), so narrow never means hard to hit. Compact style: glued to the
+-- bottom edge like the compact control, in the same corner, and tapped
+-- only where it's drawn, so it never takes a tap meant for what's beside
+-- or above it (Quick Dock's dock, say).
 function FloatingHistoryOverlay:_makeTab(spec, metrics)
 	local border = Size.border.button
+	local compact = self.owner:isCompactStyle()
 	local widget = AnchorTab:new({
-		side = spec.side,
-		width = metrics.icon_size + 2 * Size.padding.default + border,
-		height = metrics.height + 2 * (metrics.padding + border),
+		edge = compact and "bottom" or spec.side,
+		width = metrics.icon_size + 2 * Size.padding.default + (compact and 2 or 1) * border,
+		height = compact and self:_compactHeight(metrics) or (metrics.height + 2 * (metrics.padding + border)),
 		radius = Size.radius.button,
 		bordersize = border,
-		icon_widget = IconWidget:new({
+		child = IconWidget:new({
 			icon = C.ICONS_DIR .. (spec.pinned and C.ICON_ANCHOR_PINNED or C.ICON_ANCHOR),
 			width = metrics.icon_size,
 			height = metrics.icon_size,
@@ -218,7 +266,8 @@ function FloatingHistoryOverlay:_makeTab(spec, metrics)
 	return {
 		widget = widget,
 		minimized = true,
-		hit_width = metrics.segment_width + 2 * (metrics.padding + border),
+		flush_side = not compact,
+		hit_width = not compact and (metrics.segment_width + 2 * (metrics.padding + border)) or nil,
 	}
 end
 
@@ -238,6 +287,7 @@ function FloatingHistoryOverlay:_getDock(spec)
 		spec.inline_text or "",
 		spec.pinned and "pinned" or "free",
 		self.owner:getButtonSize(),
+		self.owner:getStyle(),
 	}, ":")
 	if key ~= self.dock_key then
 		self:clearCache()
@@ -265,14 +315,17 @@ function FloatingHistoryOverlay:paintTo(bb, x, y)
 	local view_width = view and view.dimen and view.dimen.w or Screen:getWidth()
 	local view_height = view and view.dimen and view.dimen.h or Screen:getHeight()
 	local size = widget:getSize()
-	-- The tab is glued to the screen edge; the full control keeps a margin.
-	local side_margin = dock.minimized and 0 or margin
+	-- The side tab is glued to the screen edge; everything else keeps a
+	-- margin from the side (the compact style is glued to the bottom).
+	local side_margin = dock.flush_side and 0 or margin
 	local widget_x = spec.side == "left"
 		and x + side_margin
 		or x + view_width - size.w - side_margin
 	local position = self.owner:getVerticalPosition()
 	local widget_y
-	if position == C.VERTICAL_TOP then
+	if self.owner:isCompactStyle() then
+		widget_y = y + view_height - size.h
+	elseif position == C.VERTICAL_TOP then
 		widget_y = y + margin
 	elseif position == C.VERTICAL_MIDDLE then
 		widget_y = y + math.floor((view_height - size.h) / 2)
@@ -297,7 +350,8 @@ function FloatingHistoryOverlay:paintTo(bb, x, y)
 	self.pill_side = spec.side
 
 	if dock.minimized then
-		-- Tap target reaches further into the page than the narrow tab.
+		-- The side tab's tap target reaches further into the page than the
+		-- narrow tab; the compact one's is just the tab (no hit_width).
 		local hit_w = math.max(size.w, dock.hit_width or size.w)
 		local hit_x = spec.side == "left" and widget_x or widget_x + size.w - hit_w
 		self.button_dimens = {

@@ -125,17 +125,27 @@ function PageAnchor:addToMainMenu(menu_items)
 		},
 	}
 
+	local position_item = optionSetting(_("Position"),
+		_("Choose where on the screen the buttons sit. They always stay on the side the arrow leads to. The compact style is always at the bottom."),
+		C.VERTICAL_POSITION_OPTIONS,
+		function() return self:getSavedVerticalPosition() end,
+		function(value) self:setVerticalPosition(value) end)
+	position_item.enabled_func = function()
+		return not self:isCompactStyle()
+	end
+
 	local button_items = {
+		optionSetting(_("Style"),
+			_("Choose how the buttons look: a floating pill, or a compact tab growing out of the bottom edge of the screen, in the left or right corner. The undo notice takes the same shape."),
+			C.STYLE_OPTIONS,
+			function() return self:getStyle() end,
+			function(value) self:setStyle(value) end),
 		optionSetting(_("Size"),
 			_("Choose how big the floating buttons are. Bigger buttons are easier to tap."),
 			C.BUTTON_SIZE_OPTIONS,
 			function() return self:getButtonSize() end,
 			function(value) self:setButtonSize(value) end),
-		optionSetting(_("Position"),
-			_("Choose where on the screen the buttons sit. They always stay on the side the arrow leads to."),
-			C.VERTICAL_POSITION_OPTIONS,
-			function() return self:getVerticalPosition() end,
-			function(value) self:setVerticalPosition(value) end),
+		position_item,
 		optionSetting(_("Destination on button"),
 			_("Choose what is written next to the arrow: the page it leads to, how many pages away that is, or nothing."),
 			C.INLINE_LABEL_OPTIONS,
@@ -146,6 +156,16 @@ function PageAnchor:addToMainMenu(menu_items)
 			C.DESTINATION_FORMAT_OPTIONS,
 			function() return self:getDestinationFormat() end,
 			function(value) self:setDestinationFormat(value) end),
+		{
+			text = _("Show undo notice"),
+			help_text = _("After dismissing the buttons or discarding the anchor, shows a short notice (such as \"Anchor set here\" or \"Buttons dismissed\") that undoes it with a tap. Turned off, it happens silently; you can still undo it from Current anchor or with a gesture."),
+			checked_func = function()
+				return self:isUndoNoticeEnabled()
+			end,
+			callback = function()
+				self:setUndoNoticeEnabled(not self:isUndoNoticeEnabled())
+			end,
+		},
 	}
 
 	local auto_hide_items = {
@@ -209,7 +229,7 @@ function PageAnchor:addToMainMenu(menu_items)
 			},
 			{
 				text = _("Buttons"),
-				help_text = _("Choose the size and position of the floating buttons and what they show."),
+				help_text = _("Choose the style, size and position of the floating buttons, what they show, and whether dismissing them shows an undo notice."),
 				enabled_func = isEnabled,
 				sub_item_table = button_items,
 			},

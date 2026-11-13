@@ -20,6 +20,20 @@ C.SETTING_HIDDEN_EXPIRY_SECONDS = "pageanchor_hidden_expiry_seconds"
 C.SETTING_INLINE_LABEL = "pageanchor_inline_label"
 C.SETTING_VERTICAL_POSITION = "pageanchor_vertical_position"
 C.SETTING_REREAD_TURNS = "pageanchor_reread_turns"
+C.SETTING_STYLE = "pageanchor_style"
+C.SETTING_UNDO_NOTICE = "pageanchor_undo_notice"
+
+-- How the control is drawn. Floating: a rounded pill kept off the screen
+-- edges, at the chosen vertical position. Compact: a tab growing out of the
+-- bottom edge of the screen (square, borderless bottom side), still in the
+-- left or right corner -- less of the page covered, always at the bottom.
+-- The undo notice and the minimized tab follow the same style.
+C.STYLE_FLOATING = "floating"
+C.STYLE_COMPACT = "compact"
+C.STYLE_OPTIONS = {
+	{ value = C.STYLE_FLOATING, label = "Floating buttons" },
+	{ value = C.STYLE_COMPACT, label = "Compact tab at the bottom edge" },
+}
 
 -- Format (page/percentage/text) and scope (book/chapter) used to be two
 -- separate settings ("Format" and "Relative to" screens), but scope only
@@ -178,6 +192,8 @@ C.BUTTON_SIZE_OPTIONS = {
 C.BASE_BUTTON_ICON_SIZE = Screen:scaleBySize(22)
 C.BASE_BUTTON_HEIGHT = Screen:scaleBySize(42)
 C.BASE_BUTTON_SIDE_PADDING = Screen:scaleBySize(6)
+-- Air above and below the icon in the compact tab (see compact_height).
+C.BASE_COMPACT_VERTICAL_PADDING = Screen:scaleBySize(3)
 -- These two stay fixed across every size: the outer frame padding matches
 -- KOReader's own ButtonDialog frame regardless of scale, and the
 -- screen-edge margin matches Quick Dock's own DOCK_MARGIN (see

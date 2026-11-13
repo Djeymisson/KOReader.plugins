@@ -24,7 +24,9 @@ remembers:
 - the return point, its directional dismissal, and the wider tolerance that
   protects it right after returning;
 - hiding, the minimized tab, the hidden-buttons expiry and showing again;
-- discarding, the undo notice and restoring, including after moving;
+- discarding, the undo notice (and turning it off) and restoring, including after moving;
+- the compact style: bottom-edge placement, the minimized tab and undo notice
+  in the same shape, and Quick Dock clearance;
 - pinned anchors and their icons;
 - the trail: what joins it, picking an entry, keeping it across returns,
   clearing and restoring it, opening it with the buttons hidden;

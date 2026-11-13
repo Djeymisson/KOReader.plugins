@@ -21,6 +21,7 @@ local Screen = Device.screen
 local C = ...
 local lib = select(2, ...)
 local HintToast = lib.HintToast
+local AnchorTab = lib.AnchorTab
 
 local PageAnchor = {}
 
@@ -111,15 +112,34 @@ function PageAnchor:showHint(text, opts)
 		row.allow_mirroring = false
 		content = HorizontalGroup:new(row)
 	end
-	local panel = FrameContainer:new({
-		background = Blitbuffer.COLOR_WHITE,
-		bordersize = Size.border.button,
-		color = Blitbuffer.COLOR_BLACK,
-		radius = Size.radius.button,
-		margin = 0,
-		padding = Size.padding.default,
-		content,
-	})
+	-- In place in the compact style, the notice takes the control's own
+	-- shape: a tab growing out of the bottom edge, in the same corner.
+	local bottom_tab = opts.in_place and self:isCompactStyle()
+	local panel
+	if bottom_tab then
+		local content_size = content:getSize()
+		local border = Size.border.button
+		panel = AnchorTab:new({
+			edge = "bottom",
+			width = content_size.w + 2 * (Size.padding.default + border),
+			-- As low as the compact control: little air above and below.
+			height = content_size.h + 2 * Size.padding.small + border,
+			radius = Size.radius.button,
+			bordersize = border,
+			border_color = Blitbuffer.COLOR_BLACK,
+			child = content,
+		})
+	else
+		panel = FrameContainer:new({
+			background = Blitbuffer.COLOR_WHITE,
+			bordersize = Size.border.button,
+			color = Blitbuffer.COLOR_BLACK,
+			radius = Size.radius.button,
+			margin = 0,
+			padding = Size.padding.default,
+			content,
+		})
+	end
 	local panel_size = panel:getSize()
 	local left = pill_side == "left"
 		and margin
@@ -131,7 +151,9 @@ function PageAnchor:showHint(text, opts)
 	-- touch zone, which is what makes on_tap reachable at all.
 	local at_top = self:getVerticalPosition() == C.VERTICAL_TOP
 	local top
-	if opts.in_place then
+	if bottom_tab then
+		top = Screen:getHeight() - panel_size.h
+	elseif opts.in_place then
 		top = at_top and pill_dimen.y or (pill_dimen.y + pill_dimen.h - panel_size.h)
 	elseif at_top then
 		top = pill_dimen.y + pill_dimen.h + Size.padding.default

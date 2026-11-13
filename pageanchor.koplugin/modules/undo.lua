@@ -81,13 +81,17 @@ end
 -- `text` words it after what the user just did: the anchor button sets the
 -- reading position here ("Continue here"), while the discard gesture
 -- action just discards. The undo arrow icon carries the "tap to undo".
+-- In the compact style the notice is a tab on the bottom edge, like the
+-- control it replaces (see showHint).
 function PageAnchor:discardWithUndo(text)
 	text = text or _("Anchor discarded")
 	local had_targets = self:hasTargets()
 	local pill_dimen = self.overlay.pill_dimen
 	local pill_side = self.overlay.pill_side
 	self:clearHistory()
-	if not had_targets then
+	-- Without the notice (see isUndoNoticeEnabled) the discard is silent;
+	-- the menu and the gesture action can still undo it.
+	if not had_targets or not self:isUndoNoticeEnabled() then
 		return
 	end
 	if pill_dimen and pill_side then

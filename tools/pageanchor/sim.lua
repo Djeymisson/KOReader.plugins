@@ -599,6 +599,72 @@ check("middle: zones in the middle band", ui._zones.pageanchor_tap.screen_zone.r
 pa:setVerticalPosition("bottom")
 pa:clearHistory()
 
+-- Compact style: a tab on the bottom edge, in the same corner
+reset(100)
+pa:setVerticalPosition("top")
+pa:setStyle("compact")
+check("compact: always at the bottom, whatever the saved position", pa:getVerticalPosition() == "bottom" and pa:getSavedVerticalPosition() == "top")
+check("compact: zones in the bottom band", ui._zones.pageanchor_tap.screen_zone.ratio_y == 0.7)
+jumpTo(50)
+ops = {}
+pa.overlay:paintTo(bb, 0, 0)
+pill = pa.overlay.pill_dimen
+check("compact: glued to the bottom edge", pill.y + pill.h == 800)
+check("compact: keeps the side margin", pill.x + pill.w == 600 - 10 or pill.x == 10)
+drew_inside = true
+for _, op in ipairs(ops) do if op[3] and type(op[3]) == "number" and (op[3] < 0 or (op[5] and op[3] + op[5] > 800)) then drew_inside = false end end
+check("compact: paints entirely inside the screen", drew_inside and #ops > 0)
+-- Quick Dock sits DOCK_MARGIN (10) plus the clearance above the bottom
+-- edge: its bottom must stay above every Page Anchor tap target, not just
+-- above what's drawn (the compact tab's targets are taller than the tab).
+local function dockClearOfTargets()
+	local dock_bottom = 800 - 10 - pa:getOverlayClearance(pa.overlay.pill_side)
+	for _, button in ipairs(pa.overlay.button_dimens) do
+		if button.dimen.y < dock_bottom then return false end
+	end
+	return true
+end
+check("compact: Quick Dock clears the tap targets, not just the tab", dockClearOfTargets())
+local compact_h = pill.h
+local metrics = pa:getButtonMetrics()
+check("compact: lower than a floating button", compact_h < metrics.height + 2 * (metrics.padding + 1))
+local function targetsInsideTab()
+	local tab = pa.overlay.pill_dimen
+	for _, button in ipairs(pa.overlay.button_dimens) do
+		local d = button.dimen
+		if d.x < tab.x or d.y < tab.y or d.x + d.w > tab.x + tab.w or d.y + d.h > tab.y + tab.h then return false end
+	end
+	return true
+end
+check("compact: tap targets contained in the tab", targetsInsideTab())
+pa:hideControls(); paint()
+pill = pa.overlay.pill_dimen
+check("compact: minimized tab on the bottom edge, same height", pill.y + pill.h == 800 and pill.h == compact_h and pa.overlay.button_dimens[1].action == "show")
+check("compact: Quick Dock clears the minimized tab's tap target", dockClearOfTargets())
+check("compact: minimized tap target contained in the tab", targetsInsideTab())
+pa:showControls(); paint()
+dismiss = pa.overlay.button_dimens[2].dimen
+pa.overlay:handleTap({ pos = { x = dismiss.x + 1, y = dismiss.y + 1 } })
+hint = pa.hint_widget
+check("compact: undo notice is a bottom-edge tab", hint and hint.on_tap and hint.dimen.y + hint.dimen.h == 800 and hint.panel.edge == "bottom")
+pa:closeHint()
+pa:setStyle("floating")
+check("floating again: saved position back in effect", pa:getVerticalPosition() == "top")
+pa:setVerticalPosition("bottom")
+pa:clearHistory()
+
+-- Undo notice can be turned off
+reset(100)
+pa:setUndoNoticeEnabled(false)
+jumpTo(50); paint()
+dismiss = pa.overlay.button_dimens[2].dimen
+LAST_NOTE = nil
+pa.overlay:handleTap({ pos = { x = dismiss.x + 1, y = dismiss.y + 1 } })
+check("notice off: discard is silent", not pa:hasTargets() and pa.hint_widget == nil and LAST_NOTE == nil)
+check("notice off: still restorable", pa:canRestoreDiscarded())
+pa:setUndoNoticeEnabled(true)
+pa:clearHistory()
+
 -- Zones re-registered once the book is ready, overriding late zones
 ui._zones.late_plugin_tap = {}
 ZONES_REGISTERED = 0

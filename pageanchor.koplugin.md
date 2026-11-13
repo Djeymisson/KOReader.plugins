@@ -1,4 +1,4 @@
-# Page Anchor ![Version](https://img.shields.io/badge/version-v1.16.0-blue)
+# Page Anchor ![Version](https://img.shields.io/badge/version-v1.17.0-blue)
 
 Page Anchor adds a compact floating control to KOReader's reading screen.
 When you jump somewhere else in the book, it pins your reading position as
@@ -25,7 +25,10 @@ replace your reading position.
   and the footnote or target it led to, or any position in scroll mode.
 - A trail of the other places visited on the same trip: hold the arrow to
   pick one.
-- Buttons at the bottom, middle or top of the screen.
+- Buttons at the bottom, middle or top of the screen, or a compact style: a
+  tab growing out of the bottom edge in the left or right corner, which
+  covers less of the page. The undo notice and the minimized tab take the
+  same shape.
 - Automatic side/arrow mirroring for right-to-left books.
 - Inactivity timeout that only hides the control: by default it shrinks to
   a narrow anchor tab glued to the side of the screen, and one tap on the
@@ -122,7 +125,9 @@ are at it).
 
 Right after you discard the anchor (anchor button, downward swipe or
 gesture action), a notice with an undo arrow appears for 3 seconds where
-the buttons were. Tap it to bring the anchor and the return point back. Later,
+the buttons were (in the compact style, as a tab on the bottom edge, like
+the control). Tap it to bring the anchor and the return point back. To
+discard silently, turn off **Buttons → Show undo notice**. Later,
 **Current anchor → Restore discarded anchor** in the menu (or its gesture action) does the
 same, as long as no new anchor has been set since. If you've moved after
 discarding, the current position becomes the return point.
@@ -220,12 +225,18 @@ While reading, open **Page Anchor** in the navigation menu:
   - **Discard anchor and return point**;
   - **Restore discarded anchor**.
 - **Buttons**:
+  - **Style**: floating buttons, or a compact tab at the bottom edge;
   - **Size**: small, medium or large;
-  - **Position**: bottom, middle or top;
+  - **Position**: bottom, middle or top (floating style only; the compact
+    tab is always at the bottom);
   - **Destination on button**: off, the destination page, or the distance
     in pages;
   - **Hold hint**: what the hint says when you hold the arrow (page number
-    or percentage, of the book or the chapter, or the chapter title only).
+    or percentage, of the book or the chapter, or the chapter title only);
+  - **Show undo notice**: the short notice with an undo arrow after
+    dismissing the buttons or discarding the anchor ("Anchor set here",
+    "Buttons dismissed", "Anchor discarded"). Off, the discard is silent and
+    can still be undone from the menu or a gesture.
 - **Auto-hide**:
   - **Hide after**: how long the buttons stay up without navigating
     (the anchor is kept);
