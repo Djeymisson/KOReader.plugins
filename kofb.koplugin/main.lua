@@ -1,5 +1,9 @@
 --[[--
-kofb.koplugin — 「网页文件管理器 2」的 KOReader 快捷方式（v1.0.5）
+kofb.koplugin — 「网页文件管理器 2」的 KOReader 快捷方式（v1.0.6）
+
+UI 文案按系统语言显示：系统为简体中文时显示中文，其它（含英文）显示英文。
+判定依据为 KOReader 启动时已加载的 locale（require("gettext").current_lang，
+中文为 "zh_CN" 等，英文/未设为 "C"/"en" 等）。
 
 为什么自带桥接脚本，而不是直接调用 KUAL 包的 start.sh / stop.sh：
   * 那两个脚本结尾都会发 com.lab126.hal powerButtonPressed 事件「返回 Kindle 桌面」，
@@ -22,22 +26,27 @@ local Dispatcher = require("dispatcher")
 local InfoMessage = require("ui/widget/infomessage")
 local UIManager = require("ui/uimanager")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
-local _ = require("gettext")
+local GetText = require("gettext")
 local logger = require("logger")
 
--- 长文本（依附项目地址 + 当前状态）用可滚动的 TextViewer 展示；
+-- 按系统语言返回中文或英文：KOReader 启动时已据系统语言加载对应 locale，
+-- GetText.current_lang 为 "zh_CN" 等（中文）或 "C"/"en" 等（英文/其它）。
+-- 每次调用都重新判定，可随 KOReader 运行时切换语言即时生效。
+local function T(en, cn)
+    local l = GetText.current_lang
+        or os.getenv("LANG") or os.getenv("LC_ALL") or os.getenv("LANGUAGE") or ""
+    return l:match("zh") and cn or en
+end
+
+-- 长文本（依赖项目地址 + 当前状态）用可滚动的 TextViewer 展示；
 -- 老版本 KOReader 无该模块时自动回退到 InfoMessage，不影响插件加载。
 local ok_tv, tv_module = pcall(require, "ui/widget/textviewer")
 local TextViewer = (ok_tv and type(tv_module) == "table") and tv_module or nil
 
-local PLUGIN_VERSION = "1.0.5"
+local PLUGIN_VERSION = "1.0.6"
 
--- 依附项目开源地址：仅安装本插件的人员按此处补全依赖
+-- 依赖项目开源地址：KUAL 扩展包「网页文件管理器 2」（提供核心程序）
 local URL_KUAL_EXT = "https://github.com/Gh9518/kindle-filebrowser-optimized"
-local URL_CORE     = "https://github.com/filebrowser/filebrowser"
-local URL_KUAL     = "https://github.com/NiLuJe/KUAL"
-local URL_KOREADER = "https://github.com/koreader/koreader"
-local URL_TUTORIAL = "https://bookfere.com/post/823.html"
 
 local KOFileBrowser = WidgetContainer:extend{
     name = "kofb",
@@ -88,15 +97,15 @@ end
 function KOFileBrowser:onDispatcherRegisterActions()
     Dispatcher:registerAction("kofb_start", {
         category = "none", event = "KOFBStart",
-        title = _("网页文件管理器：启动"), general = true,
+        title = T("Web File Browser: Start", "网页文件管理器：启动"), general = true,
     })
     Dispatcher:registerAction("kofb_stop", {
         category = "none", event = "KOFBStop",
-        title = _("网页文件管理器：关闭"), general = true,
+        title = T("Web File Browser: Stop", "网页文件管理器：关闭"), general = true,
     })
     Dispatcher:registerAction("kofb_ip", {
         category = "none", event = "KOFBShowIP",
-        title = _("网页文件管理器：状态 / IP"), general = true,
+        title = T("Web File Browser: Status / IP", "网页文件管理器：状态 / IP"), general = true,
     })
 end
 
@@ -108,7 +117,7 @@ end
 
 function KOFileBrowser:addToMainMenu(menu_items)
     menu_items.kofb_filebrowser = {
-        text = _("网页文件管理器 2"),
+        text = T("Web File Browser 2", "网页文件管理器 2"),
         -- 一级菜单：tools 是「工具」标签页本身（阅读器 / 文件管理器都存在）。
         -- 官方 menusorter.lua 会给该 tab 打 id="tools" 并把本项 insert 到其一级列表；
         -- 旧值 more_tools 是工具页下的「更多工具」子菜单，需多点一层；
@@ -116,26 +125,26 @@ function KOFileBrowser:addToMainMenu(menu_items)
         sorting_hint = "tools",
         sub_item_table = {
             {
-                text = _("启动"),
+                text = T("Start", "启动"),
                 -- 把 IP 直接显示在「启动」后面（菜单右侧值），无需再点任何子项。
                 -- KOReader 每次展开菜单会调用 mandatory_func 取一次状态与 IP。
                 mandatory_func = function()
-                    if capture("status") ~= "on" then return _("未启动") end
+                    if capture("status") ~= "on" then return T("Not started", "未启动") end
                     local ip = capture("ip")
                     if ip == "" or ip == "Offline" or ip:find("FB_ERR") then
-                        return _("未联网")
+                        return T("No network", "未联网")
                     end
                     return ip
                 end,
                 callback = function() self:onFBStart() end,
             },
             {
-                text = _("关闭"),
+                text = T("Stop", "关闭"),
                 callback = function() self:onFBStop() end,
             },
             {
-                -- 合并项：当前状态 + 依附项目开源地址，一次点开看全。
-                text = _("状态 / IP / 关于"),
+                -- 合并项：当前状态 + 依赖项目开源地址，一次点开看全。
+                text = T("Status / IP / About", "状态 / IP / 关于"),
                 -- 右侧显示版本号，便于在设备上直接确认装的是哪一版（防旧包缓存）
                 mandatory = "v" .. PLUGIN_VERSION,
                 callback = function() self:showAbout() end,
@@ -151,14 +160,15 @@ function KOFileBrowser:onFBStart()
         spawn("quiet")
         local ip = capture("ip")
         local text = (ip == "" or ip == "Offline" or ip:find("FB_ERR"))
-            and _("服务已在运行，但当前未联网。")
-            or  _("当前 IP：http://") .. ip
+            and T("Service is already running, but currently no network.", "服务已在运行，但当前未联网。")
+            or  T("Current IP: http://", "当前 IP：http://") .. ip
         self:showMessage(text, 5)
         return
     end
     spawn("start")
     local start_msg = InfoMessage:new{
-        text = _("正在后台启动网页文件管理器…\nKOReader 保持在当前页面。"),
+        text = T("Starting Web File Browser in the background…\nKOReader stays on the current page.",
+                  "正在后台启动网页文件管理器…\nKOReader 保持在当前页面。"),
         align = "center",
     }
     UIManager:show(start_msg)
@@ -188,15 +198,20 @@ function KOFileBrowser:showStartResult()
     local st = capture("status")
     local text
     if st ~= "on" then
-        text = _("启动失败：未能启动「网页文件管理器 2」核心程序。\n\n")
-            .. _("请先安装 KUAL 扩展包「网页文件管理器 2」并让核心程序就位，\n再回来点「启动」；依赖项目开源地址见菜单「状态 / IP / 关于」。")
+        text = T("Failed to start: could not launch the \"Web File Browser 2\" core program.\n\n",
+                 "启动失败：未能启动「网页文件管理器 2」核心程序。\n\n")
+            .. T("Please install the KUAL extension \"Web File Browser 2\" and have its core program in place first, "
+                  .. "then come back and tap Start; see the menu \"Status / IP / About\" for the dependency's open-source address.",
+                 "请先安装 KUAL 扩展包「网页文件管理器 2」并让核心程序就位，\n再回来点「启动」；依赖项目开源地址见菜单「状态 / IP / 关于」。")
     else
         local ip = capture("ip")
         if ip == "" or ip == "Offline" or ip:find("FB_ERR") then
-            text = _("网页文件管理器已启动，但当前未联网。\n连上 WiFi 后，菜单「启动」右侧会显示本机 IP。")
+            text = T("Web File Browser has started, but there is no network connection now.\n"
+                      .. "After connecting to Wi-Fi, the device IP will appear on the right of the Start menu item.",
+                     "网页文件管理器已启动，但当前未联网。\n连上 WiFi 后，菜单「启动」右侧会显示本机 IP。")
         else
-            -- 默认访问就是 80 端口，URL 不写端口号，整段居中显示
-            text = _("网页文件管理器已启动\n\n请在浏览器访问：\n\nhttp://") .. ip
+            -- 简洁：仅「启动成功，当前IP」，默认 80 端口，不写端口号
+            text = T("Started. Current IP: http://", "启动成功，当前IP：http://") .. ip
         end
     end
     -- 成功与失败都只显示 5 秒后自动关闭，不再多弹窗
@@ -207,7 +222,9 @@ function KOFileBrowser:onFBStop()
     local r = capture("stop")
     local ok = (r == "stopped")
     -- 关闭只提示是否成功：成功 2 秒后自动关闭，失败提示重试（5 秒）
-    self:showMessage(ok and _("网页文件管理器已关闭。") or _("关闭失败，请稍后重试。"), ok and 2 or 5)
+    self:showMessage(ok and T("Web File Browser has been stopped.", "网页文件管理器已关闭。")
+                          or T("Failed to stop. Please try again later.", "关闭失败，请稍后重试。"),
+                     ok and 2 or 5)
 end
 
 -- 自动关闭的简短弹窗（timeout 秒后由 KOReader 自动关闭），用于启动结果 / 关闭结果；文字居中
@@ -221,12 +238,16 @@ function KOFileBrowser:showInfo(prefix)
     local ip = capture("ip")
     local text
     if st ~= "on" then
-        text = _("服务尚未就绪或未启动。\n\n请先安装 KUAL 扩展包并让核心程序就位，\n再回来点「启动」；依附项目地址与当前状态见「状态 / IP / 关于」。")
+        text = T("The service is not ready or not started.\n\n"
+                  .. "Please install the KUAL extension and have its core program in place first, "
+                  .. "then come back and tap Start; see \"Status / IP / About\" for the dependency address and current status.",
+                 "服务尚未就绪或未启动。\n\n请先安装 KUAL 扩展包并让核心程序就位，\n再回来点「启动」；依附项目地址与当前状态见「状态 / IP / 关于」。")
     elseif ip == "" or ip == "Offline" or ip:find("FB_ERR") then
-        text = _("服务已启动，但当前未联网。\n连上 WiFi 后，菜单「启动」右侧会显示本机 IP。")
+        text = T("Web File Browser has started, but there is no network connection now.\n"
+                  .. "After connecting to Wi-Fi, the device IP will appear on the right of the Start menu item.",
+                 "网页文件管理器已启动，但当前未联网。\n连上 WiFi 后，菜单「启动」右侧会显示本机 IP。")
     else
-        text = _("网页文件管理器已启动\n\n请在浏览器访问：\n\nhttp://")
-            .. ip .. ":80\n\n" .. _("注意用 http://，不要用 https://。")
+        text = T("Web File Browser has started\n\nCurrent IP: http://", "网页文件管理器已启动\n\n当前IP：http://") .. ip
     end
     if prefix then
         text = prefix .. "\n\n" .. text
@@ -234,42 +255,38 @@ function KOFileBrowser:showInfo(prefix)
     UIManager:show(InfoMessage:new{ text = text, show_icon = false })
 end
 
--- 合并后的「状态 / IP / 关于」：当前状态 + 依附项目开源地址
+-- 合并后的「状态 / IP / 关于」：当前状态 + 依赖项目开源地址
 function KOFileBrowser:showAbout()
     local st = capture("status")
     local ip = capture("ip")
     local d = capture("dir")
     local state_line
     if st ~= "on" then
-        state_line = _("服务：未启动")
+        state_line = T("Service: not started", "服务：未启动")
     elseif ip == "" or ip == "Offline" or ip:find("FB_ERR") then
-        state_line = _("服务：运行中，但当前未联网")
+        state_line = T("Service: running, but no network", "服务：运行中，但当前未联网")
     else
-        state_line = _("服务：运行中　访问：http://") .. ip .. ":80"
+        state_line = T("Service: running · Current IP: http://", "服务：运行中　当前IP：http://") .. ip
     end
 
     local text = table.concat({
-        _("网页文件管理器 2 · KOReader 快捷方式 v") .. PLUGIN_VERSION,
+        T("Web File Browser 2 · KOReader Shortcut v", "网页文件管理器 2 · KOReader 快捷方式 v") .. PLUGIN_VERSION,
         "",
-        _("【当前状态】"),
+        T("Current Status", "当前状态"),
         state_line,
-        _("KUAL 扩展目录：") .. (d ~= "" and d or _("未找到（可在 fb_bridge.sh 顶部设 FB_HOME）")),
+        T("KUAL extension dir: ", "KUAL 扩展目录：")
+            .. (d ~= "" and d or T("not found (set FB_HOME at the top of fb_bridge.sh)",
+                                   "未找到（可在 fb_bridge.sh 顶部设 FB_HOME）")),
         "",
-        _("【依赖项目 · 仅装本插件者请先备齐】"),
-        _("1) KUAL 扩展包「网页文件管理器 2」（必装，提供核心程序）"),
+        T("Dependency", "依赖项目"),
+        T("Install the KUAL extension \"Web File Browser 2\" first (it provides the core program)",
+          "需先安装 KUAL 扩展包「网页文件管理器 2」（提供核心程序）"),
         "   " .. URL_KUAL_EXT,
-        _("2) 核心程序 filebrowser（开源上游项目）"),
-        "   " .. URL_CORE,
-        _("3) KUAL 启动器"),
-        "   " .. URL_KUAL,
-        _("4) KOReader 本体"),
-        "   " .. URL_KOREADER,
-        _("原始教程：") .. URL_TUTORIAL,
     }, "\n")
 
     if TextViewer then
         UIManager:show(TextViewer:new{
-            title = _("网页文件管理器 2 · 状态 / IP / 关于"),
+            title = T("Web File Browser 2 · Status / IP / About", "网页文件管理器 2 · 状态 / IP / 关于"),
             text = text,
         })
     else
