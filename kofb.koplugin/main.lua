@@ -1,5 +1,5 @@
 --[[--
-kofb.koplugin — 「网页文件管理器 2」的 KOReader 快捷方式（v1.0.6）
+kofb.koplugin — 「网页文件管理器 2」的 KOReader 快捷方式（v1.0.7）
 
 UI 文案按系统语言显示：系统为简体中文时显示中文，其它（含英文）显示英文。
 判定依据为 KOReader 启动时已加载的 locale（require("gettext").current_lang，
@@ -43,7 +43,7 @@ end
 local ok_tv, tv_module = pcall(require, "ui/widget/textviewer")
 local TextViewer = (ok_tv and type(tv_module) == "table") and tv_module or nil
 
-local PLUGIN_VERSION = "1.0.6"
+local PLUGIN_VERSION = "1.0.7"
 
 -- 依赖项目开源地址：KUAL 扩展包「网页文件管理器 2」（提供核心程序）
 local URL_KUAL_EXT = "https://github.com/Gh9518/kindle-filebrowser-optimized"
@@ -159,9 +159,16 @@ function KOFileBrowser:onFBStart()
         -- 然后居中提示当前 IP 即可（默认 80 端口，不显示端口号）。
         spawn("quiet")
         local ip = capture("ip")
-        local text = (ip == "" or ip == "Offline" or ip:find("FB_ERR"))
-            and T("Service is already running, but currently no network.", "服务已在运行，但当前未联网。")
-            or  T("Current IP: http://", "当前 IP：http://") .. ip
+        local text
+        if ip == "" or ip == "Offline" or ip:find("FB_ERR") then
+            text = T("Service is already running, but currently no network.\n"
+                      .. "It will pop up the device IP automatically once Wi-Fi is connected.",
+                     "服务已在运行，但当前未联网。\n连上 WiFi 后会自动弹出本机 IP 提示。")
+            -- 离线时启动恢复监听：联网后自动居中提示当前 IP
+            self:_maybeWatchNetwork()
+        else
+            text = T("Current IP: http://", "当前 IP：http://") .. ip
+        end
         self:showMessage(text, 5)
         return
     end
@@ -207,8 +214,10 @@ function KOFileBrowser:showStartResult()
         local ip = capture("ip")
         if ip == "" or ip == "Offline" or ip:find("FB_ERR") then
             text = T("Web File Browser has started, but there is no network connection now.\n"
-                      .. "After connecting to Wi-Fi, the device IP will appear on the right of the Start menu item.",
-                     "网页文件管理器已启动，但当前未联网。\n连上 WiFi 后，菜单「启动」右侧会显示本机 IP。")
+                      .. "It will pop up the device IP automatically once Wi-Fi is connected.",
+                     "网页文件管理器已启动，但当前未联网。\n连上 WiFi 后会自动弹出本机 IP 提示。")
+            -- 离线时启动恢复监听：联网后自动居中提示当前 IP
+            self:_maybeWatchNetwork()
         else
             -- 简洁：仅「启动成功，当前IP」，默认 80 端口，不写端口号
             text = T("Started. Current IP: http://", "启动成功，当前IP：http://") .. ip
@@ -216,6 +225,40 @@ function KOFileBrowser:showStartResult()
     end
     -- 成功与失败都只显示 5 秒后自动关闭，不再多弹窗
     self:showMessage(text, 5)
+end
+
+-- 网络恢复监听：服务已启动但暂未联网时，后台轮询本机 IP。
+-- 一旦连上 WiFi 拿到 IP，就居中弹窗提示「网络已恢复，当前IP：http://…」，
+-- 不必用户手动回去翻菜单。轮询有上限（最长约 2 分钟），超时即放弃、避免无谓占用。
+-- 依赖 KOReader 的 UIManager 调度（轻量：每 3 秒一次 sh 查 IP），与菜单右侧 IP 刷新互不冲突。
+function KOFileBrowser:_watchNetwork(n)
+    n = n or 0
+    -- 服务已被关闭：停止监听
+    if capture("status") ~= "on" then
+        self._net_watch = false
+        return
+    end
+    local ip = capture("ip")
+    if ip ~= "" and ip ~= "Offline" and not ip:find("FB_ERR") then
+        -- 网络已恢复：居中提示当前 IP（默认 80 端口，不显示端口号），5 秒后自动关闭
+        self._net_watch = false
+        self:showMessage(
+            T("Network is back. Current IP: http://", "网络已恢复，当前IP：http://") .. ip, 5)
+        return
+    end
+    -- 最多约 2 分钟（40 次 × 3 秒）后放弃，避免一直占着 UI 调度
+    if n >= 40 then
+        self._net_watch = false
+        return
+    end
+    UIManager:scheduleIn(3, function() self:_watchNetwork(n + 1) end)
+end
+
+-- 启动网络恢复监听（去重：同一时刻只跑一个，避免重复弹窗）
+function KOFileBrowser:_maybeWatchNetwork()
+    if self._net_watch then return end
+    self._net_watch = true
+    self:_watchNetwork(0)
 end
 
 function KOFileBrowser:onFBStop()
@@ -244,8 +287,10 @@ function KOFileBrowser:showInfo(prefix)
                  "服务尚未就绪或未启动。\n\n请先安装 KUAL 扩展包并让核心程序就位，\n再回来点「启动」；依附项目地址与当前状态见「状态 / IP / 关于」。")
     elseif ip == "" or ip == "Offline" or ip:find("FB_ERR") then
         text = T("Web File Browser has started, but there is no network connection now.\n"
-                  .. "After connecting to Wi-Fi, the device IP will appear on the right of the Start menu item.",
-                 "网页文件管理器已启动，但当前未联网。\n连上 WiFi 后，菜单「启动」右侧会显示本机 IP。")
+                  .. "It will pop up the device IP automatically once Wi-Fi is connected.",
+                 "网页文件管理器已启动，但当前未联网。\n连上 WiFi 后会自动弹出本机 IP 提示。")
+        -- 离线时启动恢复监听：联网后自动居中提示当前 IP
+        self:_maybeWatchNetwork()
     else
         text = T("Web File Browser has started\n\nCurrent IP: http://", "网页文件管理器已启动\n\n当前IP：http://") .. ip
     end
