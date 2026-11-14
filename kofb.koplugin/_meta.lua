@@ -22,5 +22,5 @@ return {
         .. "Upstream links and current status are in the \"Status / IP / About\" menu.",
         "在 KOReader 菜单里直接启动 / 关闭 Kindle 网页文件管理器，并把本机 IP 显示在「启动」后面。启动时 KOReader 保持在前台，不返回桌面、不改写屏幕帧缓冲。\n"
         .. "注意：本插件仅为快捷方式，不含核心程序，需先安装 KUAL 扩展包「网页文件管理器 2」；依附项目开源地址与当前状态见菜单「状态 / IP / 关于」。"),
-    version = "1.0.6",
+    version = "1.0.7",
 }
