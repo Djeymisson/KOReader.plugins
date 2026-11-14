@@ -17,7 +17,7 @@ Each plugin is kept in its own `.koplugin/` folder and has a dedicated documenta
 | Image Browser | v0.2.7 | `imagebrowser.koplugin/` | [imagebrowser.koplugin.md](./imagebrowser.koplugin.md) |
 | Page Anchor | v1.16.0 | `pageanchor.koplugin/` | [pageanchor.koplugin.md](./pageanchor.koplugin.md) |
 | Dictionary Explorer | v1.8.1 | `dictionaryexplorer.koplugin/` | [dictionaryexplorer.koplugin.md](./dictionaryexplorer.koplugin.md) |
-| KOReader FileBrowser Shortcut | v1.0.5 | `kofb.koplugin/` | [kofb.koplugin.md](./kofb.koplugin.md) |
+| KOReader FileBrowser Shortcut | v1.0.6 | `kofb.koplugin/` | [kofb.koplugin.md](./kofb.koplugin.md) |
 
 Each `.koplugin/` folder contains the files required for KOReader to load the plugin, usually including at least:
 
