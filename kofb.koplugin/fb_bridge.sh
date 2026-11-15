@@ -1,6 +1,6 @@
 #!/bin/sh
 # fb_bridge.sh — KOReader 快捷方式插件与「网页文件管理器 2」KUAL 包之间的桥接
-# 用法: sh fb_bridge.sh start | stop | status | ip | dir | quiet
+# 用法: sh fb_bridge.sh start | stop | status | ip | dir | bytes | quiet
 #
 # 【为什么不直接调用 KUAL 包的 start.sh / stop.sh】
 # KOReader 在前台时，那两个脚本有三个天然冲突：
@@ -68,6 +68,18 @@ get_ip() {
         [ -n "$addr" ] && break
     done
     if [ -z "$addr" ]; then echo "FB_ERR"; else echo "$addr"; fi
+}
+
+# 接口收发包字节总数（wlan0/eth0/mlan0/tiwlan0 之和），用于「无数据传输」判定。
+# /proc/net/dev 第 2 列为 RX bytes、第 10 列为 TX bytes；解析后累加。
+# 无任何接口时输出 0（Lua 侧据此认为「无流量」）。
+get_bytes() {
+    tot=0
+    for ifc in wlan0 eth0 mlan0 tiwlan0; do
+        b=$(awk -v i="$ifc" '$0 ~ "^[ \t]*" i ":" { print $2 + $10 }' /proc/net/dev 2>/dev/null)
+        [ -n "$b" ] && tot=$(( tot + b ))
+    done
+    echo "$tot"
 }
 
 # 只杀本服务进程：优先 pid 文件，再按命令行精确兜底。
@@ -152,6 +164,10 @@ ip)
     get_ip
     ;;
 
+bytes)
+    get_bytes
+    ;;
+
 dir)
     echo "$DIR"
     ;;
@@ -162,7 +178,7 @@ quiet)
     ;;
 
 *)
-    echo "usage: fb_bridge.sh start|stop|status|ip|dir|quiet"
+    echo "usage: fb_bridge.sh start|stop|status|ip|dir|bytes|quiet"
     exit 1
     ;;
 esac
