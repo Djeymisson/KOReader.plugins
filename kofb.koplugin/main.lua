@@ -1,5 +1,5 @@
 --[[--
-kofb.koplugin — 「网页文件管理器 2」的 KOReader 快捷方式（v1.0.7）
+kofb.koplugin — 「网页文件管理器 2」的 KOReader 快捷方式（v1.0.8）
 
 UI 文案按系统语言显示：系统为简体中文时显示中文，其它（含英文）显示英文。
 判定依据为 KOReader 启动时已加载的 locale（require("gettext").current_lang，
@@ -43,10 +43,18 @@ end
 local ok_tv, tv_module = pcall(require, "ui/widget/textviewer")
 local TextViewer = (ok_tv and type(tv_module) == "table") and tv_module or nil
 
-local PLUGIN_VERSION = "1.0.7"
+local PLUGIN_VERSION = "1.0.8"
 
 -- 依赖项目开源地址：KUAL 扩展包「网页文件管理器 2」（提供核心程序）
 local URL_KUAL_EXT = "https://github.com/Gh9518/kindle-filebrowser-optimized"
+
+-- 自动关闭看护阈值（轮询间隔 WD_INTERVAL 秒，靠 KOReader 的 UIManager 调度）：
+--   WD_OFFLINE_LIMIT × 10s = 约 2 分钟无网络即自动关闭；
+--   WD_IDLE_LIMIT    × 10s = 约 5 分钟无数据传输即自动关闭。
+-- 离线时两项都不变，但「无网络 2 分钟」先到，优先按离线关闭。
+local WD_INTERVAL = 10
+local WD_OFFLINE_LIMIT = 12
+local WD_IDLE_LIMIT = 30
 
 local KOFileBrowser = WidgetContainer:extend{
     name = "kofb",
@@ -158,6 +166,8 @@ function KOFileBrowser:onFBStart()
         -- 服务已在跑（例如先在 KUAL 里启动过）：只接管，停掉会写 eips 的守护，
         -- 然后居中提示当前 IP 即可（默认 80 端口，不显示端口号）。
         spawn("quiet")
+        -- 接管后也启动自动关闭看护（与上面的「已启动」路径保持一致）
+        self:_startWatchdog()
         local ip = capture("ip")
         local text
         if ip == "" or ip == "Offline" or ip:find("FB_ERR") then
@@ -211,6 +221,8 @@ function KOFileBrowser:showStartResult()
                   .. "then come back and tap Start; see the menu \"Status / IP / About\" for the dependency's open-source address.",
                  "请先安装 KUAL 扩展包「网页文件管理器 2」并让核心程序就位，\n再回来点「启动」；依赖项目开源地址见菜单「状态 / IP / 关于」。")
     else
+        -- 服务已就绪：启动自动关闭看护（无网络 2 分钟 / 无数据传输 5 分钟即关）
+        self:_startWatchdog()
         local ip = capture("ip")
         if ip == "" or ip == "Offline" or ip:find("FB_ERR") then
             text = T("Web File Browser has started, but there is no network connection now.\n"
@@ -259,6 +271,64 @@ function KOFileBrowser:_maybeWatchNetwork()
     if self._net_watch then return end
     self._net_watch = true
     self:_watchNetwork(0)
+end
+
+-- 自动关闭看护：服务运行期间轮询（每 WD_INTERVAL 秒一次，靠 KOReader 的 UIManager 调度）：
+--   * 连续 WD_OFFLINE_LIMIT 次都拿不到 IP（无网络）-> 自动关闭，避免空占后台；
+--   * 连续 WD_IDLE_LIMIT 次接口收发包字节都不变（无数据传输）-> 自动关闭，省电；
+-- 离线时两项都不变，但「无网络 2 分钟」先到，优先按离线关闭。
+-- 服务被关闭（手动或自动）后下一轮检测到 status≠on 即退出，不空转；不写 eips、不回桌面。
+function KOFileBrowser:_startWatchdog()
+    if self._wd then return end
+    self._wd = true
+    self._wd_offline = 0          -- 连续无网络轮询次数
+    self._wd_idle = 0             -- 连续无数据传输轮询次数
+    self._wd_last_bytes = capture("bytes")
+    self:_watchdogTick()
+end
+
+function KOFileBrowser:_watchdogTick()
+    -- 服务已停：看护结束
+    if capture("status") ~= "on" then
+        self._wd = false
+        return
+    end
+    local ip = capture("ip")
+    local online = (ip ~= "" and ip ~= "Offline" and not ip:find("FB_ERR"))
+    if online then
+        self._wd_offline = 0
+    else
+        self._wd_offline = self._wd_offline + 1
+    end
+    -- 约 2 分钟无网络即关闭
+    if self._wd_offline >= WD_OFFLINE_LIMIT then
+        self._wd = false
+        self:_autoStop(T("No network for 2 minutes — Web File Browser has been auto-closed.",
+                         "已持续 2 分钟无网络，网页文件管理器已自动关闭。"))
+        return
+    end
+    -- 数据传输检测：接口收发包字节是否变化（无连接 / 连接后空闲都让字节不变）
+    local now = capture("bytes")
+    if now ~= "" and now ~= self._wd_last_bytes then
+        self._wd_last_bytes = now
+        self._wd_idle = 0
+    else
+        self._wd_idle = self._wd_idle + 1
+    end
+    -- 约 5 分钟无数据传输即关闭
+    if self._wd_idle >= WD_IDLE_LIMIT then
+        self._wd = false
+        self:_autoStop(T("No data transfer for 5 minutes — Web File Browser has been auto-closed.",
+                         "已 5 分钟无数据传输，网页文件管理器已自动关闭。"))
+        return
+    end
+    UIManager:scheduleIn(WD_INTERVAL, function() self:_watchdogTick() end)
+end
+
+-- 自动关闭并居中提示（5 秒）：不打扰前台 KOReader，也不写帧缓冲
+function KOFileBrowser:_autoStop(msg)
+    capture("stop")
+    self:showMessage(msg, 5)
 end
 
 function KOFileBrowser:onFBStop()
