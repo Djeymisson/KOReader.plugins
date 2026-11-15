@@ -9,8 +9,10 @@ local HorizontalGroup = require("ui/widget/horizontalgroup")
 local HorizontalSpan = require("ui/widget/horizontalspan")
 local IconWidget = require("ui/widget/iconwidget")
 local ImageWidget = require("ui/widget/imagewidget")
+local LeftContainer = require("ui/widget/container/leftcontainer")
 local LineWidget = require("ui/widget/linewidget")
 local ProgressWidget = require("ui/widget/progresswidget")
+local RightContainer = require("ui/widget/container/rightcontainer")
 local Size = require("ui/size")
 local TextBoxWidget = require("ui/widget/textboxwidget")
 local TextWidget = require("ui/widget/textwidget")
@@ -429,6 +431,150 @@ return function(Util, Covers)
         return VerticalGroup:new(items)
     end
 
+    -- The recent lookups as a list under the panel title: the word in bold on
+    -- the first line, marked when it is in the Vocabulary Builder, and its
+    -- saved definition preview on the second. Tapping a row looks the word up
+    -- again. Rows that do not fit the panel's share of the screen are left
+    -- out; along the top of the screen they are split into columns first.
+    local function buildLookups(plugin, metrics, data, content_width, horizontal, faces, tap_targets, alignment)
+        local gap = math_max(1, Util.scaled(metrics, 3))
+        local column_gap = math_max(Size.padding.default, Util.scaled(metrics, 8))
+        local items = { align = "left" }
+        local words = data.words or {}
+
+        local title = makeHeading(_("Recent lookups"), faces.title, content_width, alignment)
+        items[#items + 1] = title
+        addGap(items, 2 * gap)
+
+        local notice
+        if data.history_disabled then
+            notice = _("Dictionary lookup history is turned off in KOReader's dictionary settings.")
+        elseif #words == 0 then
+            notice = _("No dictionary lookups yet.")
+        end
+        if notice then
+            items[#items + 1] = makeText(notice, faces.body, content_width, false, Blitbuffer.COLOR_DARK_GRAY, alignment)
+            return VerticalGroup:new(items)
+        end
+
+        -- Columns along the top of the screen: as many as the words need at
+        -- the rows that fit, but none narrower than a short word and preview.
+        local rule_width = math_max(1, Screen:scaleBySize(1))
+        local maximum_columns = 1
+        if horizontal then
+            maximum_columns = math_max(1, math_floor(
+                (content_width + column_gap) / (Util.scaled(metrics, 150) + column_gap)
+            ))
+        end
+        local function columnWidth(columns)
+            return math_floor((content_width - (columns - 1) * (2 * column_gap + rule_width)) / columns)
+        end
+
+        local function makeRow(entry, width)
+            local mark
+            if entry.in_vocabulary then
+                -- The check mark of KOReader's own menus.
+                mark = TextWidget:new({ text = "✓", face = faces.title, bold = true })
+            end
+            local mark_width = mark and mark:getSize().w + Size.padding.small or 0
+            local line = TextWidget:new({
+                text = entry.word,
+                face = faces.title,
+                bold = true,
+                max_width = math_max(1, width - mark_width),
+            })
+            if mark then
+                line = HorizontalGroup:new({
+                    align = "center",
+                    line,
+                    HorizontalSpan:new({ width = Size.padding.small }),
+                    mark,
+                })
+            end
+            local lines = { align = alignment == "center" and "center" or alignment == "right" and "right" or "left" }
+            lines[1] = line
+            if data.show_previews then
+                lines[2] = TextWidget:new({
+                    text = entry.preview or _("No preview saved."),
+                    -- The same face either way, so every row has the same height.
+                    face = faces.body,
+                    fgcolor = Blitbuffer.COLOR_DARK_GRAY,
+                    max_width = width,
+                })
+            end
+            local content = VerticalGroup:new(lines)
+            local container = alignment == "center" and CenterContainer
+                or alignment == "right" and RightContainer
+                or LeftContainer
+            local word = entry.word
+            local target = TapTarget:new({
+                callback = data.can_look_up and function()
+                    plugin:lookUpWord(word)
+                end or nil,
+                container:new({
+                    dimen = Geom:new({ w = width, h = content:getSize().h }),
+                    content,
+                }),
+            })
+            return target
+        end
+
+        -- Every row has the same height, so the first one tells how many fit.
+        local height_share = horizontal and RECENT_TOP_HEIGHT_SHARE or RECENT_SIDE_HEIGHT_SHARE
+        local available_height = math_floor(Screen:getHeight() * height_share) - title:getSize().h - 2 * gap
+        local first_row = makeRow(words[1], columnWidth(1))
+        local row_height = first_row:getSize().h
+        local separator_height = 2 * gap + rule_width
+        local rows_fit = math_max(1, math_floor((available_height + separator_height) / (row_height + separator_height)))
+        local columns = clamp(math.ceil(#words / rows_fit), 1, maximum_columns)
+        local rows = math_min(rows_fit, math.ceil(#words / columns))
+        local width = columnWidth(columns)
+        if columns > 1 then
+            first_row:free()
+            first_row = makeRow(words[1], width)
+        end
+
+        local column_groups = {}
+        for column = 1, columns do
+            local column_items = { align = "left" }
+            for row = 1, rows do
+                local entry = words[(column - 1) * rows + row]
+                if not entry then
+                    break
+                end
+                if row > 1 then
+                    addSeparator(column_items, width, gap)
+                end
+                local target = (column == 1 and row == 1) and first_row or makeRow(entry, width)
+                tap_targets[#tap_targets + 1] = target
+                column_items[#column_items + 1] = target
+            end
+            column_groups[column] = VerticalGroup:new(column_items)
+        end
+        if columns == 1 then
+            items[#items + 1] = column_groups[1]
+        else
+            local tallest = 0
+            for _index, group in ipairs(column_groups) do
+                tallest = math_max(tallest, group:getSize().h)
+            end
+            local row_items = { align = "top" }
+            for index, group in ipairs(column_groups) do
+                if index > 1 then
+                    row_items[#row_items + 1] = HorizontalSpan:new({ width = column_gap })
+                    row_items[#row_items + 1] = LineWidget:new({
+                        background = Blitbuffer.COLOR_GRAY,
+                        dimen = Geom:new({ w = rule_width, h = tallest }),
+                    })
+                    row_items[#row_items + 1] = HorizontalSpan:new({ width = column_gap })
+                end
+                row_items[#row_items + 1] = group
+            end
+            items[#items + 1] = HorizontalGroup:new(row_items)
+        end
+        return VerticalGroup:new(items)
+    end
+
     -- Cover, title, and author: the top of both the reading and statistics panels.
     local function addDocumentHeader(panel, data)
         if data.cover and data.cover.bb then
@@ -737,6 +883,16 @@ return function(Util, Covers)
                 body = panel.body_face,
                 caption = Font:getFace("smallinfofont", math_floor(11 * font_factor + 0.5)),
             }, tap_targets))
+            frame.tap_targets = tap_targets
+            return frame
+        end
+
+        if data.kind == "lookups" then
+            local tap_targets = {}
+            local frame = makeFrame(buildLookups(plugin, metrics, data, content_width, horizontal, {
+                title = panel.title_face,
+                body = panel.body_face,
+            }, tap_targets, alignment))
             frame.tap_targets = tap_targets
             return frame
         end

@@ -1,4 +1,4 @@
-# Quick Dock ![Version](https://img.shields.io/badge/version-v0.27.0-blue)
+# Quick Dock ![Version](https://img.shields.io/badge/version-v0.28.1-blue)
 
 Quick Dock adds a floating action dock with lighting controls and an optional information panel to KOReader. It is designed for touch devices and can be assigned to any gesture supported by KOReader.
 
@@ -20,7 +20,7 @@ Quick Dock adds a floating action dock with lighting controls and an optional in
 - Configurable closing method: one block at a time by default, or all blocks at once using the smallest encompassing rectangle and a non-flashing UI update.
 - Optional vertical frontlight slider in a separate column beside the action buttons, with a circular thumb, live brightness adjustment, and a dedicated frontlight toggle button.
 - Optional second lighting column for frontlight warmth on supported devices, using each device's native warmth range.
-- Optional information panel on the screen edge opposite the dock. It can show reading information, book statistics, the covers of recent documents (tap one to open it), network information, or any combination; when two or more are enabled, one highlighted button immediately above the action dock cycles through them without closing the dock. With three or more, holding that button lists them right above it (or, in the arc, in place of the actions), so any panel is one tap away. See [Panel picker](#panel-picker).
+- Optional information panel on the screen edge opposite the dock. It can show reading information, book statistics, the covers of recent documents (tap one to open it), the words recently looked up in the dictionary (tap one to look it up again), network information, or any combination; when two or more are enabled, one highlighted button immediately above the action dock cycles through them without closing the dock. With three or more, holding that button lists them right above it (or, in the arc, in place of the actions), so any panel is one tap away. See [Panel picker](#panel-picker).
 - Holding a dock button shows its help text in the compact opposite-edge status block above the information panel instead of opening a modal message.
 - Night mode and Wi-Fi execute in place without destroying and rebuilding the dock.
 - Wi-Fi progress appears in a compact opposite-edge status panel instead of KOReader's informational popups during inline toggles.
@@ -127,9 +127,10 @@ The settings follow the same grouped layout as the other plugins in this reposit
     - `Reading information`: the Mini Receipt-inspired reading content. Enabled by default. Option: `Show book cover`.
     - `Book statistics`: the open book's statistics panel (see [Book statistics panel](#book-statistics-panel)). Disabled by default. Option: `Show book cover`.
     - `Recent documents`: covers of recently opened documents (see [Recent documents panel](#recent-documents-panel)). Disabled by default. Option: `Documents to show: <count>`, the maximum number of documents: 3, 6 (the default), 9, 12, 18, or 24.
+    - `Recent lookups`: the words recently looked up in the dictionary (see [Recent lookups panel](#recent-lookups-panel)). Disabled by default. Options: `Lookups to show: <count>`, the maximum number of words: 5 (the default), 8, or 10; and `Show definition preview`, enabled by default.
     - `Network information`: Wi-Fi state and each interface's MAC, SSID, IP, and gateway. Disabled by default.
     - `Show book cover` (in the reading and statistics submenus) is one shared setting: it shows or hides the open document's cover in both panels, above the text in the side panel, or to its left in the arc dock's top panel.
-    - `Panel order`: opens KOReader's sort dialog to rearrange the panel modes. The panel-switch button cycles through the enabled modes in this order, starting from the first one. The default order is reading information, book statistics, recent documents, and network information; modes added in later versions are appended at the end.
+    - `Panel order`: opens KOReader's sort dialog to rearrange the panel modes. The panel-switch button cycles through the enabled modes in this order, starting from the first one. The default order is reading information, book statistics, recent documents, recent lookups, and network information; modes added in later versions are appended at the end.
     - `Panel text alignment`: aligns every line of every panel, including the clock and battery, to the `Left`, `Center`, or `Nearest screen edge`. The last option aligns left when the panel is on the left and right when it is on the right. `Nearest screen edge` is the default.
   - `Lighting controls`:
     - `Show frontlight control`: shows or hides the brightness slider and light toggle on devices with a frontlight: a column beside the column dock, or a button inside the arc.
@@ -140,7 +141,7 @@ The settings follow the same grouped layout as the other plugins in this reposit
   - `Reset actions to defaults`: restores the initial actions and their order after confirmation without changing the other plugin settings.
   - `Reset behavior and actions`: additionally restores extra buttons, default actions, order, and visibility while preserving appearance.
 - `Gesture setup`: displays instructions for assigning the dock to a KOReader gesture.
-- `Version: v0.27.0`: shows the installed plugin version.
+- `Version: v0.28.1`: shows the installed plugin version.
 
 The side selector and visibility options keep their menu open after a change, making it easier to review related settings.
 
@@ -183,7 +184,7 @@ While reading, the panel shows the document title and primary author, current/to
 
 In the file browser or Bookshelf, no document-specific fields are invented: the reading panel shows the available daily reading summary, clock, and battery state. Reading-time fields appear only when KOReader's Statistics plugin is enabled and has data. Statistics are read once when the dock opens, and the same snapshot is reused across pagination and side changes; there is no timer, background polling, or global ReaderUI/FileManager patch. The daily summary comes from one read-only query on the Statistics database that counts today's pages exactly as KOReader's own Statistics plugin does, rescaled to each book's current page count, but forces the database's date index so that only today's records are read; for KOReader's own query, SQLite chooses another index and scans the whole reading history, which grows slower as the history grows. Should that query fail (for example, with a different database layout), the panel falls back to KOReader's query. The network panel never touches the database (the statistics panel's own read-only query is described below).
 
-The network panel displays the current Wi-Fi state and reads the available interface, MAC, SSID, IPv4/IPv6, and gateway details the same way KOReader's own network information does, but without its gateway ping: that test is synchronous, blocks the interface until it answers or times out, and keeps the radio busy, so the panel only reads the interface state already known to the system and sends nothing over the network. This data is collected when the network panel is opened or selected and refreshed from KOReader's connection events when the dock's Wi-Fi button changes state; there is no background polling. With two or more panels enabled, one square button immediately above the action dock cycles through them (Reading, Statistics, Recent documents, Network, skipping disabled ones) without rebuilding or closing the dock. It uses the same dimensions, border, rounded corners, and press feedback as the frontlight toggle. Its icon indicates the panel currently visible: `reading_info.svg` (with the system open-book icon as fallback) for Reading, `stats.svg` for Statistics, `recent_info.svg` (with `history.svg` as fallback) for Recent documents, or `network_info.svg` for Network. With two panels, holding the button describes the current panel and the tap action; with three or more, it opens the panel picker.
+The network panel displays the current Wi-Fi state and reads the available interface, MAC, SSID, IPv4/IPv6, and gateway details the same way KOReader's own network information does, but without its gateway ping: that test is synchronous, blocks the interface until it answers or times out, and keeps the radio busy, so the panel only reads the interface state already known to the system and sends nothing over the network. This data is collected when the network panel is opened or selected and refreshed from KOReader's connection events when the dock's Wi-Fi button changes state; there is no background polling. With two or more panels enabled, one square button immediately above the action dock cycles through them (Reading, Statistics, Recent documents, Recent lookups, Network, skipping disabled ones) without rebuilding or closing the dock. It uses the same dimensions, border, rounded corners, and press feedback as the frontlight toggle. Its icon indicates the panel currently visible: `reading_info.svg` (with the system open-book icon as fallback) for Reading, `stats.svg` for Statistics, `recent_info.svg` (with `history.svg` as fallback) for Recent documents, `lookups_info.svg` (with `dictionary_lookup.svg` as fallback) for Recent lookups, or `network_info.svg` for Network. With two panels, holding the button describes the current panel and the tap action; with three or more, it opens the panel picker.
 
 ### Panel picker
 
@@ -220,6 +221,23 @@ Optional and disabled by default (`Appearance > Information panel > Recent docum
 Tapping a cover closes the dock and opens that document the same way KOReader's History does: inside the reader it switches documents, and in the file browser it opens the reader. Taps elsewhere on the panel keep the dock open. The covers fill a grid of up to three columns beside the column dock, or a single row along the top of the screen with the arc dock. When the documents do not fit, the panel shows the page number with arrows next to its title; the arrows turn the page in place, and every page keeps the same panel size.
 
 Covers and titles come from the database of KOReader's Cover browser plugin, so no document is opened to show them. A document Cover browser has not indexed yet (for example, one never shown in its mosaic or detailed list view), or one without a cover, appears as a framed tile with its title. Each thumbnail is scaled once and reused while its document stays in the list; thumbnails of documents that leave the list are freed.
+
+### Recent lookups panel
+
+Optional and disabled by default (`Appearance > Information panel > Recent lookups > Show this panel`). It lists the words most recently looked up in the dictionary, from KOReader's own lookup history, newest first, up to the number chosen in `Lookups to show` (5, 8, or 10). A word looked up more than once is listed once, at its latest lookup. Each word takes two lines:
+
+- the word in bold, followed by a check mark (`✓`) when it is in KOReader's Vocabulary Builder (only while that plugin is enabled);
+- with `Show definition preview` enabled (the default), the start of its first definition in gray.
+
+Tapping a word closes the dock and looks it up again the same way KOReader's `Dictionary lookup history` does, so it opens in whatever shows selected words: KOReader's dictionary popup or a plugin replacing it, such as Lookup Preview. Taps elsewhere on the panel keep the dock open. Beside the column dock the words are stacked in one column; along the top of the screen with the arc dock they are split into as many columns as the width allows. Words that do not fit are left out. Its text follows `Panel text alignment`, like the other panels.
+
+The panel is built to cost next to nothing:
+
+- The history is read only when the panel is collected, and only its end: KOReader appends each lookup to `lookup_history.lua`, so the last few kilobytes hold the latest words, and the rest of the file is read only when they are not enough. The words are then kept until the file changes, so opening the dock again after no new lookup reads nothing.
+- The Vocabulary Builder check is one read-only query over its database for the listed words, made while the panel is collected.
+- Previews are never looked up for the panel, which would mean running the dictionary for every word. Instead, when a lookup's results are shown, the start of the first definition (up to 160 bytes, HTML removed) is kept for that word. This only happens while the panel and its previews are enabled, and the previews (at most 50, the oldest dropped first) are written to `quickdock_lookup_previews.lua` in KOReader's settings folder only when KOReader saves its settings. Words looked up before the panel was enabled, or while the preview was off, show `No preview saved.` until they are looked up again.
+
+When KOReader's lookup history is disabled (`Dictionary settings > Dictionary lookup history > Enable dictionary lookup history`), the panel says so instead of listing words.
 
 ## Inline actions and Wi-Fi status
 
@@ -282,7 +300,7 @@ Resolution order for regular actions:
 
 The two stateful actions use their state-specific names before the regular resolution order: `day_mode.svg` / `night_mode.svg` and `wifi_on.svg` / `wifi_off.svg`. These files are checked only when the dock is drawn or the corresponding action changes state; there is no periodic polling.
 
-Examples for regular actions include `history.svg`, `increase_frontlight.svg`, and `quickdock_context_search.svg`. The plugin also includes matching chevrons for pagination and changing the dock side, `close.svg` for the optional close button, `exit_reader.svg` / `last_doc.svg` for the reader/browser button, `reading_info.svg` / `stats.svg` / `network_info.svg` (and `history.svg` for recent documents) for the information-panel switch, `light_on.svg` / `light_off.svg` for the frontlight toggle, and `warmth.svg` for the warmth column.
+Examples for regular actions include `history.svg`, `increase_frontlight.svg`, and `quickdock_context_search.svg`. The plugin also includes matching chevrons for pagination and changing the dock side, `close.svg` for the optional close button, `exit_reader.svg` / `last_doc.svg` for the reader/browser button, `reading_info.svg` / `stats.svg` / `network_info.svg` (and `history.svg` for recent documents and `dictionary_lookup.svg` for recent lookups) for the information-panel switch, `light_on.svg` / `light_off.svg` for the frontlight toggle, and `warmth.svg` for the warmth column.
 
 For the reader/browser button, use `exit_reader.svg` while reading and `last_doc.svg` in the file browser or when Bookshelf is covering a parked reader. In that Bookshelf state, the button resumes the reader instead of sending another Home command. The same names with a `.png` extension are also accepted.
 
@@ -305,9 +323,12 @@ Quick Dock stores its preferences through KOReader's reader settings using these
 | `quickdock_show_info_panel` | Visibility of the reading-information panel; enabled by default |
 | `quickdock_show_recent_info_panel` | Visibility of the recent-documents panel; disabled by default |
 | `quickdock_recent_documents_count` | Maximum number of documents in the recent-documents panel: 3, 6, 9, 12, 18, or 24; defaults to 6 |
+| `quickdock_show_lookups_info_panel` | Visibility of the recent-lookups panel; disabled by default |
+| `quickdock_lookups_count` | Maximum number of words in the recent-lookups panel: 5, 8, or 10; defaults to 5 |
+| `quickdock_show_lookup_previews` | Shows and saves the definition previews of the recent-lookups panel; enabled by default |
 | `quickdock_show_network_info_panel` | Visibility of the network-information panel; disabled by default |
 | `quickdock_show_info_panel_cover` | Visibility of the open book's cover at the top of the information panel; enabled by default |
-| `quickdock_info_panel_order` | Order of the information panel modes, as a list of kinds (`reading`, `stats`, `recent`, `network`); unset uses the default order |
+| `quickdock_info_panel_order` | Order of the information panel modes, as a list of kinds (`reading`, `stats`, `recent`, `lookups`, `network`); unset uses the default order |
 | `quickdock_info_panel_text_alignment` | Left, centered, or nearest-screen-edge alignment for all information-panel text |
 | `quickdock_dock_size` | Selected Small, Medium, or Large dock scale |
 | `quickdock_max_action_dock_height` | Maximum dock-column height as 100%, 60%, or 33% of the screen; defaults to 100% |
@@ -317,6 +338,8 @@ Quick Dock stores its preferences through KOReader's reader settings using these
 | `quickdock_arc_fill` | Spreads and enlarges the arc's buttons to fill the arc; disabled by default |
 | `quickdock_arc_empty_space` | Where the arc's unused part stays when not filling: `end` (default) or `start` |
 | `quickdock_close_together` | Closes all blocks in one non-flashing update over their smallest encompassing rectangle; disabled by default |
+
+The definition previews of the recent-lookups panel are kept apart, in `quickdock_lookup_previews.lua` in KOReader's settings folder; deleting that file only removes the saved previews.
 
 ## Localization
 
@@ -335,9 +358,10 @@ Quick Dock follows KOReader's active interface language. Plugin-specific message
 - `modules/arc_dock.lua`: the arc dock widget: the arc as a sampled quarter ellipse, floating-button geometry, painting, hit testing, page swipes, and the arc lighting sliders.
 - `modules/arc_layout.lua`: builds the arc dock's pages and floating buttons from the same actions and callbacks as the column.
 - `modules/info_panel.lua`: places the information panel and status block on screen, either on the edge opposite the dock or along the top of the screen; the only information-panel module `main.lua` uses.
-- `modules/info_data.lua`: safe collection of each panel mode's data: reading progress, book statistics, recent documents, network details, clock, and battery.
+- `modules/info_data.lua`: safe collection of each panel mode's data: reading progress, book statistics, recent documents, recent lookups, network details, clock, and battery.
+- `modules/info_lookups.lua`: the recent lookups: the tail of KOReader's lookup history, the Vocabulary Builder check, and the definition previews saved as words are looked up.
 - `modules/info_covers.lua`: the open document's cover and the recent documents' thumbnails, from the Cover browser plugin or the document, with their caches.
-- `modules/info_render.lua`: the panel widgets, with one renderer per mode, the arc dock's column layout, and the recent documents grid.
+- `modules/info_render.lua`: the panel widgets, with one renderer per mode, the arc dock's column layout, the recent documents grid, and the recent lookups list.
 - `modules/info_util.lua`: helpers shared by the information panel modules.
 - `modules/status_panel.lua`: the transient status block used for button help and Wi-Fi progress.
 - `modules/inline_actions.lua`: in-place night-mode and Wi-Fi execution, including Wi-Fi progress redirection and timeout handling.

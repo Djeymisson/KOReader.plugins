@@ -52,7 +52,7 @@ local TODAY_STATS_SQL = [[
 -- What each information panel mode shows, collected when the dock opens or
 -- the panel is switched. Collectors return plain tables; info_render.lua
 -- turns them into widgets.
-return function(Util, Covers)
+return function(Util, Covers, Lookups)
     local safeCall = Util.safeCall
     local clamp = Util.clamp
     local compactDuration = Util.compactDuration
@@ -516,12 +516,51 @@ return function(Util, Covers)
         }
     end
 
+    -- The words most recently looked up in the dictionary, newest first. Each
+    -- tells whether it is in the Vocabulary Builder (when that plugin is
+    -- enabled) and carries the preview of its definition saved when it was
+    -- looked up; no lookup is made here.
+    local function collectLookups(plugin, options)
+        local ui = plugin and plugin.ui or nil
+        local data = {
+            kind = "lookups",
+            words = {},
+            can_look_up = ui ~= nil and ui.dictionary ~= nil,
+            show_previews = options.lookup_previews == true,
+        }
+        if G_reader_settings:isTrue("disable_lookup_history") then
+            data.history_disabled = true
+            return data
+        end
+
+        local limit = math_max(1, math_floor(tonumber(options.lookups_count) or 1))
+        local entries = Lookups.recent(limit)
+        local vocabulary
+        if ui and ui.vocabbuilder and #entries > 0 then
+            local words = {}
+            for index, entry in ipairs(entries) do
+                words[index] = entry.word
+            end
+            vocabulary = Lookups.vocabularyWords(words)
+        end
+        for index, entry in ipairs(entries) do
+            data.words[index] = {
+                word = entry.word,
+                in_vocabulary = vocabulary and vocabulary[entry.word] == true or nil,
+                preview = data.show_previews and Lookups.getPreview(entry.word) or nil,
+            }
+        end
+        return data
+    end
+
     -- One collector per mode kind (C.INFO_PANEL_MODES). options holds metrics,
-    -- screen_margin, include_cover, horizontal and recent_count.
+    -- screen_margin, include_cover, horizontal, recent_count, lookups_count
+    -- and lookup_previews.
     local COLLECTORS = {
         reading = collectReading,
         stats = collectStats,
         recent = collectRecent,
+        lookups = collectLookups,
         network = collectNetwork,
     }
 

@@ -137,13 +137,16 @@ end
 return function(loadModule)
     local Util = loadModule("info_util")
     local Covers = loadModule("info_covers")(Util)
-    local InfoData = loadModule("info_data")(Util, Covers)
+    local Lookups = loadModule("info_lookups")()
+    local InfoData = loadModule("info_data")(Util, Covers, Lookups)
     local Render = loadModule("info_render")(Util, Covers)
 
     local InfoPanel = {
         clearCoverCache = Covers.clearCoverCache,
         clearRecentCoverCache = Covers.clearRecentCoverCache,
         collect = InfoData.collect,
+        recordLookupPreview = Lookups.recordPreview,
+        flushLookupPreviews = Lookups.flushPreviews,
     }
 
     -- Caches a mode no longer needs once it is disabled.
@@ -165,7 +168,8 @@ return function(loadModule)
     --   text_alignment: the panel text alignment setting
 
     -- The information panel showing data. plugin hosts the panel's taps and
-    -- icons: getIcon(), openRecentDocument(), setRecentDocumentsPage().
+    -- icons: getIcon(), openRecentDocument(), setRecentDocumentsPage(),
+    -- lookUpWord().
     function InfoPanel.createOverlay(plugin, data, view)
         local screen_margin = Util.screenMargin(view.screen_margin)
         local top = view.placement == "top"

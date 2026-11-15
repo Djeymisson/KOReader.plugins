@@ -637,6 +637,37 @@ return function(QuickDock, C, lib)
         }
     end
 
+    function INFO_PANEL_MODE_OPTIONS.lookups(self)
+        local counts = {}
+        for _index, count in ipairs(C.LOOKUPS_COUNTS) do
+            counts[#counts + 1] = { count, tostring(count) }
+        end
+        local function enabled()
+            return Prefs.isInfoPanelKindEnabled("lookups")
+        end
+        return {
+            {
+                text_func = function()
+                    return T(_("Lookups to show: %1"), Prefs.getLookupsCount())
+                end,
+                help_text = _("The maximum number of words in the recent lookups panel. A word looked up more than once is listed once, at its latest lookup."),
+                enabled_func = enabled,
+                sub_item_table = makeRadioOptions(
+                    counts,
+                    function() return Prefs.getLookupsCount() end,
+                    function(count) Prefs.setLookupsCount(count) end
+                ),
+            },
+            makeToggleOption(
+                _("Show definition preview"),
+                _("Shows the start of each word's first definition below it. The preview is saved when the word is looked up, so opening the panel runs no lookup; words looked up while this option was off have no preview until they are looked up again."),
+                function() return Prefs.showLookupPreviews() end,
+                function(show) self:setShowLookupPreviews(show) end,
+                enabled
+            ),
+        }
+    end
+
     -- The cover setting is shared by the reading and statistics panels, so it
     -- appears in both submenus.
     function QuickDock:getInfoPanelCoverItem(kind)

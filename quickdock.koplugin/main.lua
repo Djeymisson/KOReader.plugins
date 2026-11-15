@@ -9,7 +9,7 @@ local lfs = require("libs/libkoreader-lfs")
 local UIManager = require("ui/uimanager")
 local _ = require("quickdock_l10n")
 
-local PLUGIN_VERSION = "v0.27.0"
+local PLUGIN_VERSION = "v0.28.1"
 
 local function pluginDir()
     local source = debug.getinfo(1, "S").source or ""
@@ -92,6 +92,13 @@ function QuickDock:init()
     if self.ui and self.ui.menu then
         self.ui.menu:registerToMainMenu(self)
     end
+    -- After every plugin of this UI has been initialized; see
+    -- patchDictionaryPreviews().
+    UIManager:nextTick(function()
+        if not self.closed then
+            self:updateLookupPreviewCapture()
+        end
+    end)
 end
 
 function QuickDock:onDispatcherRegisterActions()
@@ -112,10 +119,13 @@ function QuickDock:onDispatcherRegisterActions()
 end
 
 function QuickDock:onClose()
+    self.closed = true
     self:closeDock()
     InfoPanel.clearCoverCache(self)
     InfoPanel.clearRecentCoverCache(self)
     self:savePendingActions()
+    self:unpatchDictionaryPreviews()
+    InfoPanel.flushLookupPreviews()
     self:unpatchIconWidget()
 end
 
@@ -134,6 +144,7 @@ end
 
 function QuickDock:onFlushSettings()
     self:savePendingActions()
+    InfoPanel.flushLookupPreviews()
 end
 
 function QuickDock:onShowQuickDock(gesture)
@@ -235,6 +246,70 @@ function QuickDock:setInfoPanelKindEnabled(kind, enabled)
     if not enabled then
         InfoPanel.release(kind, self)
     end
+    if kind == "lookups" then
+        self:updateLookupPreviewCapture()
+    end
+end
+
+function QuickDock:setShowLookupPreviews(enabled)
+    Prefs.setShowLookupPreviews(enabled)
+    self:updateLookupPreviewCapture()
+end
+
+-- Definition previews of the recent lookups panel are saved as each lookup
+-- is shown, so the panel never runs a lookup of its own. The dictionary
+-- hands its results to showDict(), which shows them in KOReader's popup or
+-- in a plugin replacing it (Lookup Preview wraps it when initialized); it is
+-- wrapped here once, on the tick after every plugin was initialized, so it
+-- sees the results whoever shows them. Saving costs a little text cleanup
+-- per lookup, and only while the panel and its previews are enabled and
+-- KOReader keeps its lookup history.
+function QuickDock:patchDictionaryPreviews()
+    local dictionary = self.ui and self.ui.dictionary
+    if self.patched_dictionary or not dictionary or type(dictionary.showDict) ~= "function" then
+        return
+    end
+    local original_showDict = dictionary.showDict
+    local plugin = self
+    local wrapper = function(dict_self, word, results, ...)
+        -- Checked on every lookup, as the history can be turned off at any
+        -- time: KOReader's menu updates the dictionary and the setting at once.
+        if
+            plugin.capture_lookup_previews
+            and not dict_self.disable_lookup_history
+            and not G_reader_settings:isTrue("disable_lookup_history")
+        then
+            local ok, err = pcall(InfoPanel.recordLookupPreview, word, results)
+            if not ok then
+                logger.warn("QuickDock: could not save the lookup preview:", err)
+            end
+        end
+        return original_showDict(dict_self, word, results, ...)
+    end
+    dictionary.showDict = wrapper
+    self.patched_dictionary = dictionary
+    self.original_showDict = original_showDict
+    self.showDict_wrapper = wrapper
+end
+
+-- A wrapper added since by another plugin keeps calling this one, which
+-- then just passes the results on.
+function QuickDock:unpatchDictionaryPreviews()
+    self.capture_lookup_previews = false
+    local dictionary = self.patched_dictionary
+    if dictionary and dictionary.showDict == self.showDict_wrapper then
+        dictionary.showDict = self.original_showDict
+    end
+    self.patched_dictionary = nil
+    self.original_showDict = nil
+    self.showDict_wrapper = nil
+end
+
+function QuickDock:updateLookupPreviewCapture()
+    self.capture_lookup_previews = Prefs.isInfoPanelKindEnabled("lookups") and Prefs.showLookupPreviews()
+    if self.capture_lookup_previews then
+        self:patchDictionaryPreviews()
+    end
 end
 
 function QuickDock:setShowInfoPanelCover(enabled)
@@ -259,6 +334,8 @@ function QuickDock:collectInfoPanelData(kind, metrics)
         include_cover = Prefs.showInfoPanelCover(),
         horizontal = horizontal,
         recent_count = Prefs.getRecentDocumentsCount(),
+        lookups_count = Prefs.getLookupsCount(),
+        lookup_previews = Prefs.showLookupPreviews(),
     })
     data.horizontal = horizontal
     return data
@@ -325,8 +402,9 @@ function QuickDock:switchInfoPanel(kind)
 end
 
 -- Taps outside the dock reach the information panel first: the recent
--- documents panel opens a document or turns its page, and keeps the dock
--- open for any other tap on it.
+-- documents panel opens a document or turns its page, the recent lookups
+-- panel looks a word up, and both keep the dock open for any other tap on
+-- them.
 function QuickDock:handleInfoPanelTap(pos)
     local widget = self.info_panel_widget
     if not widget or type(widget.handleTap) ~= "function" then
@@ -364,6 +442,23 @@ function QuickDock:openRecentDocument(file)
         if not ok then
             logger.warn("QuickDock: could not open recent document:", err)
             require("apps/reader/readerui"):showReader(file)
+        end
+    end)
+end
+
+-- Looks the word up again the way KOReader's lookup history does, so it
+-- shows in its popup or in whichever plugin replaces it for selected words.
+function QuickDock:lookUpWord(word)
+    local dictionary = self.ui and self.ui.dictionary
+    if not word or not dictionary then
+        return
+    end
+    self:closeDock()
+    UIManager:scheduleIn(C.DISPATCH_DELAY, function()
+        -- The word was cleaned up before it was saved to the history.
+        local ok, err = pcall(dictionary.onLookupWord, dictionary, word, true)
+        if not ok then
+            logger.warn("QuickDock: could not look up the word:", err)
         end
     end)
 end

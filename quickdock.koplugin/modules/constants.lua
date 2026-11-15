@@ -24,6 +24,9 @@ C.SETTING_SHOW_NETWORK_INFO_PANEL = "quickdock_show_network_info_panel"
 C.SETTING_SHOW_STATS_INFO_PANEL = "quickdock_show_stats_info_panel"
 C.SETTING_SHOW_RECENT_INFO_PANEL = "quickdock_show_recent_info_panel"
 C.SETTING_RECENT_DOCUMENTS_COUNT = "quickdock_recent_documents_count"
+C.SETTING_SHOW_LOOKUPS_INFO_PANEL = "quickdock_show_lookups_info_panel"
+C.SETTING_LOOKUPS_COUNT = "quickdock_lookups_count"
+C.SETTING_SHOW_LOOKUP_PREVIEWS = "quickdock_show_lookup_previews"
 C.SETTING_SHOW_INFO_PANEL_COVER = "quickdock_show_info_panel_cover"
 C.SETTING_INFO_PANEL_TEXT_ALIGNMENT = "quickdock_info_panel_text_alignment"
 C.SETTING_INFO_PANEL_ORDER = "quickdock_info_panel_order"
@@ -93,6 +96,16 @@ C.INFO_PANEL_MODES = {
         help = _("Shows the covers of the most recently opened documents in the information panel. Tap a cover to open its document; when they do not fit, arrows above the covers turn the page. Covers come from the Cover browser plugin; documents it has not indexed yet show their title instead."),
     },
     {
+        kind = "lookups",
+        setting = C.SETTING_SHOW_LOOKUPS_INFO_PANEL,
+        default = false,
+        icon = "lookups_info",
+        icon_files = "lookups_info.svg / dictionary_lookup.svg",
+        title = _("Recent lookups"),
+        name = _("recent lookups"),
+        help = _("Shows the words most recently looked up in the dictionary, newest first, with a check mark on those in the Vocabulary Builder and, optionally, a preview of their definition. Tap a word to look it up again with the dictionary or the plugin that shows its lookups."),
+    },
+    {
         kind = "network",
         setting = C.SETTING_SHOW_NETWORK_INFO_PANEL,
         default = false,
@@ -110,6 +123,9 @@ end
 -- How many recent documents the recent-documents panel may list.
 C.RECENT_DOCUMENTS_COUNTS = { 3, 6, 9, 12, 18, 24 }
 C.DEFAULT_RECENT_DOCUMENTS_COUNT = 6
+-- How many words the recent-lookups panel may list.
+C.LOOKUPS_COUNTS = { 5, 8, 10 }
+C.DEFAULT_LOOKUPS_COUNT = 5
 C.INFO_PANEL_TEXT_LEFT = "left"
 C.INFO_PANEL_TEXT_CENTER = "center"
 C.INFO_PANEL_TEXT_SCREEN_EDGE = "screen_edge"
@@ -321,6 +337,7 @@ C.ACTION_ICONS = {
     network_info = "wifi",
     stats_info = "stats",
     recent_info = "history",
+    lookups_info = "dictionary_lookup",
     show_network_info = "wifi",
     show_frontlight_dialog = "frontlight",
     toggle_frontlight = "frontlight",

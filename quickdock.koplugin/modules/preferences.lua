@@ -75,6 +75,7 @@ return function(C)
         { "closeDockTogether", "setCloseDockTogether", C.SETTING_CLOSE_TOGETHER, false },
         { "automaticVisibilityEnabled", "setAutomaticVisibility", C.SETTING_AUTO_VISIBILITY, false },
         { "showInfoPanelCover", "setShowInfoPanelCover", C.SETTING_SHOW_INFO_PANEL_COVER, true },
+        { "showLookupPreviews", "setShowLookupPreviews", C.SETTING_SHOW_LOOKUP_PREVIEWS, true },
     }
     for _index, setting in ipairs(BOOLEAN_SETTINGS) do
         local getter, setter, key, default = setting[1], setting[2], setting[3], setting[4]
@@ -226,6 +227,14 @@ return function(C)
             C.SETTING_RECENT_DOCUMENTS_COUNT,
             tonumber(count) or C.DEFAULT_RECENT_DOCUMENTS_COUNT
         )
+    end
+
+    function Prefs.getLookupsCount()
+        return readListed(C.SETTING_LOOKUPS_COUNT, C.LOOKUPS_COUNTS, C.DEFAULT_LOOKUPS_COUNT)
+    end
+
+    function Prefs.setLookupsCount(count)
+        G_reader_settings:saveSetting(C.SETTING_LOOKUPS_COUNT, tonumber(count) or C.DEFAULT_LOOKUPS_COUNT)
     end
 
     function Prefs.isInfoPanelKindEnabled(kind)

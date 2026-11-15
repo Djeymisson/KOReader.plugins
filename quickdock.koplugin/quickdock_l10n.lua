@@ -208,6 +208,16 @@ local pt_BR = {
     ["Gesture setup"] = "Configuração de gestos",
     ["Assign 'Show Quick Dock' to any gesture in KOReader's gesture manager."] = "Atribua 'Mostrar Quick Dock' a qualquer gesto no gerenciador de gestos do KOReader.",
     ["Open Settings > Taps and gestures > Gesture manager, choose a gesture, then select Show Quick Dock."] = "Abra Configurações > Toques e gestos > Gerenciador de gestos, escolha um gesto e selecione Mostrar Quick Dock.",
+    ["Recent lookups"] = "Pesquisas recentes",
+    ["recent lookups"] = "pesquisas recentes",
+    ["Shows the words most recently looked up in the dictionary, newest first, with a check mark on those in the Vocabulary Builder and, optionally, a preview of their definition. Tap a word to look it up again with the dictionary or the plugin that shows its lookups."] = "Mostra as palavras pesquisadas mais recentemente no dicionário, da mais nova para a mais antiga, com uma marca de verificação nas que estão no Construtor de vocabulário e, opcionalmente, uma prévia da definição. Toque em uma palavra para pesquisá-la novamente no dicionário ou no plugin que exibe suas pesquisas.",
+    ["Lookups to show: %1"] = "Pesquisas exibidas: %1",
+    ["The maximum number of words in the recent lookups panel. A word looked up more than once is listed once, at its latest lookup."] = "Quantidade máxima de palavras no painel de pesquisas recentes. Uma palavra pesquisada mais de uma vez aparece uma só vez, na pesquisa mais recente.",
+    ["Show definition preview"] = "Mostrar prévia da definição",
+    ["Shows the start of each word's first definition below it. The preview is saved when the word is looked up, so opening the panel runs no lookup; words looked up while this option was off have no preview until they are looked up again."] = "Mostra o início da primeira definição de cada palavra abaixo dela. A prévia é salva quando a palavra é pesquisada, então abrir o painel não faz nenhuma pesquisa; palavras pesquisadas com esta opção desativada ficam sem prévia até serem pesquisadas novamente.",
+    ["Dictionary lookup history is turned off in KOReader's dictionary settings."] = "O histórico de pesquisas está desativado nas configurações de dicionário do KOReader.",
+    ["No dictionary lookups yet."] = "Nenhuma pesquisa no dicionário ainda.",
+    ["No preview saved."] = "Nenhuma prévia salva.",
 }
 
 local pt_PT = setmetatable({
@@ -239,6 +249,10 @@ local pt_PT = setmetatable({
     ["Shows the covers of the most recently opened documents in the information panel. Tap a cover to open its document; when they do not fit, arrows above the covers turn the page. Covers come from the Cover browser plugin; documents it has not indexed yet show their title instead."] = "Mostra no painel de informações as capas dos documentos abertos mais recentemente. Toque numa capa para abrir o documento; quando não couberem, as setas acima das capas mudam de página. As capas vêm do plugin Navegador de capas; os documentos que ele ainda não indexou mostram o título.",
     ["Gesture setup"] = "Configuração de gestos",
     ["Open Settings > Taps and gestures > Gesture manager, choose a gesture, then select Show Quick Dock."] = "Abra Definições > Toques e gestos > Gestor de gestos, escolha um gesto e selecione Mostrar Quick Dock.",
+    ["Shows the words most recently looked up in the dictionary, newest first, with a check mark on those in the Vocabulary Builder and, optionally, a preview of their definition. Tap a word to look it up again with the dictionary or the plugin that shows its lookups."] = "Mostra as palavras pesquisadas mais recentemente no dicionário, da mais nova para a mais antiga, com uma marca de verificação nas que estão no Construtor de vocabulário e, opcionalmente, uma pré-visualização da definição. Toque numa palavra para a pesquisar novamente no dicionário ou no plugin que mostra as suas pesquisas.",
+    ["Show definition preview"] = "Mostrar pré-visualização da definição",
+    ["Shows the start of each word's first definition below it. The preview is saved when the word is looked up, so opening the panel runs no lookup; words looked up while this option was off have no preview until they are looked up again."] = "Mostra o início da primeira definição de cada palavra abaixo dela. A pré-visualização é guardada quando a palavra é pesquisada, por isso abrir o painel não faz nenhuma pesquisa; as palavras pesquisadas com esta opção desativada ficam sem pré-visualização até serem pesquisadas novamente.",
+    ["No preview saved."] = "Nenhuma pré-visualização guardada.",
 }, {
     __index = function(translations, msgid)
         local value = pt_BR[msgid]
