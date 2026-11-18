@@ -1,5 +1,5 @@
 --[[--
-kofb.koplugin — 「网页文件管理器 2」的 KOReader 快捷方式（v1.1.1）
+kofb.koplugin — 「网页文件管理器 2」的 KOReader 快捷方式（v1.1.2）
 
 UI 文案按系统语言显示：系统为简体中文时显示中文，其它（含英文）显示英文。
 判定依据为 KOReader 启动时已加载的 locale（require("gettext").current_lang，
@@ -36,6 +36,12 @@ local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local GetText = require("gettext")
 local logger = require("logger")
 
+-- 统一日志前缀：在 crash.log 中 grep "kofb:" 即可定位本插件行为，便于排查锁屏/自动关闭等问题。
+-- 只在离散事件（启停/挂起/状态翻转）打日志，轮询热路径不打，避免低内存设备日志膨胀。
+local function klog(...)
+    logger.info("kofb:", ...)
+end
+
 -- 按系统语言返回中文或英文：KOReader 启动时已据系统语言加载对应 locale，
 -- GetText.current_lang 为 "zh_CN" 等（中文）或 "C"/"en" 等（英文/其它）。
 -- 每次调用都重新判定，可随 KOReader 运行时切换语言即时生效。
@@ -50,7 +56,7 @@ end
 local ok_tv, tv_module = pcall(require, "ui/widget/textviewer")
 local TextViewer = (ok_tv and type(tv_module) == "table") and tv_module or nil
 
-local PLUGIN_VERSION = "1.1.1"
+local PLUGIN_VERSION = "1.1.2"
 
 -- 依赖项目开源地址：KUAL 扩展包「网页文件管理器 2」（提供核心程序）
 local URL_KUAL_EXT = "https://github.com/Gh9518/kindle-filebrowser-optimized"
@@ -142,7 +148,7 @@ function KOFileBrowser:onDispatcherRegisterActions()
 end
 
 function KOFileBrowser:init()
-    logger.dbg("kofb: bridge =", BRIDGE)
+    klog("plugin loaded v" .. PLUGIN_VERSION .. ", bridge =", BRIDGE)
     self:onDispatcherRegisterActions()
     self.ui.menu:registerToMainMenu(self)
 end
@@ -243,6 +249,7 @@ function KOFileBrowser:showStartResult()
     local st = capture("status")
     local text
     if st ~= "on" then
+        klog("start FAILED (core not running)")
         text = T("Failed to start: could not launch the \"Web File Browser 2\" core program.\n\n",
                  "启动失败：未能启动「网页文件管理器 2」核心程序。\n\n")
             .. T("Please install the KUAL extension \"Web File Browser 2\" and have its core program in place first, "
@@ -253,6 +260,7 @@ function KOFileBrowser:showStartResult()
         self:_startWatchdog()
         local ip = capture("ip")
         if ip == "" or ip == "Offline" or ip:find("FB_ERR") then
+            klog("start OK, no network yet (watcher armed)")
             text = T("Web File Browser has started, but there is no network connection now.\n"
                       .. "It will pop up the device IP automatically once Wi-Fi is connected.",
                      "网页文件管理器已启动，但当前未联网。\n连上 WiFi 后会自动弹出本机 IP 提示。")
@@ -260,6 +268,7 @@ function KOFileBrowser:showStartResult()
             self:_maybeWatchNetwork()
         else
             -- 简洁：仅「启动成功，当前IP」，默认 80 端口，不写端口号
+            klog("start OK, IP =", ip)
             text = T("Started. Current IP: http://", "启动成功，当前IP：http://") .. ip
         end
     end
@@ -282,6 +291,7 @@ function KOFileBrowser:_watchNetwork(n, gen)
     end
     if ip_valid(ip) then
         -- 网络已恢复：居中提示当前 IP（默认 80 端口，不显示端口号），5 秒后自动关闭
+        klog("network recovered, IP =", ip)
         self._net_watch = false
         self:showMessage(
             T("Network is back. Current IP: http://", "网络已恢复，当前IP：http://") .. ip, 5)
@@ -394,6 +404,7 @@ end
 
 -- 自动关闭并居中提示（5 秒）：不打扰前台 KOReader，也不写帧缓冲
 function KOFileBrowser:_autoStop(msg)
+    klog("auto-close watchdog fired:", msg:gsub("\n", " "))
     capture("stop")
     self:_clearAwake()
     self:showMessage(msg, 5)
@@ -403,6 +414,7 @@ function KOFileBrowser:onFBStop()
     local r = capture("stop")
     self:_clearAwake()
     local ok = (r == "stopped")
+    klog("stop requested, result =", ok and "stopped" or "failed")
     -- 关闭只提示是否成功：成功 2 秒后自动关闭，失败提示重试（5 秒）
     self:showMessage(ok and T("Web File Browser has been stopped.", "网页文件管理器已关闭。")
                           or T("Failed to stop. Please try again later.", "关闭失败，请稍后重试。"),
@@ -495,7 +507,10 @@ function KOFileBrowser:onKOFBShowIP()  self:showInfo(nil) end
 --      故挂起时自增代际，使挂起前排队的恢复回调自动作废。
 function KOFileBrowser:onSuspend()
     self._resume_gen = (self._resume_gen or 0) + 1
-    if capture("status") == "on" then
+    local was_on = (capture("status") == "on")
+    klog("onSuspend: service was", was_on and "on -> stopping" or "off",
+         ", gen =", self._resume_gen)
+    if was_on then
         capture("stop")
         self._resume_restart = true
     end
@@ -509,13 +524,24 @@ end
 -- 因代际不符而作废；只有设备真正稳定解锁（这段时间没有再次挂起）才会启动服务，避免震荡期间
 -- 反复启停。start 失败（离线缺核心）无弹窗打扰，菜单右侧状态实时可见。
 function KOFileBrowser:onResume()
-    if not self._resume_restart then return end
+    if not self._resume_restart then
+        klog("onResume: no pending restart, skip")
+        return
+    end
     self._resume_restart = false
     local gen = self._resume_gen or 0
+    klog("onResume: restart queued, gen =", gen)
     -- 延迟约 15 秒：覆盖 crash 日志里 2~6 秒的震荡周期；若期间再次挂起则本回调作废。
     UIManager:scheduleIn(WD_INTERVAL + 5, function()
-        if gen ~= self._resume_gen then return end
-        if capture("status") == "on" then return end  -- 期间已被 KUAL 入口等方式拉起
+        if gen ~= self._resume_gen then
+            klog("onResume: deferred restart cancelled (generation changed, oscillation)")
+            return
+        end
+        if capture("status") == "on" then
+            klog("onResume: skip, service already on")
+            return
+        end
+        klog("onResume: stable unlock, restarting service")
         spawn("start")
         -- 桥接脚本最长约 8 秒才就绪，延迟挂上看护，避免首轮误判「未启动」而提前退出
         UIManager:scheduleIn(WD_INTERVAL + 4, function()
