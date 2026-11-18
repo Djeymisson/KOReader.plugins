@@ -1,6 +1,6 @@
 #!/bin/sh
 # fb_bridge.sh — KOReader 快捷方式插件与「网页文件管理器 2」KUAL 包之间的桥接
-# 用法: sh fb_bridge.sh start | stop | status | ip | dir | bytes | quiet
+# 用法: sh fb_bridge.sh start | stop | status | ip | dir | bytes | probe | quiet
 #
 # 【为什么不直接调用 KUAL 包的 start.sh / stop.sh】
 # KOReader 在前台时，那两个脚本有三个天然冲突：
@@ -47,6 +47,7 @@ if [ -z "$DIR" ]; then
         ip)     echo "FB_ERR"; exit 1 ;;
         status) echo "off";    exit 1 ;;
         dir)    echo "";       exit 1 ;;
+        probe)  echo "off FB_ERR 0"; exit 1 ;;
         *)      echo "FB_ERR: extension not found"; exit 1 ;;
     esac
 fi
@@ -168,6 +169,14 @@ bytes)
     get_bytes
     ;;
 
+probe)
+    # 单次调用取回三态「<status> <ip> <bytes>」，供 Lua 侧一次 fork 拿全，
+    # 显著减少轮询时的进程创建（低内存设备上频繁 fork sh 是不小的开销）
+    st="off"
+    listening && st="on"
+    printf '%s %s %s\n' "$st" "$(get_ip)" "$(get_bytes)"
+    ;;
+
 dir)
     echo "$DIR"
     ;;
@@ -178,7 +187,7 @@ quiet)
     ;;
 
 *)
-    echo "usage: fb_bridge.sh start|stop|status|ip|dir|bytes|quiet"
+    echo "usage: fb_bridge.sh start|stop|status|ip|dir|bytes|probe|quiet"
     exit 1
     ;;
 esac
