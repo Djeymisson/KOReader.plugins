@@ -43,7 +43,7 @@ end
 local ok_tv, tv_module = pcall(require, "ui/widget/textviewer")
 local TextViewer = (ok_tv and type(tv_module) == "table") and tv_module or nil
 
-local PLUGIN_VERSION = "1.0.8"
+local PLUGIN_VERSION = "1.0.9"
 
 -- 依赖项目开源地址：KUAL 扩展包「网页文件管理器 2」（提供核心程序）
 local URL_KUAL_EXT = "https://github.com/Gh9518/kindle-filebrowser-optimized"
@@ -102,6 +102,18 @@ local function spawn(args)
     os.execute("sh " .. shquote(BRIDGE) .. " " .. args .. " >/dev/null 2>&1 &")
 end
 
+-- 一次 fork 取回「<status> <ip> <bytes>」三态（桥接脚本 probe 子命令）。
+-- 轮询看护每轮只 fork 一个子进程（旧实现要 fork 3 个），降低低内存设备的进程创建开销。
+-- 返回 st, ip, bytes 三个字符串；解析失败时 st 为 nil。
+local function probe()
+    return capture("probe"):match("^(%S+) (%S+) (%S+)")
+end
+
+-- IP 形如 192.168.1.5 才算「已联网」；FB_ERR / 空 / 其它一律视为未联网
+local function ip_valid(ip)
+    return ip ~= nil and ip:match("^%d+%.%d+%.%d+%.%d+$") ~= nil
+end
+
 function KOFileBrowser:onDispatcherRegisterActions()
     Dispatcher:registerAction("kofb_start", {
         category = "none", event = "KOFBStart",
@@ -137,11 +149,9 @@ function KOFileBrowser:addToMainMenu(menu_items)
                 -- 把 IP 直接显示在「启动」后面（菜单右侧值），无需再点任何子项。
                 -- KOReader 每次展开菜单会调用 mandatory_func 取一次状态与 IP。
                 mandatory_func = function()
-                    if capture("status") ~= "on" then return T("Not started", "未启动") end
-                    local ip = capture("ip")
-                    if ip == "" or ip == "Offline" or ip:find("FB_ERR") then
-                        return T("No network", "未联网")
-                    end
+                    local st, ip = probe()
+                    if st ~= "on" then return T("Not started", "未启动") end
+                    if not ip_valid(ip) then return T("No network", "未联网") end
                     return ip
                 end,
                 callback = function() self:onFBStart() end,
@@ -242,16 +252,17 @@ end
 -- 网络恢复监听：服务已启动但暂未联网时，后台轮询本机 IP。
 -- 一旦连上 WiFi 拿到 IP，就居中弹窗提示「网络已恢复，当前IP：http://…」，
 -- 不必用户手动回去翻菜单。轮询有上限（最长约 2 分钟），超时即放弃、避免无谓占用。
--- 依赖 KOReader 的 UIManager 调度（轻量：每 3 秒一次 sh 查 IP），与菜单右侧 IP 刷新互不冲突。
-function KOFileBrowser:_watchNetwork(n)
+-- 每轮只 fork 一个 probe 子进程；带代际令牌 gen：挂起 / 重启新监听后，旧定时回调自动作废。
+function KOFileBrowser:_watchNetwork(n, gen)
     n = n or 0
-    -- 服务已被关闭：停止监听
-    if capture("status") ~= "on" then
+    if not self._net_watch or gen ~= self._net_gen then return end
+    local st, ip = probe()
+    if st ~= "on" then
+        -- 服务已被关闭：停止监听
         self._net_watch = false
         return
     end
-    local ip = capture("ip")
-    if ip ~= "" and ip ~= "Offline" and not ip:find("FB_ERR") then
+    if ip_valid(ip) then
         -- 网络已恢复：居中提示当前 IP（默认 80 端口，不显示端口号），5 秒后自动关闭
         self._net_watch = false
         self:showMessage(
@@ -263,38 +274,44 @@ function KOFileBrowser:_watchNetwork(n)
         self._net_watch = false
         return
     end
-    UIManager:scheduleIn(3, function() self:_watchNetwork(n + 1) end)
+    UIManager:scheduleIn(3, function() self:_watchNetwork(n + 1, gen) end)
 end
 
 -- 启动网络恢复监听（去重：同一时刻只跑一个，避免重复弹窗）
 function KOFileBrowser:_maybeWatchNetwork()
     if self._net_watch then return end
     self._net_watch = true
-    self:_watchNetwork(0)
+    self._net_gen = (self._net_gen or 0) + 1
+    self:_watchNetwork(0, self._net_gen)
 end
 
 -- 自动关闭看护：服务运行期间轮询（每 WD_INTERVAL 秒一次，靠 KOReader 的 UIManager 调度）：
 --   * 连续 WD_OFFLINE_LIMIT 次都拿不到 IP（无网络）-> 自动关闭，避免空占后台；
 --   * 连续 WD_IDLE_LIMIT 次接口收发包字节都不变（无数据传输）-> 自动关闭，省电；
 -- 离线时两项都不变，但「无网络 2 分钟」先到，优先按离线关闭。
--- 服务被关闭（手动或自动）后下一轮检测到 status≠on 即退出，不空转；不写 eips、不回桌面。
+-- 每轮只 fork 一个 probe 子进程（一次拿全 状态/IP/字节）；带代际令牌 gen：
+-- 挂起 / 重启新看护后，残留的旧定时回调自动作废，不会出现双看护叠加轮询。
 function KOFileBrowser:_startWatchdog()
     if self._wd then return end
     self._wd = true
+    self._wd_gen = (self._wd_gen or 0) + 1
     self._wd_offline = 0          -- 连续无网络轮询次数
     self._wd_idle = 0             -- 连续无数据传输轮询次数
-    self._wd_last_bytes = capture("bytes")
-    self:_watchdogTick()
+    local _, _, bytes = probe()
+    self._wd_last_bytes = bytes
+    self:_watchdogTick(self._wd_gen)
 end
 
-function KOFileBrowser:_watchdogTick()
-    -- 服务已停：看护结束
-    if capture("status") ~= "on" then
+function KOFileBrowser:_watchdogTick(gen)
+    -- 已被新一代看护取代 / 已停止：本轮作废
+    if not self._wd or gen ~= self._wd_gen then return end
+    local st, ip, bytes = probe()
+    if st ~= "on" then
+        -- 服务已停：看护结束
         self._wd = false
         return
     end
-    local ip = capture("ip")
-    local online = (ip ~= "" and ip ~= "Offline" and not ip:find("FB_ERR"))
+    local online = ip_valid(ip)
     if online then
         self._wd_offline = 0
     else
@@ -308,9 +325,8 @@ function KOFileBrowser:_watchdogTick()
         return
     end
     -- 数据传输检测：接口收发包字节是否变化（无连接 / 连接后空闲都让字节不变）
-    local now = capture("bytes")
-    if now ~= "" and now ~= self._wd_last_bytes then
-        self._wd_last_bytes = now
+    if bytes and bytes ~= "" and bytes ~= self._wd_last_bytes then
+        self._wd_last_bytes = bytes
         self._wd_idle = 0
     else
         self._wd_idle = self._wd_idle + 1
@@ -322,7 +338,7 @@ function KOFileBrowser:_watchdogTick()
                          "已 5 分钟无数据传输，网页文件管理器已自动关闭。"))
         return
     end
-    UIManager:scheduleIn(WD_INTERVAL, function() self:_watchdogTick() end)
+    UIManager:scheduleIn(WD_INTERVAL, function() self:_watchdogTick(gen) end)
 end
 
 -- 自动关闭并居中提示（5 秒）：不打扰前台 KOReader，也不写帧缓冲
@@ -414,5 +430,35 @@ end
 function KOFileBrowser:onKOFBStart()   self:onFBStart()   end
 function KOFileBrowser:onKOFBStop()    self:onFBStop()    end
 function KOFileBrowser:onKOFBShowIP()  self:showInfo(nil) end
+
+-- v1.0.9 锁屏卡死修复：锁屏 / 系统挂起前由 KOReader 广播 Suspend 事件到本钩子：
+--   1) 若服务在跑，立即完整关闭 —— 释放 filebrowser 占用的十几 MB 内存（PW4 全机仅 490MB），
+--      更关键的是释放启动时设置的 preventScreenSaver「屏幕常亮」标记：
+--      该标记若在挂起时仍被持有，会顶住系统挂起流程，造成「挂起→立刻唤醒→再挂起」反复震荡
+--      （crash 日志可见 4 秒内 resume→suspend→resume），最终拖死系统 —— 即「运行后锁屏必卡死」根因。
+--   2) 停掉本插件的轮询看护 / 网络恢复监听：挂起窗口内不再有定时回调 fork 子进程；
+--      残留的旧回调因代际/标志失效，下一轮自检后直接退出。
+--   3) 对 KUAL 入口启动的服务同样生效：stop 会按命令行匹配杀掉 filebrowser 并清掉 idle.sh 守护。
+function KOFileBrowser:onSuspend()
+    if capture("status") == "on" then
+        capture("stop")
+        self._resume_restart = true
+    end
+    self._wd = false
+    self._net_watch = false
+end
+
+-- 解锁 / 恢复后：若锁屏前服务在运行，自动重新拉起（后台启动，不阻塞 UI），
+-- 传输流程无缝继续；start 失败（如离线缺核心）也无弹窗打扰，菜单右侧状态实时可见。
+function KOFileBrowser:onResume()
+    if self._resume_restart then
+        self._resume_restart = false
+        spawn("start")
+        -- 桥接脚本最长约 8 秒才就绪，延迟挂上看护，避免首轮误判「未启动」而提前退出
+        UIManager:scheduleIn(WD_INTERVAL + 4, function()
+            if capture("status") == "on" then self:_startWatchdog() end
+        end)
+    end
+end
 
 return KOFileBrowser
