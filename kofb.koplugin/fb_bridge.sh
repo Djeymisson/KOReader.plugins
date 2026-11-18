@@ -72,15 +72,32 @@ get_ip() {
     if [ -z "$addr" ]; then echo "FB_ERR"; else echo "$addr"; fi
 }
 
-# 接口收发包字节总数（wlan0/eth0/mlan0/tiwlan0 之和），用于「无数据传输」判定。
-# /proc/net/dev 第 2 列为 RX bytes、第 10 列为 TX bytes；解析后累加。
-# 无任何接口时输出 0（Lua 侧据此认为「无流量」）。
+# filebrowser 进程自身累计读写字节（/proc/<pid>/io 的 rchar + wchar），用于「有无数据传输」判定。
+# v1.1.1 修复（关键）：旧版读 /proc/net/dev 的整机网卡字节，会被「与本服务无关」的流量污染 ——
+#   Storefront 后台抓目录/屏保、系统同步、DNS 等都会让网卡字节持续增长，于是即使没人访问
+#   filebrowser，也会被误判为「正在传输」：
+#     ① 无传输 5 分钟自动关闭因 idle 计数被反复清零而永不触发；
+#     ② 活动常亮 wake 被虚假的「有传输」一直续期，屏幕常亮顶住挂起 -> suspend/resume 震荡、锁不住屏。
+#   改用进程级 IO 后只反映 filebrowser 自己处理的请求，其它程序联网不再干扰两项判定。
+# pid 优先取 pidfile；若服务由 KUAL 入口启动而无 pidfile，则按命令行找一次主进程兜底。
+# 读不到进程（服务未运行）时输出 0（Lua 侧据此认为「无流量」）。
 get_bytes() {
+    p=""
+    [ -f "$PIDFILE" ] && p=$(cat "$PIDFILE" 2>/dev/null)
+    case "$p" in ''|*[!0-9]*) p="" ;; esac
+    if [ -z "$p" ] || [ ! -r "/proc/$p/io" ]; then
+        p=$(ps aux 2>/dev/null | grep '[f]ilebrowser --noauth' | awk '{print $2}' | head -1)
+    fi
     tot=0
-    for ifc in wlan0 eth0 mlan0 tiwlan0; do
-        b=$(awk -v i="$ifc" '$0 ~ "^[ \t]*" i ":" { print $2 + $10 }' /proc/net/dev 2>/dev/null)
-        [ -n "$b" ] && tot=$(( tot + b ))
-    done
+    case "$p" in
+        ''|*[!0-9]*) : ;;
+        *)
+            r=$(awk '/^rchar:/{print $2}' "/proc/$p/io" 2>/dev/null)
+            w=$(awk '/^wchar:/{print $2}' "/proc/$p/io" 2>/dev/null)
+            [ -n "$r" ] && tot=$(( tot + r ))
+            [ -n "$w" ] && tot=$(( tot + w ))
+            ;;
+    esac
     echo "$tot"
 }
 
