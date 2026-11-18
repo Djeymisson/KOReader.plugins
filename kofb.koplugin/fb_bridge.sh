@@ -1,6 +1,7 @@
 #!/bin/sh
 # fb_bridge.sh — KOReader 快捷方式插件与「网页文件管理器 2」KUAL 包之间的桥接
-# 用法: sh fb_bridge.sh start | stop | status | ip | dir | bytes | probe | quiet
+# 用法: sh fb_bridge.sh start | stop | status | ip | dir | bytes | probe | quiet | wake | sleep
+#   wake/sleep：活动感知常亮的开/关（仅传输期间置 1，空闲即释放，允许息屏省电）
 #
 # 【为什么不直接调用 KUAL 包的 start.sh / stop.sh】
 # KOReader 在前台时，那两个脚本有三个天然冲突：
@@ -114,8 +115,11 @@ start)
     fi
     [ -x ./filebrowser ] || { echo "FB_ERR: no core (run KUAL once)"; exit 1; }
 
-    # 防休眠：Kindle 休眠会关 WiFi，服务期间保持唤醒（best-effort，不改动无线开关）
-    lipc-set-prop -i com.lab126.powerd preventScreenSaver 1 2>/dev/null
+    # 【v1.1.0 息屏/省电修复】不再设置 preventScreenSaver 屏幕常亮：
+    # Kindle 上「息屏 = 挂起 = 关 WiFi」。旧版在这里置 1 是想防休眠断网，但它是全局标记，
+    # 会在整个服务期间顶住 KOReader 的挂起流程——自动息屏/手动锁屏都失效、白耗电，
+    # 严重时造成 suspend/resume 震荡卡死。KOReader 前台本就自行管理屏幕唤醒（阅读时保持、
+    # 挂起时释放），插件无需也不应抢占。保传输改由上层 onSuspend「挂起前先停服务」保证。
 
     # 放行 80 入站（部分固件默认拦截）；只在规则不存在时插入，避免重复堆积
     if ! iptables -L INPUT -n 2>/dev/null | grep -q 'dpt:80'; then
@@ -153,6 +157,9 @@ start)
 stop)
     kill_service
     quiet_guard
+    # 兜底清 0：兼容 KUAL 入口或旧版本遗留的常亮标记，确保关闭后设备能正常息屏省电。
+    # 本插件 start 已不再置 1，故这里通常无标记可清；仅在「先在 KUAL 启动、再从本插件关闭」
+    # 等混合场景下生效。恒为 best-effort，不改动无线开关。
     lipc-set-prop -i com.lab126.powerd preventScreenSaver 0 2>/dev/null
     echo stopped
     ;;
@@ -186,8 +193,19 @@ quiet)
     echo quieted
     ;;
 
+# 【v1.1.0 活动感知常亮】只在「确实有数据传输」期间短暂保持唤醒以保传输，
+# 空闲约 1 分钟后由上层释放。替代旧版「启动即常亮、直到关闭」的粗暴做法。
+wake)
+    lipc-set-prop -i com.lab126.powerd preventScreenSaver 1 2>/dev/null
+    echo awake
+    ;;
+sleep)
+    lipc-set-prop -i com.lab126.powerd preventScreenSaver 0 2>/dev/null
+    echo asleep
+    ;;
+
 *)
-    echo "usage: fb_bridge.sh start|stop|status|ip|dir|bytes|probe|quiet"
+    echo "usage: fb_bridge.sh start|stop|status|ip|dir|bytes|probe|quiet|wake|sleep"
     exit 1
     ;;
 esac
