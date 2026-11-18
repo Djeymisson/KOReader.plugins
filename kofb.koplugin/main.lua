@@ -1,5 +1,5 @@
 --[[--
-kofb.koplugin — 「网页文件管理器 2」的 KOReader 快捷方式（v1.0.8）
+kofb.koplugin — 「网页文件管理器 2」的 KOReader 快捷方式（v1.1.0）
 
 UI 文案按系统语言显示：系统为简体中文时显示中文，其它（含英文）显示英文。
 判定依据为 KOReader 启动时已加载的 locale（require("gettext").current_lang，
@@ -9,8 +9,11 @@ UI 文案按系统语言显示：系统为简体中文时显示中文，其它�
   * 那两个脚本结尾都会发 com.lab126.hal powerButtonPressed 事件「返回 Kindle 桌面」，
     并用 eips 直接写帧缓冲显示 IP。KOReader 在前台时，前者会把 KOReader 踢到后台，
     后者会被 KOReader 的界面重绘覆盖（甚至反过来破坏 KOReader 画面）。
-  * 因此本插件改由自带的 fb_bridge.sh 完成启停：只做 防休眠 / 放行 80 端口 /
-    后台拉起 filebrowser 二进制，绝不回桌面、绝不写 eips、不拉起会写屏的 idle.sh。
+  * 因此本插件改由自带的 fb_bridge.sh 完成启停：只做 放行 80 端口 / 后台拉起 filebrowser
+    二进制，绝不回桌面、绝不写 eips、不拉起会写屏的 idle.sh。
+  * v1.1.0 息屏/省电：不再「启动即常亮」。屏幕唤醒交给 KOReader 自行管理；仅当看护检测到
+    实际数据传输时才短暂置 preventScreenSaver=1 保传输，空闲约 1 分钟即释放，允许正常息屏。
+    彻底消除旧版全局常亮标记顶住挂起流程导致的耗电、无法息屏、suspend/resume 震荡卡死。
   * IP 用 KOReader 自己的菜单右侧值 / 弹窗显示，天然避开帧缓冲冲突。
   * 桥接脚本只依赖 Kindle 系统接口与现有包里的 filebrowser 二进制 / filebrowser.db，
     不 source lib.sh、不调用 start.sh，因此 KUAL 插件包后续升级不会破坏本插件。
@@ -43,7 +46,7 @@ end
 local ok_tv, tv_module = pcall(require, "ui/widget/textviewer")
 local TextViewer = (ok_tv and type(tv_module) == "table") and tv_module or nil
 
-local PLUGIN_VERSION = "1.0.9"
+local PLUGIN_VERSION = "1.1.0"
 
 -- 依赖项目开源地址：KUAL 扩展包「网页文件管理器 2」（提供核心程序）
 local URL_KUAL_EXT = "https://github.com/Gh9518/kindle-filebrowser-optimized"
@@ -55,6 +58,11 @@ local URL_KUAL_EXT = "https://github.com/Gh9518/kindle-filebrowser-optimized"
 local WD_INTERVAL = 10
 local WD_OFFLINE_LIMIT = 12
 local WD_IDLE_LIMIT = 30
+
+-- 活动感知常亮：看护每轮检测到数据传输（接口字节变化）就续期；连续 AWAKE_IDLE_LIMIT 轮
+-- 无传输即释放 preventScreenSaver，允许设备正常息屏省电。6 × 10s = 约 1 分钟。
+-- 这样「传输时不断网、停传约 1 分钟后可息屏」，取代旧版「启动即常亮直到关闭」的耗电做法。
+local AWAKE_IDLE_LIMIT = 6
 
 local KOFileBrowser = WidgetContainer:extend{
     name = "kofb",
@@ -297,6 +305,8 @@ function KOFileBrowser:_startWatchdog()
     self._wd_gen = (self._wd_gen or 0) + 1
     self._wd_offline = 0          -- 连续无网络轮询次数
     self._wd_idle = 0             -- 连续无数据传输轮询次数
+    self._awake_idle = 0          -- 连续无数据传输轮询次数（活动常亮用）
+    self._screen_awake = false    -- 当前是否持有 preventScreenSaver 常亮标记
     local _, _, bytes = probe()
     self._wd_last_bytes = bytes
     self:_watchdogTick(self._wd_gen)
@@ -325,12 +335,32 @@ function KOFileBrowser:_watchdogTick(gen)
         return
     end
     -- 数据传输检测：接口收发包字节是否变化（无连接 / 连接后空闲都让字节不变）
-    if bytes and bytes ~= "" and bytes ~= self._wd_last_bytes then
+    local traffic = bytes and bytes ~= "" and bytes ~= self._wd_last_bytes
+    if traffic then
         self._wd_last_bytes = bytes
         self._wd_idle = 0
     else
         self._wd_idle = self._wd_idle + 1
     end
+
+    -- 活动感知常亮（v1.1.0）：仅在「正在传数据」时短暂保持唤醒以保传输。
+    -- 有传输 -> 置常亮并重置空闲计数；连续约 1 分钟无传输 -> 释放，允许息屏省电。
+    -- 全程只读接口字节、不额外 fork 常驻进程；状态翻转才调用一次 wake/sleep。
+    if traffic then
+        self._awake_idle = 0
+        if not self._screen_awake then
+            spawn("wake")
+            self._screen_awake = true
+        end
+    elseif self._screen_awake then
+        self._awake_idle = (self._awake_idle or 0) + 1
+        if self._awake_idle >= AWAKE_IDLE_LIMIT then
+            spawn("sleep")
+            self._screen_awake = false
+            self._awake_idle = 0
+        end
+    end
+
     -- 约 5 分钟无数据传输即关闭
     if self._wd_idle >= WD_IDLE_LIMIT then
         self._wd = false
@@ -341,14 +371,26 @@ function KOFileBrowser:_watchdogTick(gen)
     UIManager:scheduleIn(WD_INTERVAL, function() self:_watchdogTick(gen) end)
 end
 
+-- 统一收尾：停服务 + 兜底释放常亮标记（stop 内已清 0，这里再清一次确保混合启动场景彻底释放）
+-- 并复位活动常亮状态，避免残留 true 让下一轮看护误判。
+function KOFileBrowser:_clearAwake()
+    if self._screen_awake then
+        spawn("sleep")
+        self._screen_awake = false
+    end
+    self._awake_idle = 0
+end
+
 -- 自动关闭并居中提示（5 秒）：不打扰前台 KOReader，也不写帧缓冲
 function KOFileBrowser:_autoStop(msg)
     capture("stop")
+    self:_clearAwake()
     self:showMessage(msg, 5)
 end
 
 function KOFileBrowser:onFBStop()
     local r = capture("stop")
+    self:_clearAwake()
     local ok = (r == "stopped")
     -- 关闭只提示是否成功：成功 2 秒后自动关闭，失败提示重试（5 秒）
     self:showMessage(ok and T("Web File Browser has been stopped.", "网页文件管理器已关闭。")
@@ -431,12 +473,13 @@ function KOFileBrowser:onKOFBStart()   self:onFBStart()   end
 function KOFileBrowser:onKOFBStop()    self:onFBStop()    end
 function KOFileBrowser:onKOFBShowIP()  self:showInfo(nil) end
 
--- v1.0.9 锁屏卡死修复：锁屏 / 系统挂起前由 KOReader 广播 Suspend 事件到本钩子：
---   1) 若服务在跑，立即完整关闭 —— 释放 filebrowser 占用的十几 MB 内存（PW4 全机仅 490MB），
---      更关键的是释放启动时设置的 preventScreenSaver「屏幕常亮」标记：
---      该标记若在挂起时仍被持有，会顶住系统挂起流程，造成「挂起→立刻唤醒→再挂起」反复震荡
---      （crash 日志可见 4 秒内 resume→suspend→resume），最终拖死系统 —— 即「运行后锁屏必卡死」根因。
---   2) 停掉本插件的轮询看护 / 网络恢复监听：挂起窗口内不再有定时回调 fork 子进程；
+-- v1.0.9 锁屏卡死修复 + v1.1.0 常亮策略：锁屏 / 系统挂起前由 KOReader 广播 Suspend 事件到本钩子：
+--   1) 若服务在跑，立即完整关闭 —— 释放 filebrowser 占用的十几 MB 内存（PW4 全机仅 490MB）。
+--      v1.0.9 起 stop 会一并释放 preventScreenSaver 常亮标记：该标记若被持有会顶住系统挂起，
+--      造成「挂起→立刻唤醒→再挂起」震荡（crash 日志 4 秒内 resume→suspend→resume）直至卡死。
+--      v1.1.0 起 start 已不再主动置常亮、仅传输期间短暂置位，故挂起时被持有的概率极低；stop 里
+--      仍兜底清 0，双保险确保挂起路径上没有任何东西顶住系统。
+--   2) 停掉本插件的轮询看护 / 网络恢复监听 + 释放活动常亮：挂起窗口内不再有定时回调 fork 子进程；
 --      残留的旧回调因代际/标志失效，下一轮自检后直接退出。
 --   3) 对 KUAL 入口启动的服务同样生效：stop 会按命令行匹配杀掉 filebrowser 并清掉 idle.sh 守护。
 function KOFileBrowser:onSuspend()
@@ -444,6 +487,7 @@ function KOFileBrowser:onSuspend()
         capture("stop")
         self._resume_restart = true
     end
+    self:_clearAwake()
     self._wd = false
     self._net_watch = false
 end
