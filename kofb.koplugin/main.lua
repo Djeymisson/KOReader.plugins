@@ -1,5 +1,5 @@
 --[[--
-kofb.koplugin — 「网页文件管理器 2」的 KOReader 快捷方式（v1.1.2）
+kofb.koplugin — 「网页文件管理器 2」的 KOReader 快捷方式（v1.1.3）
 
 UI 文案按系统语言显示：系统为简体中文时显示中文，其它（含英文）显示英文。
 判定依据为 KOReader 启动时已加载的 locale（require("gettext").current_lang，
@@ -18,6 +18,11 @@ UI 文案按系统语言显示：系统为简体中文时显示中文，其它�
     「filebrowser 进程自身 IO /proc/<pid>/io」—— 前者会被 Storefront 后台抓目录等无关流量污染，
     导致 ① 5 分钟无传输自动关闭永不触发 ② 活动常亮被虚假流量反复续期、顶住挂起锁不住屏。
     另为 onSuspend/onResume 的自动重启加防抖：suspend/resume 震荡窗口内不再反复 fork 启停服务。
+  * v1.1.3 判定再修复（关键）：进程 IO 对 Go HTTP 服务的 sendfile 零拷贝无效 —— 下载/上传大文件
+    不经用户态 read/write，rchar/wchar 不涨，导致「正在传输却判无传输、5 分钟误关」。改回内核层
+    iptables 80 端口规则计数：只统计访问本服务的包（剔除其它程序联网），且 sendfile 同样经过
+    netfilter 如实计数；并双向统计 INPUT dpt:80（请求/上传）+ OUTPUT spt:80（下载响应），
+    杜绝「纯下载是出站流量」被漏判。一次 iptables -L 取两链，仅 1 次 fork。
   * IP 用 KOReader 自己的菜单右侧值 / 弹窗显示，天然避开帧缓冲冲突。
   * 桥接脚本只依赖 Kindle 系统接口与现有包里的 filebrowser 二进制 / filebrowser.db，
     不 source lib.sh、不调用 start.sh，因此 KUAL 插件包后续升级不会破坏本插件。
@@ -56,7 +61,7 @@ end
 local ok_tv, tv_module = pcall(require, "ui/widget/textviewer")
 local TextViewer = (ok_tv and type(tv_module) == "table") and tv_module or nil
 
-local PLUGIN_VERSION = "1.1.2"
+local PLUGIN_VERSION = "1.1.3"
 
 -- 依赖项目开源地址：KUAL 扩展包「网页文件管理器 2」（提供核心程序）
 local URL_KUAL_EXT = "https://github.com/Gh9518/kindle-filebrowser-optimized"
@@ -315,7 +320,8 @@ end
 
 -- 自动关闭看护：服务运行期间轮询（每 WD_INTERVAL 秒一次，靠 KOReader 的 UIManager 调度）：
 --   * 连续 WD_OFFLINE_LIMIT 次都拿不到 IP（无网络）-> 自动关闭，避免空占后台；
---   * 连续 WD_IDLE_LIMIT 次 filebrowser 进程 IO 字节都不变（无数据传输）-> 自动关闭，省电；
+--   * 连续 WD_IDLE_LIMIT 次 80 端口累计字节都不变（无数据传输）-> 自动关闭，省电；
+--     （判定源为 iptables 双向 80 端口计数，覆盖 sendfile 零拷贝的下载/上传，详见 fb_bridge.sh）
 -- 离线时两项都不变，但「无网络 2 分钟」先到，优先按离线关闭。
 -- 每轮只 fork 一个 probe 子进程（一次拿全 状态/IP/字节）；带代际令牌 gen：
 -- 挂起 / 重启新看护后，残留的旧定时回调自动作废，不会出现双看护叠加轮询。
@@ -354,8 +360,9 @@ function KOFileBrowser:_watchdogTick(gen)
                          "已持续 2 分钟无网络，网页文件管理器已自动关闭。"))
         return
     end
-    -- 数据传输检测：filebrowser 进程 IO 字节（rchar+wchar）是否变化。
-    -- 进程级判定不受其它程序（如 Storefront 后台抓取）联网干扰，空闲时字节不涨 -> idle 累加。
+    -- 数据传输检测：iptables 80 端口双向累计字节（INPUT dpt:80 + OUTPUT spt:80）是否变化。
+    -- 内核层统计只算访问本服务的包（剔除 Storefront 等无关联网），且 sendfile 零拷贝的
+    -- 下载/上传同样计数 —— 修正 v1.1.1「进程 IO 对 sendfile 无效、传输中被误判无传输」的问题。
     local traffic = bytes and bytes ~= "" and bytes ~= self._wd_last_bytes
     if traffic then
         self._wd_last_bytes = bytes
