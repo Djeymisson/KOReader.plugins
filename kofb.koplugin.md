@@ -1,4 +1,4 @@
-# KOReader FileBrowser Shortcut ![Version](https://img.shields.io/badge/version-v1.1.2-blue)
+# KOReader FileBrowser Shortcut ![Version](https://img.shields.io/badge/version-v1.1.3-blue)
 
 A lightweight shortcut for **KOReader** that starts and stops the Kindle
 「网页文件管理器 2」(Web File Browser 2) from inside KOReader, so you can
