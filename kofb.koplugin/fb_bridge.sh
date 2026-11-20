@@ -2,6 +2,7 @@
 # fb_bridge.sh — KOReader 快捷方式插件与「网页文件管理器 2」KUAL 包之间的桥接
 # 用法: sh fb_bridge.sh start | stop | status | ip | dir | bytes | probe | quiet | wake | sleep
 #   wake/sleep：活动感知常亮的开/关（仅传输期间置 1，空闲即释放，允许息屏省电）
+#   bytes/probe：传输判定源 = iptables 80 端口双向累计字节（INPUT dpt:80 + OUTPUT spt:80）
 #
 # 【为什么不直接调用 KUAL 包的 start.sh / stop.sh】
 # KOReader 在前台时，那两个脚本有三个天然冲突：
@@ -72,16 +73,34 @@ get_ip() {
     if [ -z "$addr" ]; then echo "FB_ERR"; else echo "$addr"; fi
 }
 
-# filebrowser 进程自身累计读写字节（/proc/<pid>/io 的 rchar + wchar），用于「有无数据传输」判定。
-# v1.1.1 修复（关键）：旧版读 /proc/net/dev 的整机网卡字节，会被「与本服务无关」的流量污染 ——
-#   Storefront 后台抓目录/屏保、系统同步、DNS 等都会让网卡字节持续增长，于是即使没人访问
-#   filebrowser，也会被误判为「正在传输」：
-#     ① 无传输 5 分钟自动关闭因 idle 计数被反复清零而永不触发；
-#     ② 活动常亮 wake 被虚假的「有传输」一直续期，屏幕常亮顶住挂起 -> suspend/resume 震荡、锁不住屏。
-#   改用进程级 IO 后只反映 filebrowser 自己处理的请求，其它程序联网不再干扰两项判定。
-# pid 优先取 pidfile；若服务由 KUAL 入口启动而无 pidfile，则按命令行找一次主进程兜底。
-# 读不到进程（服务未运行）时输出 0（Lua 侧据此认为「无流量」）。
+# 「有无数据传输」判定源：iptables 中本服务 80 端口规则的累计字节（内核网络层）。
+# 演进与根因（务必保留此注释，避免再次走弯路）：
+#   v1.1.0 及以前：读 /proc/net/dev 整机网卡字节 —— 被 Storefront 后台抓目录等无关流量污染，
+#     即使没人访问 filebrowser 也误判「有传输」→ 无传输 5 分钟自动关闭永不触发、活动常亮顶住挂起。
+#   v1.1.1：改读进程 /proc/<pid>/io 的 rchar+wchar —— 避开了无关流量，但 filebrowser 是 Go HTTP
+#     服务，下载/上传走 sendfile(2) 零拷贝，数据不经用户态 read/write，不计入 rchar/wchar，
+#     于是「正在传输大文件」反而被误判「无传输」→ 5 分钟后误关（本次修复的现象）。
+#   v1.1.3（本次）：改读 iptables 80 端口规则的累计字节 —— 内核层统计，sendfile 的零拷贝数据
+#     同样经过 netfilter，会如实计数；且只统计匹配 dpt:80 / spt:80 的包（即访问本服务的流量），
+#     Storefront 等访问外网的流量不会计入。彻底兼顾「剔除误判」与「不漏判真实传输」。
+# 双向统计（关键）：入站 INPUT 的 dpt:80（浏览器请求 + 上传），出站 OUTPUT 的 spt:80（下载响应）。
+#   只看入站会漏掉「从 Kindle 下载文件」场景（纯出站）→ 必须两头都算。
+# 规则由 start 分支幂等插入；一条 iptables -L 同时取两张链，仅 1 次 fork。
+# 规则缺失（如老固件无 iptables）时退回进程 IO，再退回 0（Lua 侧据「字节是否变化」判定传输）。
 get_bytes() {
+    b=$(iptables -L -n -v -x 2>/dev/null | awk '
+        /^Chain INPUT/  { cin=1; cout=0; next }
+        /^Chain OUTPUT/ { cin=0; cout=1; next }
+        /^Chain/        { cin=0; cout=0; next }
+        cin  && /dpt:80/ { ib+=$2 }
+        cout && /spt:80/ { ob+=$2 }
+        END { t=ib+ob; if (t>0) print t }
+    ')
+    case "$b" in
+        ''|*[!0-9]*) : ;;
+        *) echo "$b"; return ;;
+    esac
+    # 兜底：iptables 不可用/无规则时退回进程 IO（仍能覆盖上传，sendfile 下载可能漏判）
     p=""
     [ -f "$PIDFILE" ] && p=$(cat "$PIDFILE" 2>/dev/null)
     case "$p" in ''|*[!0-9]*) p="" ;; esac
@@ -138,10 +157,17 @@ start)
     # 严重时造成 suspend/resume 震荡卡死。KOReader 前台本就自行管理屏幕唤醒（阅读时保持、
     # 挂起时释放），插件无需也不应抢占。保传输改由上层 onSuspend「挂起前先停服务」保证。
 
-    # 放行 80 入站（部分固件默认拦截）；只在规则不存在时插入，避免重复堆积
+    # 放行 80 端口（部分固件默认拦截入站）+ 建立传输计数规则：
+    #   INPUT  dpt:80 —— 统计浏览器请求与上传，同时放行入站；
+    #   OUTPUT spt:80 —— 统计下载响应（否则只看入站会漏判「从 Kindle 下载文件」）。
+    # 两条都只在规则不存在时插入，避免重复堆积；OUTPUT 默认放行，插 ACCEPT 不改变行为。
     if ! iptables -L INPUT -n 2>/dev/null | grep -q 'dpt:80'; then
         iptables -I INPUT -p tcp --dport 80 -j ACCEPT 2>/dev/null || \
             /sbin/iptables -I INPUT -p tcp --dport 80 -j ACCEPT 2>/dev/null
+    fi
+    if ! iptables -L OUTPUT -n 2>/dev/null | grep -q 'spt:80'; then
+        iptables -I OUTPUT -p tcp --sport 80 -j ACCEPT 2>/dev/null || \
+            /sbin/iptables -I OUTPUT -p tcp --sport 80 -j ACCEPT 2>/dev/null
     fi
 
     : > "$LOGFILE"
